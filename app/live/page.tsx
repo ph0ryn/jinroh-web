@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
+
 import type { PrivateGameEvent, PublicAction, PublicPlayer, RoomSummary } from "@/lib/shared/game";
 
 type IdentityResponse = {
@@ -24,6 +26,17 @@ type RequestOptions = {
 
 type RememberRoomOptions = {
   readonly resetActionTargets?: boolean;
+};
+
+type RealtimeInvalidationPayload = {
+  readonly reason: string;
+  readonly roomCode: string;
+  readonly scope: "player_private" | "role_private" | "room";
+  readonly sentAt: string;
+};
+
+type RealtimeBroadcastEnvelope = {
+  readonly payload?: unknown;
 };
 
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
@@ -110,6 +123,7 @@ export default function LivePage() {
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
   const activePhaseInstanceId = roomSummary?.game?.phaseInstanceId ?? null;
+  const activeRealtimeTopic = roomSummary?.realtime?.topic ?? null;
   const isHostInPlayingRoom =
     roomSummary?.isHost === true &&
     roomSummary.status === "playing" &&
@@ -149,6 +163,63 @@ export default function LivePage() {
       window.clearInterval(intervalId);
     };
   }, [activeRoomCode, identityToken, rememberRoom]);
+
+  useEffect(() => {
+    if (identityToken === null || activeRoomCode === null || activeRealtimeTopic === null) {
+      return;
+    }
+
+    const realtimeClient = getSupabaseRealtimeClient();
+
+    if (realtimeClient === null) {
+      return;
+    }
+
+    let isCancelled = false;
+    let isSyncing = false;
+    const activeToken = identityToken;
+
+    async function syncRoomFromRealtime(): Promise<void> {
+      if (isSyncing) {
+        return;
+      }
+
+      isSyncing = true;
+
+      try {
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
+          method: "GET",
+          token: activeToken,
+        });
+
+        if (!isCancelled) {
+          rememberRoom(summary, { resetActionTargets: false });
+        }
+      } catch {
+        if (!isCancelled) {
+          setStatusMessage("Realtime update failed. Polling is still active.");
+        }
+      } finally {
+        isSyncing = false;
+      }
+    }
+
+    const channel = realtimeClient
+      .channel(activeRealtimeTopic, { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "room_changed" }, (message: RealtimeBroadcastEnvelope) => {
+        if (!isRealtimeInvalidationPayload(message.payload, activeRoomCode)) {
+          return;
+        }
+
+        void syncRoomFromRealtime();
+      })
+      .subscribe();
+
+    return () => {
+      isCancelled = true;
+      void realtimeClient.removeChannel(channel);
+    };
+  }, [activeRealtimeTopic, activeRoomCode, identityToken, rememberRoom]);
 
   useEffect(() => {
     if (identityToken === null || activeRoomCode === null || activePhaseEndsAt === null) {
@@ -777,6 +848,28 @@ function toRequestFailureMessage(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : "The request failed.";
+}
+
+function isRealtimeInvalidationPayload(
+  value: unknown,
+  roomCode: string,
+): value is RealtimeInvalidationPayload {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value["roomCode"] === roomCode &&
+    typeof value["reason"] === "string" &&
+    typeof value["sentAt"] === "string" &&
+    (value["scope"] === "room" ||
+      value["scope"] === "player_private" ||
+      value["scope"] === "role_private")
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function isApiErrorResponse(value: unknown): value is ApiErrorResponse {

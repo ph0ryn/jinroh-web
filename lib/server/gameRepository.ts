@@ -28,6 +28,7 @@ import {
   isValidTokenShape,
   TOKEN_HASH_KEY_ID,
 } from "./accountToken";
+import { buildRealtimeNotificationPayload } from "./game/views";
 import {
   didPlayerWin,
   ENGINE_VERSION,
@@ -259,6 +260,7 @@ export async function createRoom(
   throwIfMutationError(realtimeTopicError);
 
   await insertRoomEvent(supabase, room.id, "room_created", player.id, account.id, {});
+  await broadcastRoomInvalidation(supabase, room, "room_created");
 
   return getRoomViewByRoom(supabase, account, room);
 }
@@ -279,18 +281,14 @@ export async function joinRoom(
   const existingPlayer = await getPlayerForAccount(supabase, activeRoom.id, account.id);
 
   if (existingPlayer !== null) {
+    const eventKind = existingPlayer.status === "left" ? "player_joined" : "player_reconnected";
+
     await supabase
       .from("players")
       .update({ last_seen_at: new Date().toISOString(), status: "joined" })
       .eq("id", existingPlayer.id);
-    await insertRoomEvent(
-      supabase,
-      activeRoom.id,
-      existingPlayer.status === "left" ? "player_joined" : "player_reconnected",
-      existingPlayer.id,
-      account.id,
-      {},
-    );
+    await insertRoomEvent(supabase, activeRoom.id, eventKind, existingPlayer.id, account.id, {});
+    await broadcastRoomInvalidation(supabase, activeRoom, eventKind);
 
     return getRoomViewByRoom(supabase, account, activeRoom);
   }
@@ -316,6 +314,7 @@ export async function joinRoom(
   }
 
   await insertRoomEvent(supabase, activeRoom.id, "player_joined", player.id, account.id, {});
+  await broadcastRoomInvalidation(supabase, activeRoom, "player_joined");
 
   return getRoomViewByRoom(supabase, account, activeRoom);
 }
@@ -340,6 +339,7 @@ export async function leaveRoom(account: AccountRecord, roomCode: string): Promi
   await insertRoomEvent(supabase, room.id, "player_left", player.id, account.id, {});
 
   let nextRoom = room;
+  let reason = "player_left";
 
   if (room.status === "lobby" && room.host_account_id === account.id) {
     const { data, error } = await supabase
@@ -357,7 +357,10 @@ export async function leaveRoom(account: AccountRecord, roomCode: string): Promi
     await insertRoomEvent(supabase, room.id, "room_disbanded", player.id, account.id, {
       reason: "host_left_lobby",
     });
+    reason = "room_disbanded";
   }
+
+  await broadcastRoomInvalidation(supabase, nextRoom, reason);
 
   return getRoomViewByRoom(supabase, account, nextRoom);
 }
@@ -469,6 +472,7 @@ export async function startRoom(
   await insertActions(supabase, room.id, phaseInstanceId, phaseEndsAt, startResult.actions);
   await insertGameEvents(supabase, room.id, phaseInstanceId, startResult.initialEvents);
   await insertRoomEvent(supabase, room.id, "game_started", null, account.id, {});
+  await broadcastRoomInvalidation(supabase, claimedRoom, "game_started");
 
   return getRoomViewByRoom(supabase, account, claimedRoom);
 }
@@ -545,6 +549,7 @@ export async function submitAction(
   });
 
   throwIfMutationError(submittedEventError);
+  await broadcastRoomInvalidation(supabase, room, "action_window_changed");
 
   return getRoomViewByRoom(supabase, account, room);
 }
@@ -732,6 +737,11 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
     }
 
     await insertGameEvents(supabase, room.id, nextPhaseInstanceId, resolution.events);
+    await broadcastRoomInvalidation(
+      supabase,
+      room,
+      resolution.finalOutcome === null ? "phase_changed" : "game_ended",
+    );
 
     return getRoomView(account, roomCode);
   } catch (error) {
@@ -1254,6 +1264,7 @@ async function expireLobbyIfNeeded(
   await insertRoomEvent(supabase, room.id, "room_disbanded", null, null, {
     reason: "lobby_expired",
   });
+  await broadcastRoomInvalidation(supabase, data, "room_disbanded");
 
   return data;
 }
@@ -1756,6 +1767,39 @@ async function insertRoomEvent(
   });
 
   throwIfMutationError(error);
+}
+
+async function broadcastRoomInvalidation(
+  supabase: SupabaseClient,
+  room: RoomRecord,
+  reason: string,
+): Promise<void> {
+  const channel = supabase.channel(room.realtime_topic, {
+    config: {
+      broadcast: { self: false },
+    },
+  });
+
+  try {
+    await channel.send({
+      event: "room_changed",
+      payload: buildRealtimeNotificationPayload({
+        reason,
+        roomCode: room.public_room_code,
+        scope: "room",
+        sentAt: new Date().toISOString(),
+      }),
+      type: "broadcast",
+    });
+  } catch {
+    // Realtime is an invalidation layer; HTTP mutations remain authoritative.
+  } finally {
+    try {
+      await supabase.removeChannel(channel);
+    } catch {
+      // Realtime cleanup failure should not fail the authoritative mutation.
+    }
+  }
 }
 
 async function insertActions(

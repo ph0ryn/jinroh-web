@@ -47,6 +47,8 @@ Create `.env.local`:
 ACCOUNT_TOKEN_HASH_SECRET=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
 Generate the token hash secret with:
@@ -64,6 +66,11 @@ pnpm dev
 
 Apply the Supabase schema files in `supabase/migrations/` to a fresh Supabase
 project before using the app.
+
+`NEXT_PUBLIC_SUPABASE_URL` should match `SUPABASE_URL`. Add
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` to enable Supabase Realtime invalidation in the
+browser. Without the public key, the live table still works through polling.
+Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser.
 
 For an existing Supabase project, apply migrations in order. To verify room-code
 reuse hardening after `0003_restore_active_room_code_reuse.sql`, run:
