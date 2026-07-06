@@ -8,7 +8,7 @@ track the state that is tedious or error-prone to manage by hand: anonymous room
 identity, lobby membership, role-safe private views, phase timers, night actions,
 voting, execution, and locked final results.
 
-![Jinroh Web tabletop hero](public/images/jinroh-tabletop.png)
+![Jinroh Web tabletop hero](public/images/jinroh-tabletop.jpg)
 
 ## Product Goals
 
@@ -32,7 +32,7 @@ Jinroh Web direction:
 - Desktop game board with state rail, phase timeline, player seats, host
   controls, action status, activity, and role legend.
 - Night, day, voting, execution, result, and demo states driven by local UI
-  state for review and pitch purposes.
+  state for product review and demos.
 - Mobile layout with stacked content, scrollable state rail, and bottom phase
   tabs.
 

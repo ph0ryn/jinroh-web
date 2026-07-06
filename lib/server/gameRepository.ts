@@ -5,6 +5,7 @@ import {
   DEFAULT_RULE_SET,
   getRoleName,
   isRoleId,
+  type PrivateGameEvent,
   type PublicAction,
   type PublicGameEvent,
   type PublicGameView,
@@ -110,9 +111,20 @@ type PendingActionRecord = {
 type GameEventRecord = {
   created_at: string;
   event_kind: string;
+  id: number;
   payload: Record<string, unknown>;
   public_message: string | null;
   visibility: "public" | "private" | "internal";
+};
+
+type GameEventVisiblePlayerRecord = {
+  game_event_id: number;
+  player_id: number;
+};
+
+type GameEventVisibleRoleRecord = {
+  game_event_id: number;
+  role_id: string;
 };
 
 type FinalOutcomeRecord = {
@@ -255,10 +267,6 @@ export async function joinRoom(
   const existingPlayer = await getPlayerForAccount(supabase, activeRoom.id, account.id);
 
   if (existingPlayer !== null) {
-    if (activeRoom.status !== "lobby" && activeRoom.status !== "playing") {
-      throw new Error("Room is not joinable.");
-    }
-
     await supabase
       .from("players")
       .update({ last_seen_at: new Date().toISOString(), status: "joined" })
@@ -484,8 +492,7 @@ export async function submitAction(
   }
 
   if (
-    state === null ||
-    state.status !== "playing" ||
+    state?.status !== "playing" ||
     state.phase_instance_id !== phaseInstanceId ||
     action.phase_instance_id !== phaseInstanceId
   ) {
@@ -529,7 +536,7 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
   const state = await getGameState(supabase, room.id);
 
-  if (state === null || state.status !== "playing" || state.phase === null) {
+  if (state?.status !== "playing" || state.phase === null) {
     return getRoomViewByRoom(supabase, account, room);
   }
 
@@ -757,6 +764,13 @@ async function getRoomViewByRoom(
       ? null
       : {
           actions: toPublicActions(actions, pendingActions, players, currentPlayer, currentRoleId),
+          events: await getVisiblePrivateEvents(
+            supabase,
+            room.id,
+            players,
+            currentPlayer,
+            currentRoleId,
+          ),
           playerId: currentPlayer.public_player_id,
           result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
           roleId: currentRoleId,
@@ -856,6 +870,56 @@ function toRolePrivateView(
     roleId: "werewolf",
     werewolfPartnerIds,
   };
+}
+
+function groupSetByEventId<Value>(
+  records: readonly { eventId: number; value: Value }[],
+): Map<number, Set<Value>> {
+  const grouped = new Map<number, Set<Value>>();
+
+  for (const record of records) {
+    const values = grouped.get(record.eventId) ?? new Set<Value>();
+
+    values.add(record.value);
+    grouped.set(record.eventId, values);
+  }
+
+  return grouped;
+}
+
+function toPrivateGameEvent(
+  event: GameEventRecord,
+  players: readonly PlayerRecord[],
+): PrivateGameEvent {
+  return {
+    createdAt: event.created_at,
+    kind: event.event_kind,
+    message: formatPrivateEventMessage(event, players),
+  };
+}
+
+function formatPrivateEventMessage(
+  event: GameEventRecord,
+  players: readonly PlayerRecord[],
+): string {
+  if (event.event_kind === "initial_inspection" || event.event_kind === "inspection_result") {
+    const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
+    const result = event.payload["result"] === "werewolf" ? "werewolf" : "human";
+
+    return `${targetPlayerName} appears to be ${result}.`;
+  }
+
+  return event.public_message ?? event.event_kind.replaceAll("_", " ");
+}
+
+function getPayloadPlayerName(value: unknown, players: readonly PlayerRecord[]): string {
+  if (typeof value !== "string") {
+    return "The target";
+  }
+
+  const player = players.find((candidate) => String(candidate.id) === value);
+
+  return player?.display_name ?? "The target";
 }
 
 function labelAction(actionKind: string): string {
@@ -1171,7 +1235,7 @@ async function getPublicEvents(
 ): Promise<PublicGameEvent[]> {
   const { data, error } = await supabase
     .from("game_events")
-    .select("event_kind,visibility,payload,public_message,created_at")
+    .select("id,event_kind,visibility,payload,public_message,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "public")
     .order("created_at", { ascending: true })
@@ -1186,6 +1250,94 @@ async function getPublicEvents(
     kind: event.event_kind,
     message: event.public_message ?? event.event_kind.replaceAll("_", " "),
   }));
+}
+
+async function getVisiblePrivateEvents(
+  supabase: SupabaseClient,
+  roomId: number,
+  players: readonly PlayerRecord[],
+  currentPlayer: PlayerRecord,
+  currentRoleId: RoleId | null,
+): Promise<PrivateGameEvent[]> {
+  const { data: events, error: eventError } = await supabase
+    .from("game_events")
+    .select("id,event_kind,visibility,payload,public_message,created_at")
+    .eq("room_id", roomId)
+    .eq("visibility", "private")
+    .order("created_at", { ascending: true })
+    .returns<GameEventRecord[]>();
+
+  if (eventError !== null) {
+    throw new Error(eventError.message);
+  }
+
+  if (events.length === 0) {
+    return [];
+  }
+
+  const eventIds = events.map((event) => event.id);
+  const [visiblePlayers, visibleRoles] = await Promise.all([
+    getEventVisiblePlayers(supabase, eventIds),
+    getEventVisibleRoles(supabase, eventIds),
+  ]);
+  const visiblePlayerIdsByEvent = groupSetByEventId(
+    visiblePlayers.map((record) => ({
+      eventId: record.game_event_id,
+      value: record.player_id,
+    })),
+  );
+  const visibleRoleIdsByEvent = groupSetByEventId(
+    visibleRoles.map((record) => ({
+      eventId: record.game_event_id,
+      value: record.role_id,
+    })),
+  );
+
+  return events
+    .filter((event) => {
+      const playerIds = visiblePlayerIdsByEvent.get(event.id);
+      const roleIds = visibleRoleIdsByEvent.get(event.id);
+
+      return (
+        playerIds?.has(currentPlayer.id) === true ||
+        (currentRoleId !== null && roleIds?.has(currentRoleId) === true)
+      );
+    })
+    .map((event) => toPrivateGameEvent(event, players));
+}
+
+async function getEventVisiblePlayers(
+  supabase: SupabaseClient,
+  eventIds: readonly number[],
+): Promise<GameEventVisiblePlayerRecord[]> {
+  const { data, error } = await supabase
+    .from("game_event_visible_players")
+    .select("game_event_id,player_id")
+    .in("game_event_id", eventIds)
+    .returns<GameEventVisiblePlayerRecord[]>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+async function getEventVisibleRoles(
+  supabase: SupabaseClient,
+  eventIds: readonly number[],
+): Promise<GameEventVisibleRoleRecord[]> {
+  const { data, error } = await supabase
+    .from("game_event_visible_roles")
+    .select("game_event_id,role_id")
+    .in("game_event_id", eventIds)
+    .returns<GameEventVisibleRoleRecord[]>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return data;
 }
 
 async function getFinalOutcome(

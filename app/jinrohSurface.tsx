@@ -471,6 +471,7 @@ export function JinrohSurface() {
   const [selectedPlayerId, setSelectedPlayerId] = useState("sora");
   const [roomCode, setRoomCode] = useState("428913");
   const [activityItems, setActivityItems] = useState(initialActivityItems);
+  const [copyStatus, setCopyStatus] = useState("Copy");
 
   const scenario = scenarios[activeView];
   const selectedPlayer =
@@ -520,6 +521,16 @@ export function JinrohSurface() {
     setActiveView(view);
   }
 
+  async function handleCopyRoomCode() {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setCopyStatus("Copied");
+      window.setTimeout(() => setCopyStatus("Copy"), 1800);
+    } catch {
+      setCopyStatus("Copy failed");
+    }
+  }
+
   return (
     <main className={`appShell tone-${scenario.boardTone}`}>
       <section className="heroBackdrop" aria-hidden="true" />
@@ -537,11 +548,19 @@ export function JinrohSurface() {
 
           <div className="roomTools" aria-label="Room tools">
             <span className="roomCode">Room {roomCode}</span>
-            <button className="iconButton" type="button" aria-label="Copy room code">
+            <button
+              className="iconButton"
+              type="button"
+              aria-label="Copy room code"
+              onClick={handleCopyRoomCode}
+            >
               <Icon name="copy" />
             </button>
+            <span className="copyStatus" aria-live="polite">
+              {copyStatus}
+            </span>
             <Link className="secondaryButton compactButton" href="/live">
-              Live console
+              Live table
             </Link>
             <button
               className="primaryButton compactButton"
@@ -701,7 +720,7 @@ export function JinrohSurface() {
       </div>
 
       <nav className="mobileTabs" aria-label="Mobile state tabs">
-        {navItems.slice(1, 8).map((item) => (
+        {navItems.slice(0, 8).map((item) => (
           <button
             className={item.view === activeView ? "mobileTab active" : "mobileTab"}
             data-view={item.view}
@@ -750,7 +769,7 @@ function HomeSurface({
             Create room
           </button>
           <Link className="secondaryButton" href="/live">
-            Open live console
+            Open live table
           </Link>
         </section>
 
@@ -779,14 +798,14 @@ function HomeSurface({
 }
 
 function PhaseTimeline({ activeView }: { readonly activeView: LocalView }) {
-  const activeIndex = phaseTrack.findIndex((item) => item.view === activeView);
+  const effectiveView = activeView === "board" ? "day" : activeView;
+  const activeIndex = phaseTrack.findIndex((item) => item.view === effectiveView);
 
   return (
     <ol className="phaseTimeline" aria-label="Phase timeline">
       {phaseTrack.map((item, index) => {
-        const isComplete = activeIndex > index || activeView === "board";
-        const isActive =
-          item.view === activeView || (activeView === "board" && item.view === "day");
+        const isComplete = activeIndex > index;
+        const isActive = item.view === effectiveView;
 
         return (
           <li className={timelineItemClassName(isActive, isComplete)} key={item.view}>

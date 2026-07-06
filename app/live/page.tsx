@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import type { PublicAction, PublicPlayer, RoomSummary } from "@/lib/shared/game";
+import type { PrivateGameEvent, PublicAction, PublicPlayer, RoomSummary } from "@/lib/shared/game";
 
 type IdentityResponse = {
   token: string;
@@ -22,6 +22,10 @@ type RequestOptions = {
   token?: string;
 };
 
+type RememberRoomOptions = {
+  readonly resetActionTargets?: boolean;
+};
+
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
@@ -36,7 +40,9 @@ export default function LivePage() {
   );
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
-  const [statusMessage, setStatusMessage] = useState("Ready for a live Supabase-backed room.");
+  const [statusMessage, setStatusMessage] = useState(
+    "Create a room or join with a six-digit code.",
+  );
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
@@ -82,18 +88,112 @@ export default function LivePage() {
 
     writeStorage(IDENTITY_STORAGE_KEY, identity.token);
     setIdentityToken(identity.token);
-    setStatusMessage("Anonymous identity created in this browser profile.");
+    setStatusMessage("This browser is ready to join a table.");
 
     return identity.token;
   }
 
-  function rememberRoom(nextSummary: RoomSummary): void {
-    writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
-    writeStorage(ROOM_CODE_STORAGE_KEY, nextSummary.code);
-    setRoomCodeInput(nextSummary.code);
-    setRoomSummary(nextSummary);
-    setTargetByActionKey({});
-  }
+  const rememberRoom = useCallback(
+    (nextSummary: RoomSummary, options: RememberRoomOptions = {}) => {
+      writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
+      writeStorage(ROOM_CODE_STORAGE_KEY, nextSummary.code);
+      setRoomCodeInput(nextSummary.code);
+      setRoomSummary(nextSummary);
+
+      if (options.resetActionTargets ?? true) {
+        setTargetByActionKey({});
+      }
+    },
+    [displayName],
+  );
+
+  const activeRoomCode = roomSummary?.code ?? null;
+  const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
+  const activePhaseInstanceId = roomSummary?.game?.phaseInstanceId ?? null;
+  const isHostInPlayingRoom =
+    roomSummary?.isHost === true &&
+    roomSummary.status === "playing" &&
+    roomSummary.game?.status === "playing";
+
+  useEffect(() => {
+    if (identityToken === null || activeRoomCode === null) {
+      return;
+    }
+
+    let isCancelled = false;
+    const activeToken = identityToken;
+
+    async function syncRoom(): Promise<void> {
+      try {
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
+          method: "GET",
+          token: activeToken,
+        });
+
+        if (!isCancelled) {
+          rememberRoom(summary, { resetActionTargets: false });
+        }
+      } catch {
+        if (!isCancelled) {
+          setStatusMessage("Room sync failed. Use Refresh if the table looks stale.");
+        }
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void syncRoom();
+    }, 4000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeRoomCode, identityToken, rememberRoom]);
+
+  useEffect(() => {
+    if (identityToken === null || activeRoomCode === null || activePhaseEndsAt === null) {
+      return;
+    }
+
+    if (!isHostInPlayingRoom) {
+      return;
+    }
+
+    let isCancelled = false;
+    const activeToken = identityToken;
+    const delayMs = Math.max(Date.parse(activePhaseEndsAt) - Date.now() + 600, 0);
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}/resolve`, {
+            method: "POST",
+            token: activeToken,
+          });
+
+          if (!isCancelled) {
+            rememberRoom(summary, { resetActionTargets: false });
+            setStatusMessage("Phase timer elapsed; the room checked whether it can advance.");
+          }
+        } catch {
+          if (!isCancelled) {
+            setStatusMessage("Phase timer elapsed, but the room could not advance yet.");
+          }
+        }
+      })();
+    }, delayMs);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    activePhaseEndsAt,
+    activePhaseInstanceId,
+    activeRoomCode,
+    identityToken,
+    isHostInPlayingRoom,
+    rememberRoom,
+  ]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
     setDisplayName(nextDisplayName);
@@ -146,7 +246,7 @@ export default function LivePage() {
       });
 
       rememberRoom(summary);
-      setStatusMessage(`Room ${summary.code} refreshed from the API.`);
+      setStatusMessage(`Room ${summary.code} synced.`);
     });
   }
 
@@ -161,7 +261,7 @@ export default function LivePage() {
       });
 
       rememberRoom(summary);
-      setStatusMessage("Game started. Players can now submit their private actions.");
+      setStatusMessage("Game started. Each player can check their private action card.");
     });
   }
 
@@ -169,13 +269,19 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const previousStatus = formatRoomStatus(roomSummary);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/resolve`, {
         method: "POST",
         token,
       });
+      const nextStatus = formatRoomStatus(summary);
 
       rememberRoom(summary);
-      setStatusMessage("Phase resolution requested.");
+      setStatusMessage(
+        previousStatus === nextStatus
+          ? "Still waiting for pending actions or the phase timer."
+          : `Advanced to ${nextStatus}.`,
+      );
     });
   }
 
@@ -188,7 +294,7 @@ export default function LivePage() {
         token,
       });
 
-      rememberRoom(summary);
+      rememberRoom(summary, { resetActionTargets: true });
       setStatusMessage("Left the room.");
     });
   }
@@ -205,7 +311,7 @@ export default function LivePage() {
       });
 
       rememberRoom(summary);
-      setStatusMessage(`${action.label} submitted.`);
+      setStatusMessage(`${action.label} submitted. Waiting for the table to catch up.`);
     });
   }
 
@@ -215,19 +321,26 @@ export default function LivePage() {
 
   const selfActions = roomSummary?.self?.actions ?? [];
   const roomStatusLabel = formatRoomStatus(roomSummary);
+  const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy);
+  const canStartGame = !isBusy && roomSummary?.isHost === true && roomSummary.status === "lobby";
+  const canAdvancePhase =
+    !isBusy &&
+    roomSummary?.isHost === true &&
+    roomSummary.status === "playing" &&
+    roomSummary.game?.status === "playing";
 
   return (
     <main className="liveShell">
       <section className="liveHero">
         <Link className="liveBackLink" href="/">
-          Back to product surface
+          Back to overview
         </Link>
         <div>
-          <p className="liveKicker">Live game console</p>
-          <h1>Play a real room through the API.</h1>
+          <p className="liveKicker">Jinroh Web table</p>
+          <h1>Run the table without leaking secrets.</h1>
           <p>
-            Use this screen to verify anonymous identity, six-digit room entry, host start, private
-            actions, phase resolution, and rejoin behavior against Supabase.
+            Create a room, share the code, and let each browser show only the role, action, and
+            result that player is allowed to see.
           </p>
         </div>
       </section>
@@ -275,8 +388,9 @@ export default function LivePage() {
       </section>
 
       <section className="liveStatusBar" aria-live="polite">
-        <span>{isBusy ? "Working..." : "Idle"}</span>
-        <strong>{statusMessage}</strong>
+        <span>{liveGuidance.label}</span>
+        <strong>{liveGuidance.message}</strong>
+        <small>{statusMessage}</small>
       </section>
 
       <div className="liveGrid">
@@ -304,9 +418,10 @@ export default function LivePage() {
 
           <div className="liveControlStack">
             <button
+              className="primaryLiveButton"
               type="button"
               onClick={handleStartGame}
-              disabled={isBusy || roomSummary === null}
+              disabled={!canStartGame}
             >
               Start game
             </button>
@@ -314,9 +429,9 @@ export default function LivePage() {
               className="secondaryButton"
               type="button"
               onClick={handleResolvePhase}
-              disabled={isBusy || roomSummary === null}
+              disabled={!canAdvancePhase}
             >
-              Resolve phase
+              Advance phase
             </button>
             <button
               className="dangerButton"
@@ -331,6 +446,7 @@ export default function LivePage() {
           <SelfView summary={roomSummary} />
           <ActionList
             actions={selfActions}
+            isBusy={isBusy}
             players={roomSummary?.players ?? []}
             targetByActionKey={targetByActionKey}
             onTargetChange={(actionKey, playerId) =>
@@ -356,7 +472,7 @@ function EmptyRoomState() {
   return (
     <div className="liveEmptyState">
       <strong>No room loaded</strong>
-      <p>Create a room, or paste a six-digit code and join from a separate browser profile.</p>
+      <p>Create a room, or paste a six-digit code and join from a separate browser session.</p>
     </div>
   );
 }
@@ -426,27 +542,53 @@ function SelfView({ summary }: { readonly summary: RoomSummary | null }) {
     );
   }
 
+  const currentPlayer = summary.players.find((player) => player.id === summary.self?.playerId);
+  const partnerNames =
+    summary.rolePrivate === null
+      ? []
+      : summary.rolePrivate.werewolfPartnerIds
+          .map((playerId) => summary.players.find((player) => player.id === playerId)?.displayName)
+          .filter((displayName): displayName is string => displayName !== undefined);
+
   return (
     <div className="liveSelfView">
-      <span>Private view</span>
+      <span>{currentPlayer?.displayName ?? "You"}</span>
       <strong>{summary.self.roleName ?? "Role hidden until start"}</strong>
-      <p>Player ID: {summary.self.playerId}</p>
       {summary.rolePrivate === null ? null : (
-        <p>Werewolf partners: {summary.rolePrivate.werewolfPartnerIds.join(", ") || "none"}</p>
+        <p>Werewolf partners: {partnerNames.join(", ") || "none"}</p>
       )}
-      {summary.self.result === null ? null : <p>Result: {summary.self.result}</p>}
+      {summary.self.result === null ? null : <p>{formatResult(summary.self.result)}</p>}
+      <PrivateEventList events={summary.self.events} />
+    </div>
+  );
+}
+
+function PrivateEventList({ events }: { readonly events: readonly PrivateGameEvent[] }) {
+  if (events.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="livePrivateEvents">
+      {events.map((event) => (
+        <p key={`${event.kind}:${event.createdAt}`}>
+          <strong>{formatEventKind(event.kind)}:</strong> {event.message}
+        </p>
+      ))}
     </div>
   );
 }
 
 function ActionList({
   actions,
+  isBusy,
   players,
   targetByActionKey,
   onTargetChange,
   onSubmitAction,
 }: {
   readonly actions: readonly PublicAction[];
+  readonly isBusy: boolean;
   readonly players: readonly PublicPlayer[];
   readonly targetByActionKey: Record<string, string>;
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
@@ -489,8 +631,8 @@ function ActionList({
               </select>
             ) : null}
 
-            <button type="button" onClick={() => onSubmitAction(action)}>
-              Submit
+            <button type="button" onClick={() => onSubmitAction(action)} disabled={isBusy}>
+              {isBusy ? "Submitting" : "Submit"}
             </button>
           </div>
         );
@@ -516,7 +658,7 @@ function EventLog({ summary }: { readonly summary: RoomSummary | null }) {
       {events.map((event) => (
         <li key={`${event.kind}:${event.createdAt}`}>
           <time>{formatDateTime(event.createdAt)}</time>
-          <strong>{event.kind.replaceAll("_", " ")}</strong>
+          <strong>{formatEventKind(event.kind)}</strong>
           <p>{event.message}</p>
         </li>
       ))}
@@ -601,6 +743,53 @@ function requireRoomCode(roomCode: string): string {
   return roomCode;
 }
 
+function getLiveGuidance(
+  summary: RoomSummary | null,
+  actionCount: number,
+  isBusy: boolean,
+): { label: string; message: string } {
+  if (isBusy) {
+    return { label: "Syncing", message: "Updating the room from the server." };
+  }
+
+  if (summary === null) {
+    return { label: "Setup", message: "Create a room or join one with a six-digit code." };
+  }
+
+  if (summary.status === "disbanded") {
+    return { label: "Closed", message: "This room has been disbanded." };
+  }
+
+  if (summary.game?.status === "ended") {
+    return {
+      label: "Result",
+      message: `${formatWinner(summary.game.winnerTeam)} won. Start a new room when ready.`,
+    };
+  }
+
+  if (summary.status === "lobby") {
+    if (!summary.isHost) {
+      return { label: "Lobby", message: "Waiting for the host to start the game." };
+    }
+
+    if (summary.players.length < 3) {
+      return { label: "Invite", message: "Invite at least three players before starting." };
+    }
+
+    return { label: "Ready", message: "Start the game when everyone is at the table." };
+  }
+
+  if (actionCount > 0) {
+    return { label: "Your turn", message: "Submit the private action shown below." };
+  }
+
+  if (summary.isHost) {
+    return { label: "Host", message: "Advance the phase after all pending actions are submitted." };
+  }
+
+  return { label: "Waiting", message: "Waiting for other players or the host." };
+}
+
 function formatRoomStatus(summary: RoomSummary | null): string {
   if (summary === null) {
     return "No room";
@@ -613,15 +802,42 @@ function formatRoomStatus(summary: RoomSummary | null): string {
   return `${summary.status} / ${summary.game?.phase ?? "setup"}`;
 }
 
+function formatWinner(winnerTeam: string | null): string {
+  if (winnerTeam === null) {
+    return "No team";
+  }
+
+  if (winnerTeam === "werewolves") {
+    return "Werewolves";
+  }
+
+  if (winnerTeam === "villagers") {
+    return "Villagers";
+  }
+
+  return "Fox";
+}
+
 function formatPhaseWindow(phaseInstanceId: string | null): string {
   return phaseInstanceId === null ? "closed" : "open";
 }
 
 function formatPlayerStatus(player: PublicPlayer): string {
-  const aliveLabel = player.alive === null || player.alive ? "alive" : "out";
+  const aliveLabel = player.alive === null || player.alive ? "Alive" : "Out";
   const currentLabel = player.isCurrent ? "you" : player.status;
 
-  return `${aliveLabel}, ${currentLabel}`;
+  return `${aliveLabel} / ${currentLabel}`;
+}
+
+function formatResult(result: "lose" | "win"): string {
+  return result === "win" ? "You won this game." : "You lost this game.";
+}
+
+function formatEventKind(kind: string): string {
+  return kind
+    .split("_")
+    .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function formatDateTime(value: string | null): string {

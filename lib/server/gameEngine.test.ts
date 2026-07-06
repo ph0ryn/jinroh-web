@@ -29,13 +29,13 @@ describe("game engine", () => {
     if (result.ok) {
       expect(result.phase).toBe("night");
       expect(result.actions).toHaveLength(PLAYERS.length);
+      const publicInitialEvents = result.initialEvents.filter(
+        (event) => event.visibility === "public",
+      );
+
+      expect(publicInitialEvents).toHaveLength(1);
       expect(
-        result.initialEvents.every((event) => event.visibility !== "public" || event.payload),
-      ).toBe(true);
-      expect(
-        result.initialEvents
-          .filter((event) => event.visibility === "public")
-          .some((event) => JSON.stringify(event.payload).includes("role")),
+        publicInitialEvents.some((event) => JSON.stringify(event.payload).includes("role")),
       ).toBe(false);
     }
   });

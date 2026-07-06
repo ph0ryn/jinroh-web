@@ -74,7 +74,14 @@ export type SelfPrivateView = {
   roleId: RoleId | null;
   roleName: string | null;
   actions: PublicAction[];
+  events: PrivateGameEvent[];
   result: "win" | "lose" | null;
+};
+
+export type PrivateGameEvent = {
+  kind: string;
+  message: string;
+  createdAt: string;
 };
 
 export type RolePrivateView = {
