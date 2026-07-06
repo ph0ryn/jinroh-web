@@ -87,6 +87,21 @@ describe("validateRuleSet", () => {
     expect(result.issues.map((issue) => issue.code)).toContain("role_count_mismatch");
   });
 
+  it("rejects player counts outside the supported range", () => {
+    const tooFew = validateRuleSet(normalizeRuleSetInput({}, 2), 2);
+    const tooMany = validateRuleSet(normalizeRuleSetInput({}, 11), 11);
+
+    expect(tooFew.ok).toBe(false);
+    expect(tooMany.ok).toBe(false);
+
+    if (tooFew.ok || tooMany.ok) {
+      throw new Error("Expected invalid player counts.");
+    }
+
+    expect(tooFew.issues.map((issue) => issue.code)).toContain("player_count_too_small");
+    expect(tooMany.issues.map((issue) => issue.code)).toContain("player_count_too_large");
+  });
+
   it("rejects fox counts above the role maximum", () => {
     const roleCounts: Partial<RoleCounts> = {
       fox: 2,

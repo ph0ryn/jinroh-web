@@ -28,6 +28,17 @@ import {
   isValidTokenShape,
   TOKEN_HASH_KEY_ID,
 } from "./accountToken";
+import {
+  resolveRoleSetup as resolveRegisteredRoleSetup,
+  type RuleSet as RegisteredRuleSet,
+} from "./game/ruleset";
+import {
+  DayDiscussionMode,
+  GuardConsecutiveTargetPolicy,
+  InitialInspectionPolicy,
+  VoteResultVisibility,
+  type RuleOptions as RegisteredRuleOptions,
+} from "./game/types";
 import { buildRealtimeNotificationPayload } from "./game/views";
 import {
   didPlayerWin,
@@ -1357,12 +1368,51 @@ function serializeRuleSetOptions(ruleSet: RuleSet): JsonObject {
 }
 
 function buildResolvedRoleSetup(ruleSet: RuleSet): JsonObject {
+  const registeredRuleSet = toRegisteredRuleSet(ruleSet);
+  const resolvedRoleSetup = resolveRegisteredRoleSetup(registeredRuleSet);
+
   return {
-    activeRoleIds: Object.entries(ruleSet.roleCounts)
-      .filter(([, count]) => count > 0)
-      .map(([roleId]) => roleId),
+    ...resolvedRoleSetup,
     engineVersion: ENGINE_VERSION,
     roleRegistryVersion: ROLE_REGISTRY_VERSION,
+  };
+}
+
+function toRegisteredRuleSet(ruleSet: RuleSet): RegisteredRuleSet {
+  return {
+    engineVersion: ENGINE_VERSION,
+    options: toRegisteredRuleOptions(ruleSet),
+    roleCounts: ruleSet.roleCounts,
+    roleRegistryVersion: ROLE_REGISTRY_VERSION,
+  };
+}
+
+function toRegisteredRuleOptions(ruleSet: RuleSet): RegisteredRuleOptions {
+  return {
+    dayDiscussionMode:
+      ruleSet.dayMode === "ordered_speech"
+        ? DayDiscussionMode.OrderedSpeech
+        : DayDiscussionMode.ReadyCheck,
+    dayReadyCheckSecondsPerPlayer: 90,
+    daySpeechSeconds: 90,
+    executionLastWordsSeconds: 60,
+    firstDaySpeechRounds: 2,
+    firstNightSeconds: 30,
+    guardConsecutiveTargetPolicy:
+      ruleSet.guardConsecutiveTargetPolicy === "allow"
+        ? GuardConsecutiveTargetPolicy.Allow
+        : GuardConsecutiveTargetPolicy.DenySameTarget,
+    initialInspectionPolicy:
+      ruleSet.initialInspectionPolicy === "disabled"
+        ? InitialInspectionPolicy.Disabled
+        : InitialInspectionPolicy.Enabled,
+    nightSeconds: 180,
+    normalDaySpeechRounds: 1,
+    voteResultVisibility:
+      ruleSet.voteResultVisibility === "voter_to_target"
+        ? VoteResultVisibility.VoterToTarget
+        : VoteResultVisibility.CountOnly,
+    votingSeconds: 30,
   };
 }
 

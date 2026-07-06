@@ -42,6 +42,7 @@ export type RuleSetValidationIssueCode =
   | "invalid_role_count"
   | "missing_required_role"
   | "no_initial_inspection_candidate"
+  | "player_count_too_large"
   | "player_count_too_small"
   | "role_count_mismatch"
   | "role_incompatible"
@@ -120,6 +121,13 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     issues.push({
       code: "player_count_too_small",
       message: "At least three joined players are required.",
+    });
+  }
+
+  if (playerCount > 10) {
+    issues.push({
+      code: "player_count_too_large",
+      message: "At most ten joined players are supported.",
     });
   }
 
