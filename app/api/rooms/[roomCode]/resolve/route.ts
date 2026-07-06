@@ -19,7 +19,7 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
 
   try {
     return jsonOk(await resolveRoom(auth.account, roomCode));
-  } catch (error) {
-    return jsonError("conflict", error instanceof Error ? error.message : "Resolve failed.", 409);
+  } catch {
+    return jsonError("conflict", "Resolve failed.", 409);
   }
 }

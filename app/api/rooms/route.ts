@@ -21,7 +21,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     return jsonOk(await createRoom(auth.account, body.displayName), { status: 201 });
-  } catch (error) {
-    return jsonError("server_error", error instanceof Error ? error.message : "Failed.", 500);
+  } catch {
+    return jsonError("server_error", "Failed to create room.", 500);
   }
 }

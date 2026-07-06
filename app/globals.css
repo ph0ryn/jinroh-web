@@ -479,9 +479,11 @@ a {
 
 .tableBoard {
   align-items: center;
+  align-self: start;
   display: grid;
+  height: clamp(330px, calc(100svh - 300px), 500px);
   justify-items: center;
-  min-height: clamp(360px, 56svh, 470px);
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -502,9 +504,9 @@ a {
     inset 0 0 38px rgba(0, 0, 0, 0.52),
     0 24px 52px rgba(0, 0, 0, 0.42);
   max-width: 660px;
-  min-width: 300px;
+  min-width: 0;
   position: relative;
-  width: min(100%, 65vh);
+  width: min(100%, clamp(300px, calc(100svh - 324px), 620px));
 }
 
 .tableSurface::before {
@@ -759,12 +761,12 @@ a {
 }
 
 .iconButton {
-  min-height: 38px;
-  width: 38px;
+  min-height: 44px;
+  width: 44px;
 }
 
 .compactButton {
-  min-height: 38px;
+  min-height: 44px;
   white-space: nowrap;
 }
 
@@ -1073,7 +1075,7 @@ a {
   }
 
   .tableBoard {
-    min-height: clamp(340px, calc(100svh - 330px), 430px);
+    height: clamp(340px, calc(100svh - 330px), 430px);
   }
 
   .tableSurface {
@@ -1263,7 +1265,7 @@ a {
   }
 
   .tableBoard {
-    min-height: clamp(310px, calc(100svh - 300px), 360px);
+    height: clamp(310px, calc(100svh - 300px), 360px);
   }
 
   .tableSurface {
@@ -1611,6 +1613,20 @@ a {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.liveControlHints {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+
+.liveControlHints p {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin: 0;
+}
+
 .liveSelfView,
 .liveActionRow,
 .liveEmptyState {
@@ -1634,7 +1650,8 @@ a {
   overflow-wrap: anywhere;
 }
 
-.livePrivateEvents {
+.livePrivateEvents,
+.liveSubmittedActions {
   border-top: 1px solid var(--line);
   display: grid;
   gap: 6px;
@@ -1642,7 +1659,8 @@ a {
   padding-top: 8px;
 }
 
-.livePrivateEvents strong {
+.livePrivateEvents strong,
+.liveSubmittedActions strong {
   color: var(--brass-300);
 }
 
@@ -1651,6 +1669,10 @@ a {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+}
+
+.liveActionRow.submitted {
+  border-color: rgba(119, 189, 117, 0.36);
 }
 
 .liveActionRow div {
@@ -1664,6 +1686,13 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.liveActionState {
+  color: var(--paper-200);
+  font-size: 0.88rem;
+  font-weight: 760;
+  justify-self: start;
 }
 
 .liveEventList {
@@ -1681,6 +1710,38 @@ a {
 
 .liveEventList li:last-child {
   padding-bottom: 0;
+}
+
+.liveEventDetails {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 2px 0 0;
+}
+
+.liveEventDetails div {
+  background: rgba(241, 230, 202, 0.05);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  padding: 7px 8px;
+}
+
+.liveEventDetails dt,
+.liveEventDetails dd {
+  margin: 0;
+}
+
+.liveEventDetails dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 780;
+}
+
+.liveEventDetails dd {
+  color: var(--paper-100);
+  font-size: 0.86rem;
+  font-weight: 760;
+  overflow-wrap: anywhere;
 }
 
 .liveEventList strong {
@@ -1765,6 +1826,10 @@ a {
   }
 
   .liveMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .liveEventDetails {
     grid-template-columns: 1fr;
   }
 }

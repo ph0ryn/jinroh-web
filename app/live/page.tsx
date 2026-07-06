@@ -223,8 +223,8 @@ export default function LivePage() {
 
   function handleJoinRoom(): void {
     void withBusy(async () => {
-      const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomCodeInput);
+      const token = await ensureIdentityToken();
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
         body: { displayName },
         method: "POST",
@@ -328,6 +328,9 @@ export default function LivePage() {
     roomSummary?.isHost === true &&
     roomSummary.status === "playing" &&
     roomSummary.game?.status === "playing";
+  const startHint = getStartHint(roomSummary, isBusy);
+  const advanceHint = getAdvanceHint(roomSummary, isBusy);
+  const leaveHint = getLeaveHint(roomSummary, isBusy);
 
   return (
     <main className="liveShell">
@@ -419,6 +422,7 @@ export default function LivePage() {
           <div className="liveControlStack">
             <button
               className="primaryLiveButton"
+              aria-describedby="start-game-hint"
               type="button"
               onClick={handleStartGame}
               disabled={!canStartGame}
@@ -427,6 +431,7 @@ export default function LivePage() {
             </button>
             <button
               className="secondaryButton"
+              aria-describedby="advance-phase-hint"
               type="button"
               onClick={handleResolvePhase}
               disabled={!canAdvancePhase}
@@ -435,12 +440,18 @@ export default function LivePage() {
             </button>
             <button
               className="dangerButton"
+              aria-describedby="leave-room-hint"
               type="button"
               onClick={handleLeaveRoom}
               disabled={isBusy || roomSummary === null}
             >
               Leave room
             </button>
+          </div>
+          <div className="liveControlHints">
+            <p id="start-game-hint">{startHint}</p>
+            <p id="advance-phase-hint">{advanceHint}</p>
+            <p id="leave-room-hint">{leaveHint}</p>
           </div>
 
           <SelfView summary={roomSummary} />
@@ -497,6 +508,10 @@ function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
       <div>
         <dt>Window</dt>
         <dd>{formatPhaseWindow(game?.phaseInstanceId ?? null)}</dd>
+      </div>
+      <div>
+        <dt>Progress</dt>
+        <dd>{formatActionProgress(game?.actionProgress ?? null)}</dd>
       </div>
       <div>
         <dt>Ends</dt>
@@ -559,6 +574,7 @@ function SelfView({ summary }: { readonly summary: RoomSummary | null }) {
       )}
       {summary.self.result === null ? null : <p>{formatResult(summary.self.result)}</p>}
       <PrivateEventList events={summary.self.events} />
+      <SubmittedActionList actions={summary.self.submittedActions} />
     </div>
   );
 }
@@ -573,6 +589,26 @@ function PrivateEventList({ events }: { readonly events: readonly PrivateGameEve
       {events.map((event) => (
         <p key={`${event.kind}:${event.createdAt}`}>
           <strong>{formatEventKind(event.kind)}:</strong> {event.message}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function SubmittedActionList({
+  actions,
+}: {
+  readonly actions: readonly { readonly label: string; readonly submittedAt: string }[];
+}) {
+  if (actions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="liveSubmittedActions">
+      {actions.map((action) => (
+        <p key={`${action.label}:${action.submittedAt}`}>
+          <strong>{action.label}:</strong> submitted at {formatDateTime(action.submittedAt)}
         </p>
       ))}
     </div>
@@ -612,13 +648,20 @@ function ActionList({
         );
 
         return (
-          <div className="liveActionRow" key={action.key}>
+          <div
+            className={action.status === "submitted" ? "liveActionRow submitted" : "liveActionRow"}
+            key={action.key}
+          >
             <div>
               <strong>{action.label}</strong>
-              <span>{formatDateTime(action.closesAt)}</span>
+              <span>
+                {action.status === "submitted"
+                  ? "Already submitted"
+                  : formatDateTime(action.closesAt)}
+              </span>
             </div>
 
-            {action.targetKind === "single_player" ? (
+            {action.targetKind === "single_player" && action.status === "open" ? (
               <select
                 value={selectedTarget}
                 onChange={(event) => onTargetChange(action.key, event.target.value)}
@@ -629,10 +672,18 @@ function ActionList({
                   </option>
                 ))}
               </select>
-            ) : null}
+            ) : (
+              <span className="liveActionState">
+                {action.status === "submitted" ? "Target locked" : "No target"}
+              </span>
+            )}
 
-            <button type="button" onClick={() => onSubmitAction(action)} disabled={isBusy}>
-              {isBusy ? "Submitting" : "Submit"}
+            <button
+              type="button"
+              onClick={() => onSubmitAction(action)}
+              disabled={isBusy || action.status === "submitted"}
+            >
+              {getActionButtonLabel(action, isBusy)}
             </button>
           </div>
         );
@@ -660,6 +711,16 @@ function EventLog({ summary }: { readonly summary: RoomSummary | null }) {
           <time>{formatDateTime(event.createdAt)}</time>
           <strong>{formatEventKind(event.kind)}</strong>
           <p>{event.message}</p>
+          {event.details.length === 0 ? null : (
+            <dl className="liveEventDetails">
+              {event.details.map((detail) => (
+                <div key={`${event.kind}:${event.createdAt}:${detail.label}`}>
+                  <dt>{detail.label}</dt>
+                  <dd>{detail.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </li>
       ))}
     </ol>
@@ -780,7 +841,23 @@ function getLiveGuidance(
   }
 
   if (actionCount > 0) {
-    return { label: "Your turn", message: "Submit the private action shown below." };
+    const openActionCount =
+      summary.self?.actions.filter((action) => action.status === "open").length ?? 0;
+
+    if (openActionCount > 0) {
+      return { label: "Your turn", message: "Submit the private action shown below." };
+    }
+  }
+
+  if (summary.game?.actionProgress?.visibility === "public") {
+    return {
+      label: "Progress",
+      message: `${summary.game.actionProgress.submitted}/${summary.game.actionProgress.required} ${summary.game.actionProgress.label}`,
+    };
+  }
+
+  if (summary.game?.actionProgress?.visibility === "hidden") {
+    return { label: "Private night", message: summary.game.actionProgress.label };
   }
 
   if (summary.isHost) {
@@ -788,6 +865,70 @@ function getLiveGuidance(
   }
 
   return { label: "Waiting", message: "Waiting for other players or the host." };
+}
+
+function getStartHint(summary: RoomSummary | null, isBusy: boolean): string {
+  if (isBusy) {
+    return "Start is available after the current sync finishes.";
+  }
+
+  if (summary === null) {
+    return "Create or join a room before starting.";
+  }
+
+  if (!summary.isHost) {
+    return "Only the host can start the game.";
+  }
+
+  if (summary.status !== "lobby") {
+    return "Start is only available while the room is in lobby.";
+  }
+
+  return "Start the game when every player is seated.";
+}
+
+function getAdvanceHint(summary: RoomSummary | null, isBusy: boolean): string {
+  if (isBusy) {
+    return "Advance is available after the current sync finishes.";
+  }
+
+  if (summary === null) {
+    return "Create or join a room before advancing phases.";
+  }
+
+  if (!summary.isHost) {
+    return "Only the host can advance phases.";
+  }
+
+  if (summary.status !== "playing" || summary.game?.status !== "playing") {
+    return "Advance is available while a game is in progress.";
+  }
+
+  return "Advance after the table is ready or the phase timer has elapsed.";
+}
+
+function getLeaveHint(summary: RoomSummary | null, isBusy: boolean): string {
+  if (summary === null) {
+    return "Join or create a room before leaving.";
+  }
+
+  if (isBusy) {
+    return "Wait for the current sync to finish.";
+  }
+
+  return "Leave this room.";
+}
+
+function getActionButtonLabel(action: PublicAction, isBusy: boolean): string {
+  if (action.status === "submitted") {
+    return "Submitted";
+  }
+
+  if (isBusy) {
+    return "Submitting";
+  }
+
+  return "Submit";
 }
 
 function formatRoomStatus(summary: RoomSummary | null): string {
@@ -820,6 +961,20 @@ function formatWinner(winnerTeam: string | null): string {
 
 function formatPhaseWindow(phaseInstanceId: string | null): string {
   return phaseInstanceId === null ? "closed" : "open";
+}
+
+function formatActionProgress(
+  progress: NonNullable<RoomSummary["game"]>["actionProgress"],
+): string {
+  if (progress === null) {
+    return "none";
+  }
+
+  if (progress.visibility === "hidden") {
+    return "private";
+  }
+
+  return `${progress.submitted}/${progress.required}`;
 }
 
 function formatPlayerStatus(player: PublicPlayer): string {

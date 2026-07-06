@@ -47,7 +47,7 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
         targetPlayerId,
       ),
     );
-  } catch (error) {
-    return jsonError("conflict", error instanceof Error ? error.message : "Submit failed.", 409);
+  } catch {
+    return jsonError("conflict", "Submit failed.", 409);
   }
 }

@@ -19,7 +19,7 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
 
   try {
     return jsonOk(await getRoomView(auth.account, roomCode));
-  } catch (error) {
-    return jsonError("not_found", error instanceof Error ? error.message : "Room not found.", 404);
+  } catch {
+    return jsonError("not_found", "Room not found.", 404);
   }
 }

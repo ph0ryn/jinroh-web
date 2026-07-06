@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import {
   getRoleName,
   isRoleId,
@@ -321,12 +323,18 @@ function createInitialInspectionEvents(
     return [];
   }
 
-  const target = assignments.find(
+  const candidates = assignments.filter(
     (assignment) =>
       assignment.playerId !== seer.playerId &&
       getRoleInspectionResult(assignment.roleId) === "human" &&
       assignment.roleId !== "fox",
   );
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const target = candidates[randomInt(candidates.length)];
 
   if (target === undefined) {
     return [];
@@ -355,12 +363,24 @@ function resolveNight(input: PhaseResolutionInput): PhaseResolution {
       .map((action) => action.targetPlayerId),
   );
   const events: EngineEvent[] = [];
-  const deaths: { playerId: string; reason: "attack" }[] = [];
+  const deaths: { playerId: string; reason: "attack" | "rule_effect" }[] = [];
 
   for (const inspect of input.actions.filter((action) => action.kind === "inspect")) {
     const target = input.players.find((player) => player.playerId === inspect.targetPlayerId);
 
     if (target !== undefined) {
+      if (target.roleId === "fox") {
+        deaths.push({ playerId: target.playerId, reason: "rule_effect" });
+        events.push({
+          kind: "player_died",
+          message: "A player died after being inspected.",
+          payload: { reason: "rule_effect", targetPlayerId: target.playerId },
+          visibility: "public",
+          visibleToPlayerIds: [],
+          visibleToRoleIds: [],
+        });
+      }
+
       events.push({
         kind: "inspection_result",
         message: null,
@@ -386,6 +406,21 @@ function resolveNight(input: PhaseResolutionInput): PhaseResolution {
         visibleToRoleIds: [],
       });
     } else {
+      const target = input.players.find((player) => player.playerId === attack.targetPlayerId);
+
+      if (target?.roleId === "fox") {
+        events.push({
+          kind: "attack_guarded",
+          message: "Someone was attacked, but no one died.",
+          payload: { reason: "fox_survived_attack" },
+          visibility: "public",
+          visibleToPlayerIds: [],
+          visibleToRoleIds: [],
+        });
+
+        return openDay(input, deaths, events);
+      }
+
       deaths.push({ playerId: attack.targetPlayerId, reason: "attack" });
       events.push({
         kind: "player_died",

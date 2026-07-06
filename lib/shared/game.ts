@@ -60,6 +60,7 @@ export type PublicGameView = {
   phaseInstanceId: string | null;
   phaseEndsAt: string | null;
   winnerTeam: Team | null;
+  actionProgress: PublicActionProgress | null;
   events: PublicGameEvent[];
 };
 
@@ -67,6 +68,32 @@ export type PublicGameEvent = {
   kind: string;
   message: string;
   createdAt: string;
+  details: PublicGameEventDetail[];
+};
+
+export type PublicGameEventDetail = {
+  label: string;
+  value: string;
+};
+
+export type PublicActionProgress =
+  | {
+      visibility: "public";
+      required: number;
+      submitted: number;
+      label: string;
+    }
+  | {
+      visibility: "hidden";
+      label: string;
+    };
+
+export type PublicActionStatus = "open" | "submitted";
+
+export type PublicSubmittedAction = {
+  kind: ActionKind;
+  label: string;
+  submittedAt: string;
 };
 
 export type SelfPrivateView = {
@@ -75,6 +102,7 @@ export type SelfPrivateView = {
   roleName: string | null;
   actions: PublicAction[];
   events: PrivateGameEvent[];
+  submittedActions: PublicSubmittedAction[];
   result: "win" | "lose" | null;
 };
 
@@ -104,6 +132,7 @@ export type PublicAction = {
   kind: ActionKind;
   label: string;
   phaseInstanceId: string;
+  status: PublicActionStatus;
   targetKind: "none" | "single_player";
   eligibleTargetIds: string[];
   closesAt: string | null;
@@ -144,7 +173,7 @@ export const ROLE_DEFINITIONS: Record<RoleId, RoleDefinition> = {
     id: "fox",
     name: "Fox",
     team: "fox",
-    countAs: "none",
+    countAs: "villager",
     seenAs: "human",
     minCount: 0,
     maxCount: 1,

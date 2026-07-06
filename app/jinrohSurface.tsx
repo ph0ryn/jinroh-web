@@ -43,6 +43,7 @@ type RoleDefinition = {
 type NavItem = {
   readonly view: LocalView;
   readonly label: string;
+  readonly mobileLabel: string;
   readonly detail: string;
   readonly icon: IconName;
 };
@@ -101,15 +102,15 @@ const defaultRoleCounts: Record<RoleId, number> = {
 };
 
 const navItems: readonly NavItem[] = [
-  { detail: "Create or rejoin", icon: "home", label: "Home", view: "home" },
-  { detail: "Room setup", icon: "people", label: "Lobby", view: "lobby" },
-  { detail: "Live table", icon: "board", label: "Game board", view: "board" },
-  { detail: "Role actions", icon: "moon", label: "Night", view: "night" },
-  { detail: "Discussion", icon: "day", label: "Day", view: "day" },
-  { detail: "Ballots", icon: "vote", label: "Voting", view: "voting" },
-  { detail: "Reveal", icon: "flag", label: "Execution", view: "execution" },
-  { detail: "Outcome", icon: "result", label: "Result", view: "result" },
-  { detail: "Scripted flow", icon: "skull", label: "Demo", view: "demo" },
+  { detail: "Create or rejoin", icon: "home", label: "Home", mobileLabel: "Home", view: "home" },
+  { detail: "Room setup", icon: "people", label: "Lobby", mobileLabel: "Lobby", view: "lobby" },
+  { detail: "Live table", icon: "board", label: "Game board", mobileLabel: "Board", view: "board" },
+  { detail: "Role actions", icon: "moon", label: "Night", mobileLabel: "Night", view: "night" },
+  { detail: "Discussion", icon: "day", label: "Day", mobileLabel: "Day", view: "day" },
+  { detail: "Ballots", icon: "vote", label: "Voting", mobileLabel: "Vote", view: "voting" },
+  { detail: "Reveal", icon: "flag", label: "Execution", mobileLabel: "Exec", view: "execution" },
+  { detail: "Outcome", icon: "result", label: "Result", mobileLabel: "Result", view: "result" },
+  { detail: "Scripted flow", icon: "skull", label: "Demo", mobileLabel: "Demo", view: "demo" },
 ];
 
 const phaseTrack: readonly { readonly label: string; readonly view: LocalView }[] = [
@@ -577,6 +578,7 @@ export function JinrohSurface() {
             <nav className="stateNav">
               {navItems.map((item) => (
                 <button
+                  aria-current={item.view === activeView ? "page" : undefined}
                   className={item.view === activeView ? "stateButton active" : "stateButton"}
                   data-view={item.view}
                   key={item.view}
@@ -694,6 +696,7 @@ export function JinrohSurface() {
               <div className="demoList">
                 {demoSteps.map((step) => (
                   <button
+                    aria-pressed={step.view === activeView}
                     className={step.view === activeView ? "demoStep active" : "demoStep"}
                     key={step.view}
                     type="button"
@@ -722,6 +725,8 @@ export function JinrohSurface() {
       <nav className="mobileTabs" aria-label="Mobile state tabs">
         {navItems.slice(0, 8).map((item) => (
           <button
+            aria-current={item.view === activeView ? "page" : undefined}
+            aria-label={item.label}
             className={item.view === activeView ? "mobileTab active" : "mobileTab"}
             data-view={item.view}
             key={item.view}
@@ -729,7 +734,7 @@ export function JinrohSurface() {
             onClick={() => setActiveView(item.view)}
           >
             <Icon name={item.icon} />
-            <span>{item.label}</span>
+            <span>{item.mobileLabel}</span>
           </button>
         ))}
       </nav>
@@ -849,6 +854,7 @@ function GameBoard({
 
             return (
               <button
+                aria-pressed={selectedPlayerId === player.id}
                 className={[
                   "seat",
                   selectedPlayerId === player.id ? "selected" : "",
@@ -878,6 +884,7 @@ function GameBoard({
       <section className="mobileRoster" aria-label="Player roster">
         {players.map((player) => (
           <button
+            aria-pressed={selectedPlayerId === player.id}
             className={selectedPlayerId === player.id ? "rosterRow active" : "rosterRow"}
             data-player-id={player.id}
             key={player.id}

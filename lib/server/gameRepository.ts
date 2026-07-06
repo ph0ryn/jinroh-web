@@ -7,9 +7,12 @@ import {
   isRoleId,
   type PrivateGameEvent,
   type PublicAction,
+  type PublicActionProgress,
   type PublicGameEvent,
+  type PublicGameEventDetail,
   type PublicGameView,
   type PublicPlayer,
+  type PublicSubmittedAction,
   type RoleId,
   type RolePrivateView,
   type RoomStatus,
@@ -105,6 +108,7 @@ type CurrentActionRecord = {
 type PendingActionRecord = {
   current_action_id: number;
   submitter_player_id: number;
+  submitted_at: string;
   target_player_id: number | null;
 };
 
@@ -515,7 +519,11 @@ export async function submitAction(
   });
 
   if (pendingActionError !== null) {
-    throw new Error("Action was already submitted.");
+    if (pendingActionError.code === "23505") {
+      return getRoomViewByRoom(supabase, account, room);
+    }
+
+    throw new Error(pendingActionError.message);
   }
 
   const { error: submittedEventError } = await supabase.from("game_events").insert({
@@ -534,6 +542,16 @@ export async function submitAction(
 export async function resolveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
+  await requirePlayerForAccount(supabase, room.id, account.id);
+
+  if (room.host_account_id !== account.id) {
+    throw new Error("Only the host can advance the phase.");
+  }
+
+  if (room.status !== "playing") {
+    return getRoomViewByRoom(supabase, account, room);
+  }
+
   const state = await getGameState(supabase, room.id);
 
   if (state?.status !== "playing" || state.phase === null) {
@@ -556,146 +574,167 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
     return getRoomViewByRoom(supabase, account, room);
   }
 
-  const runtimePlayers = await getRuntimePlayers(supabase, room.id);
-  const ruleSet = await getRuleSet(supabase, room.id);
-  const resolution = resolvePhase({
-    actions: pendingActions.map((pendingAction) => ({
-      actorPlayerId: String(pendingAction.submitter_player_id),
-      kind:
-        actions.find((action) => action.id === pendingAction.current_action_id)?.action_kind ===
-        "vote"
-          ? "vote"
-          : (actions.find((action) => action.id === pendingAction.current_action_id)
-              ?.action_kind as SubmittedAction["kind"]),
-      targetPlayerId:
-        pendingAction.target_player_id === null ? null : String(pendingAction.target_player_id),
-    })),
-    currentPhase: state.phase,
-    dayNumber: state.day_number,
-    nightNumber: state.night_number,
-    players: runtimePlayers,
-    ruleSet,
-  });
+  const claimedState = await claimPhaseResolution(supabase, state);
 
-  for (const death of resolution.deaths) {
-    const { error: deathError } = await supabase
-      .from("game_player_states")
-      .update({
-        alive: false,
-        death_reason: death.reason,
-        died_at: new Date().toISOString(),
-      })
-      .eq("room_id", room.id)
-      .eq("player_id", Number(death.playerId));
-
-    throwIfMutationError(deathError);
+  if (claimedState === null) {
+    return getRoomViewByRoom(supabase, account, room);
   }
 
-  const { error: pendingDeleteError } = await supabase
-    .from("pending_actions")
-    .delete()
-    .eq("room_id", room.id);
-  const { error: actionDeleteError } = await supabase
-    .from("current_actions")
-    .delete()
-    .eq("room_id", room.id);
+  if (claimedState.phase === null) {
+    await releasePhaseResolution(supabase, claimedState);
 
-  throwIfMutationError(pendingDeleteError);
-  throwIfMutationError(actionDeleteError);
+    return getRoomViewByRoom(supabase, account, room);
+  }
 
-  const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
-  const nextEndsAt =
-    resolution.nextPhaseDurationSeconds === null
-      ? null
-      : secondsFromNow(resolution.nextPhaseDurationSeconds);
+  let stateFinalized = false;
 
-  if (resolution.finalOutcome !== null) {
-    const { data: outcome, error: outcomeError } = await supabase
-      .from("final_outcomes")
-      .insert({
-        payload: {},
-        reason: resolution.finalOutcome.reason,
-        room_id: room.id,
-        winner_team: resolution.finalOutcome.winnerTeam,
-      })
-      .select("id")
-      .single<{ id: number }>();
+  try {
+    const runtimePlayers = await getRuntimePlayers(supabase, room.id);
+    const ruleSet = await getRuleSet(supabase, room.id);
+    const resolution = resolvePhase({
+      actions: toSubmittedResolutionActions(actions, pendingActions, claimedState, phaseTimedOut),
+      currentPhase: claimedState.phase,
+      dayNumber: claimedState.day_number,
+      nightNumber: claimedState.night_number,
+      players: runtimePlayers,
+      ruleSet,
+    });
 
-    if (outcomeError !== null) {
-      throw new Error(outcomeError.message);
+    for (const death of resolution.deaths) {
+      const { error: deathError } = await supabase
+        .from("game_player_states")
+        .update({
+          alive: false,
+          death_reason: death.reason,
+          died_at: new Date().toISOString(),
+        })
+        .eq("room_id", room.id)
+        .eq("player_id", Number(death.playerId));
+
+      throwIfMutationError(deathError);
     }
 
-    const finalRuntimePlayers = await getRuntimePlayers(supabase, room.id);
-    const { error: resultError } = await supabase.from("player_results").insert(
-      finalRuntimePlayers.map((runtimePlayer) => ({
-        player_id: Number(runtimePlayer.playerId),
-        result: didPlayerWin(runtimePlayer.roleId, resolution.finalOutcome!.winnerTeam)
-          ? "win"
-          : "lose",
-        room_id: room.id,
-      })),
-    );
-
-    throwIfMutationError(resultError);
-
-    const { error: roomEndError } = await supabase
-      .from("rooms")
-      .update({ ended_at: new Date().toISOString(), status: "ended" })
-      .eq("id", room.id);
-
-    throwIfMutationError(roomEndError);
-
-    const { error: finalStateError } = await supabase
-      .from("game_states")
-      .update({
-        final_outcome_id: outcome.id,
-        phase: null,
-        phase_ends_at: null,
-        phase_instance_id: null,
-        revision: state.revision + 1,
-        status: "ended",
-      })
+    const currentActionIds = actions.map((action) => action.id);
+    const { error: pendingDeleteError } =
+      currentActionIds.length === 0
+        ? { error: null }
+        : await supabase.from("pending_actions").delete().in("current_action_id", currentActionIds);
+    const { error: actionDeleteError } = await supabase
+      .from("current_actions")
+      .delete()
       .eq("room_id", room.id)
-      .eq("revision", state.revision)
-      .eq("phase_instance_id", state.phase_instance_id)
-      .select("id")
-      .single<{ id: number }>();
+      .eq("phase_instance_id", claimedState.phase_instance_id);
 
-    throwIfMutationError(finalStateError);
-  } else {
-    const { error: nextStateError } = await supabase
-      .from("game_states")
-      .update({
-        day_number: resolution.nextDayNumber,
-        night_number: resolution.nextNightNumber,
-        phase: resolution.nextPhase,
-        phase_ends_at: nextEndsAt,
-        phase_instance_id: nextPhaseInstanceId,
-        phase_started_at: new Date().toISOString(),
-        revision: state.revision + 1,
-      })
-      .eq("room_id", room.id)
-      .eq("revision", state.revision)
-      .eq("phase_instance_id", state.phase_instance_id)
-      .select("id")
-      .single<{ id: number }>();
+    throwIfMutationError(pendingDeleteError);
+    throwIfMutationError(actionDeleteError);
 
-    throwIfMutationError(nextStateError);
+    const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
+    const nextEndsAt =
+      resolution.nextPhaseDurationSeconds === null
+        ? null
+        : secondsFromNow(resolution.nextPhaseDurationSeconds);
 
-    if (nextPhaseInstanceId !== null && nextEndsAt !== null) {
-      await insertActions(
-        supabase,
-        room.id,
-        nextPhaseInstanceId,
-        nextEndsAt,
-        resolution.actionsToOpen,
+    if (resolution.finalOutcome !== null) {
+      const { data: outcome, error: outcomeError } = await supabase
+        .from("final_outcomes")
+        .insert({
+          payload: {},
+          reason: resolution.finalOutcome.reason,
+          room_id: room.id,
+          winner_team: resolution.finalOutcome.winnerTeam,
+        })
+        .select("id")
+        .single<{ id: number }>();
+
+      if (outcomeError !== null) {
+        throw new Error(outcomeError.message);
+      }
+
+      const finalRuntimePlayers = await getRuntimePlayers(supabase, room.id);
+      const { error: resultError } = await supabase.from("player_results").insert(
+        finalRuntimePlayers.map((runtimePlayer) => ({
+          player_id: Number(runtimePlayer.playerId),
+          result: didPlayerWin(runtimePlayer.roleId, resolution.finalOutcome!.winnerTeam)
+            ? "win"
+            : "lose",
+          room_id: room.id,
+        })),
       );
+
+      throwIfMutationError(resultError);
+
+      const { error: finalStateError } = await supabase
+        .from("game_states")
+        .update({
+          final_outcome_id: outcome.id,
+          phase: null,
+          phase_ends_at: null,
+          phase_instance_id: null,
+          revision: claimedState.revision + 1,
+          status: "ended",
+        })
+        .eq("id", claimedState.id)
+        .eq("revision", claimedState.revision)
+        .eq("status", "assigning_roles")
+        .select("id")
+        .single<{ id: number }>();
+
+      throwIfMutationError(finalStateError);
+      stateFinalized = true;
+
+      const { error: roomEndError } = await supabase
+        .from("rooms")
+        .update({ ended_at: new Date().toISOString(), status: "ended" })
+        .eq("id", room.id);
+
+      throwIfMutationError(roomEndError);
+    } else {
+      const { error: nextStateError } = await supabase
+        .from("game_states")
+        .update({
+          day_number: resolution.nextDayNumber,
+          night_number: resolution.nextNightNumber,
+          phase: resolution.nextPhase,
+          phase_ends_at: nextEndsAt,
+          phase_instance_id: nextPhaseInstanceId,
+          phase_started_at: new Date().toISOString(),
+          revision: claimedState.revision + 1,
+          status: "playing",
+        })
+        .eq("id", claimedState.id)
+        .eq("revision", claimedState.revision)
+        .eq("status", "assigning_roles")
+        .select("id")
+        .single<{ id: number }>();
+
+      throwIfMutationError(nextStateError);
+      stateFinalized = true;
+
+      if (nextPhaseInstanceId !== null && nextEndsAt !== null) {
+        await insertActions(
+          supabase,
+          room.id,
+          nextPhaseInstanceId,
+          nextEndsAt,
+          resolution.actionsToOpen,
+        );
+      }
     }
+
+    await insertGameEvents(supabase, room.id, nextPhaseInstanceId, resolution.events);
+
+    return getRoomView(account, roomCode);
+  } catch (error) {
+    if (!stateFinalized) {
+      try {
+        await releasePhaseResolution(supabase, claimedState);
+      } catch {
+        // Keep the original resolution error as the API failure.
+      }
+    }
+
+    throw error;
   }
-
-  await insertGameEvents(supabase, room.id, nextPhaseInstanceId, resolution.events);
-
-  return getRoomView(account, roomCode);
 }
 
 async function getRoomViewByRoom(
@@ -703,27 +742,17 @@ async function getRoomViewByRoom(
   account: AccountRecord,
   room: RoomRecord,
 ): Promise<RoomSummary> {
-  const [
-    players,
-    state,
-    assignments,
-    playerStates,
-    actions,
-    pendingActions,
-    events,
-    outcome,
-    results,
-  ] = await Promise.all([
-    getPlayers(supabase, room.id),
-    getGameState(supabase, room.id),
-    getAssignments(supabase, room.id),
-    getGamePlayerStates(supabase, room.id),
-    getCurrentActions(supabase, room.id),
-    getPendingActions(supabase, room.id),
-    getPublicEvents(supabase, room.id),
-    getFinalOutcome(supabase, room.id),
-    getPlayerResults(supabase, room.id),
-  ]);
+  const [players, state, assignments, playerStates, actions, pendingActions, outcome, results] =
+    await Promise.all([
+      getPlayers(supabase, room.id),
+      getGameState(supabase, room.id),
+      getAssignments(supabase, room.id),
+      getGamePlayerStates(supabase, room.id),
+      getCurrentActions(supabase, room.id),
+      getPendingActions(supabase, room.id),
+      getFinalOutcome(supabase, room.id),
+      getPlayerResults(supabase, room.id),
+    ]);
   const currentPlayer = players.find((player) => player.account_id === account.id) ?? null;
   const assignmentByPlayer = new Map(
     assignments.map((assignment) => [assignment.player_id, assignment]),
@@ -732,6 +761,7 @@ async function getRoomViewByRoom(
     playerStates.map((playerState) => [playerState.player_id, playerState]),
   );
   const resultByPlayer = new Map(results.map((result) => [result.player_id, result]));
+  const events = await getPublicEvents(supabase, room.id, players);
   const publicPlayers: PublicPlayer[] = players.map((player) => ({
     alive: stateByPlayer.get(player.id)?.alive ?? null,
     displayName: player.display_name,
@@ -750,6 +780,7 @@ async function getRoomViewByRoom(
     state === null
       ? null
       : {
+          actionProgress: toPublicActionProgress(state, actions, pendingActions),
           dayNumber: state.day_number,
           events,
           nightNumber: state.night_number,
@@ -775,6 +806,12 @@ async function getRoomViewByRoom(
           result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
           roleId: currentRoleId,
           roleName: getRoleName(currentRoleId),
+          submittedActions: toSubmittedActions(
+            actions,
+            pendingActions,
+            currentPlayer,
+            currentRoleId,
+          ),
         };
 
   return {
@@ -807,17 +844,7 @@ function toPublicActions(
   const submittedActionIds = new Set(pendingActions.map((action) => action.current_action_id));
 
   return actions
-    .filter((action) => {
-      if (submittedActionIds.has(action.id)) {
-        return false;
-      }
-
-      if (action.actor_player_id !== null) {
-        return action.actor_player_id === currentPlayer.id;
-      }
-
-      return action.actor_role_id === currentRoleId;
-    })
+    .filter((action) => isActionVisibleToPlayer(action, currentPlayer.id, currentRoleId))
     .map((action) => ({
       closesAt: action.closes_at,
       eligibleTargetIds: action.eligible_target_player_ids
@@ -827,8 +854,77 @@ function toPublicActions(
       kind: action.action_kind as PublicAction["kind"],
       label: labelAction(action.action_kind),
       phaseInstanceId: action.phase_instance_id,
+      status: submittedActionIds.has(action.id) ? "submitted" : "open",
       targetKind: action.target_kind,
     }));
+}
+
+function toSubmittedActions(
+  actions: readonly CurrentActionRecord[],
+  pendingActions: readonly PendingActionRecord[],
+  currentPlayer: PlayerRecord,
+  currentRoleId: RoleId | null,
+): PublicSubmittedAction[] {
+  const actionById = new Map(actions.map((action) => [action.id, action]));
+
+  return pendingActions.flatMap((pendingAction) => {
+    const action = actionById.get(pendingAction.current_action_id);
+
+    if (action === undefined || !isActionVisibleToPlayer(action, currentPlayer.id, currentRoleId)) {
+      return [];
+    }
+
+    return [
+      {
+        kind: action.action_kind as PublicSubmittedAction["kind"],
+        label: labelAction(action.action_kind),
+        submittedAt: pendingAction.submitted_at,
+      },
+    ];
+  });
+}
+
+function isActionVisibleToPlayer(
+  action: CurrentActionRecord,
+  currentPlayerId: number,
+  currentRoleId: RoleId | null,
+): boolean {
+  if (action.actor_player_id !== null) {
+    return action.actor_player_id === currentPlayerId;
+  }
+
+  return action.actor_role_id === currentRoleId;
+}
+
+function toPublicActionProgress(
+  state: GameStateRecord,
+  actions: readonly CurrentActionRecord[],
+  pendingActions: readonly PendingActionRecord[],
+): PublicActionProgress | null {
+  if (state.status !== "playing" || state.phase === null || state.phase_instance_id === null) {
+    return null;
+  }
+
+  if (state.phase === "night" && state.night_number > 1) {
+    return {
+      label: "Night actions are private until dawn.",
+      visibility: "hidden",
+    };
+  }
+
+  const actionIds = new Set(actions.map((action) => action.id));
+  const submittedActionIds = new Set(
+    pendingActions
+      .filter((pendingAction) => actionIds.has(pendingAction.current_action_id))
+      .map((pendingAction) => pendingAction.current_action_id),
+  );
+
+  return {
+    label: labelActionProgress(state.phase),
+    required: actions.length,
+    submitted: submittedActionIds.size,
+    visibility: "public",
+  };
 }
 
 function toRolePrivateView(
@@ -922,6 +1018,39 @@ function getPayloadPlayerName(value: unknown, players: readonly PlayerRecord[]):
   return player?.display_name ?? "The target";
 }
 
+function getOptionalPayloadPlayerName(
+  value: unknown,
+  players: readonly PlayerRecord[],
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const player = players.find((candidate) => String(candidate.id) === value);
+
+  return player?.display_name ?? null;
+}
+
+function formatWinnerTeam(value: unknown): string {
+  if (value === "werewolves") {
+    return "Werewolves";
+  }
+
+  if (value === "villagers") {
+    return "Villagers";
+  }
+
+  if (value === "fox") {
+    return "Fox";
+  }
+
+  return "Unknown";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function labelAction(actionKind: string): string {
   switch (actionKind) {
     case "attack":
@@ -940,6 +1069,21 @@ function labelAction(actionKind: string): string {
       return "Vote";
     default:
       return "Submit";
+  }
+}
+
+function labelActionProgress(phase: GameStateRecord["phase"]): string {
+  switch (phase) {
+    case "day":
+      return "Players ready for voting.";
+    case "execution":
+      return "Execution last words ready.";
+    case "night":
+      return "Players ready for first day.";
+    case "voting":
+      return "Votes submitted.";
+    default:
+      return "Phase actions submitted.";
   }
 }
 
@@ -964,6 +1108,51 @@ function canSubmitAction(
   return targetPlayerId !== null && action.eligible_target_player_ids.includes(targetPlayerId);
 }
 
+function toSubmittedResolutionActions(
+  actions: readonly CurrentActionRecord[],
+  pendingActions: readonly PendingActionRecord[],
+  state: GameStateRecord,
+  phaseTimedOut: boolean,
+): SubmittedAction[] {
+  const actionById = new Map(actions.map((action) => [action.id, action]));
+  const submittedActions = pendingActions.flatMap((pendingAction) => {
+    const action = actionById.get(pendingAction.current_action_id);
+
+    if (action === undefined) {
+      return [];
+    }
+
+    return [
+      {
+        actorPlayerId: String(pendingAction.submitter_player_id),
+        kind: action.action_kind as SubmittedAction["kind"],
+        targetPlayerId:
+          pendingAction.target_player_id === null ? null : String(pendingAction.target_player_id),
+      },
+    ];
+  });
+
+  if (state.phase !== "execution" || !phaseTimedOut) {
+    return submittedActions;
+  }
+
+  const submittedActionIds = new Set(pendingActions.map((action) => action.current_action_id));
+  const timedOutExecutionActions = actions
+    .filter(
+      (action) =>
+        action.action_kind === "execution_skip" &&
+        action.actor_player_id !== null &&
+        !submittedActionIds.has(action.id),
+    )
+    .map((action) => ({
+      actorPlayerId: String(action.actor_player_id),
+      kind: "execution_skip" as const,
+      targetPlayerId: null,
+    }));
+
+  return [...submittedActions, ...timedOutExecutionActions];
+}
+
 async function createUniqueRoomCode(supabase: SupabaseClient): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
@@ -971,6 +1160,7 @@ async function createUniqueRoomCode(supabase: SupabaseClient): Promise<string> {
       .from("rooms")
       .select("id")
       .eq("public_room_code", code)
+      .in("status", ["lobby", "playing"])
       .maybeSingle<{ id: number }>();
 
     if (data === null) {
@@ -999,6 +1189,8 @@ async function getRoomByCodeOrThrow(
     .from("rooms")
     .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
     .eq("public_room_code", roomCode)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle<RoomRecord>();
 
   if (error !== null || data === null) {
@@ -1121,6 +1313,47 @@ async function getGameState(
   return data;
 }
 
+async function claimPhaseResolution(
+  supabase: SupabaseClient,
+  state: GameStateRecord,
+): Promise<GameStateRecord | null> {
+  if (state.phase_instance_id === null) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("game_states")
+    .update({ status: "assigning_roles" })
+    .eq("id", state.id)
+    .eq("status", "playing")
+    .eq("revision", state.revision)
+    .eq("phase_instance_id", state.phase_instance_id)
+    .select(
+      "id,room_id,status,phase,phase_instance_id,phase_ends_at,day_number,night_number,revision,final_outcome_id",
+    )
+    .maybeSingle<GameStateRecord>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+async function releasePhaseResolution(
+  supabase: SupabaseClient,
+  state: GameStateRecord,
+): Promise<void> {
+  const { error } = await supabase
+    .from("game_states")
+    .update({ status: "playing" })
+    .eq("id", state.id)
+    .eq("status", "assigning_roles")
+    .eq("revision", state.revision);
+
+  throwIfMutationError(error);
+}
+
 async function getAssignments(
   supabase: SupabaseClient,
   roomId: number,
@@ -1218,7 +1451,7 @@ async function getPendingActions(
 ): Promise<PendingActionRecord[]> {
   const { data, error } = await supabase
     .from("pending_actions")
-    .select("current_action_id,submitter_player_id,target_player_id")
+    .select("current_action_id,submitter_player_id,target_player_id,submitted_at")
     .eq("room_id", roomId)
     .returns<PendingActionRecord[]>();
 
@@ -1232,6 +1465,7 @@ async function getPendingActions(
 async function getPublicEvents(
   supabase: SupabaseClient,
   roomId: number,
+  players: readonly PlayerRecord[],
 ): Promise<PublicGameEvent[]> {
   const { data, error } = await supabase
     .from("game_events")
@@ -1247,9 +1481,68 @@ async function getPublicEvents(
 
   return data.map((event) => ({
     createdAt: event.created_at,
+    details: toPublicEventDetails(event, players),
     kind: event.event_kind,
     message: event.public_message ?? event.event_kind.replaceAll("_", " "),
   }));
+}
+
+function toPublicEventDetails(
+  event: GameEventRecord,
+  players: readonly PlayerRecord[],
+): PublicGameEventDetail[] {
+  switch (event.event_kind) {
+    case "player_died":
+    case "player_executed": {
+      const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
+
+      return [{ label: "Player", value: targetPlayerName }];
+    }
+
+    case "vote_resolved":
+      return toVoteResolvedDetails(event.payload, players);
+
+    case "game_ended":
+      return [{ label: "Winner", value: formatWinnerTeam(event.payload["winnerTeam"]) }];
+
+    default:
+      return [];
+  }
+}
+
+function toVoteResolvedDetails(
+  payload: Record<string, unknown>,
+  players: readonly PlayerRecord[],
+): PublicGameEventDetail[] {
+  const details: PublicGameEventDetail[] = [];
+  const executionCandidateName = getOptionalPayloadPlayerName(
+    payload["executionCandidatePlayerId"],
+    players,
+  );
+
+  if (executionCandidateName !== null) {
+    details.push({ label: "Candidate", value: executionCandidateName });
+  }
+
+  const voteCountsByTarget = payload["voteCountsByTarget"];
+
+  if (isRecord(voteCountsByTarget)) {
+    const voteSummary = Object.entries(voteCountsByTarget)
+      .map(([playerId, count]) => ({
+        count: typeof count === "number" ? count : Number(count),
+        playerName: getPayloadPlayerName(playerId, players),
+      }))
+      .filter((entry) => Number.isFinite(entry.count))
+      .toSorted((left, right) => right.count - left.count)
+      .map((entry) => `${entry.playerName} ${entry.count}`)
+      .join(", ");
+
+    if (voteSummary !== "") {
+      details.push({ label: "Votes", value: voteSummary });
+    }
+  }
+
+  return details;
 }
 
 async function getVisiblePrivateEvents(

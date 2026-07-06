@@ -78,12 +78,70 @@ describe("game engine", () => {
     expect(resolution.deaths).toEqual([{ playerId: "3", reason: "attack" }]);
   });
 
+  it("keeps fox alive against a werewolf attack", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "fox" },
+      { alive: true, playerId: "3", roleId: "villager" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "1", kind: "attack", targetPlayerId: "2" }],
+      currentPhase: "night",
+      dayNumber: 1,
+      nightNumber: 2,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(3),
+    });
+
+    expect(resolution.deaths).toEqual([]);
+    expect(resolution.events.map((event) => event.kind)).toContain("attack_guarded");
+  });
+
+  it("kills fox after inspection as a rule effect", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "3", roleId: "fox" },
+      { alive: true, playerId: "4", roleId: "villager" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "2", kind: "inspect", targetPlayerId: "3" }],
+      currentPhase: "night",
+      dayNumber: 1,
+      nightNumber: 2,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+
+    expect(resolution.deaths).toEqual([{ playerId: "3", reason: "rule_effect" }]);
+    expect(resolution.events.map((event) => event.kind)).toContain("inspection_result");
+  });
+
+  it("executes the selected player when execution resolves", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "villager" },
+      { alive: true, playerId: "3", roleId: "seer" },
+      { alive: true, playerId: "4", roleId: "villager" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "2", kind: "execution_skip", targetPlayerId: null }],
+      currentPhase: "execution",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+
+    expect(resolution.deaths).toEqual([{ playerId: "2", reason: "execution" }]);
+    expect(resolution.events.map((event) => event.kind)).toContain("player_executed");
+  });
+
   it("evaluates fox as a high-priority winner", () => {
     expect(
       evaluateWinner([
         { alive: true, playerId: "1", roleId: "fox" },
         { alive: true, playerId: "2", roleId: "werewolf" },
-        { alive: true, playerId: "3", roleId: "villager" },
       ]),
     ).toEqual({
       reason: "A fox survived when another team condition resolved.",
