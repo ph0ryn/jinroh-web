@@ -62,6 +62,11 @@ type RoomRecord = {
   lobby_expires_at: string;
 };
 
+type RoomMutationResultRecord = RoomRecord & {
+  actor_player_id: number | null;
+  notification_reason: string | null;
+};
+
 type PlayerRecord = {
   account_id: number;
   display_name: string;
@@ -212,6 +217,25 @@ export async function createRoom(
   const roomCode = await createUniqueRoomCode(supabase);
   const lobbyExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const realtimeTopic = `room:${randomBytes(24).toString("base64url")}`;
+  const playerId = createPublicPlayerId();
+  const normalizedDisplayName = normalizeDisplayName(displayName);
+  const transactionResult = await callRoomMutationRpc(supabase, "app_create_room", {
+    p_account_id: account.id,
+    p_display_name: normalizedDisplayName,
+    p_lobby_expires_at: lobbyExpiresAt,
+    p_public_player_id: playerId,
+    p_public_room_code: roomCode,
+    p_realtime_topic: realtimeTopic,
+  });
+
+  if (transactionResult !== null) {
+    const room = toRoomRecord(transactionResult);
+
+    await broadcastMutationResult(supabase, room, transactionResult);
+
+    return getRoomViewByRoom(supabase, account, room);
+  }
+
   const { data: room, error: roomError } = await supabase
     .from("rooms")
     .insert({
@@ -228,12 +252,11 @@ export async function createRoom(
     throw new Error(roomError.message);
   }
 
-  const playerId = createPublicPlayerId();
   const { data: player, error: playerError } = await supabase
     .from("players")
     .insert({
       account_id: account.id,
-      display_name: normalizeDisplayName(displayName),
+      display_name: normalizedDisplayName,
       public_player_id: playerId,
       room_id: room.id,
       status: "joined",
@@ -271,6 +294,21 @@ export async function joinRoom(
   displayName: string,
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
+  const transactionResult = await callRoomMutationRpc(supabase, "app_join_room", {
+    p_account_id: account.id,
+    p_display_name: normalizeDisplayName(displayName),
+    p_public_player_id: createPublicPlayerId(),
+    p_room_code: roomCode,
+  });
+
+  if (transactionResult !== null) {
+    const room = toRoomRecord(transactionResult);
+
+    await broadcastMutationResult(supabase, room, transactionResult);
+
+    return getRoomViewByRoom(supabase, account, room);
+  }
+
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
   const activeRoom = await expireLobbyIfNeeded(supabase, room);
 
@@ -329,6 +367,19 @@ export async function getRoomView(account: AccountRecord, roomCode: string): Pro
 
 export async function leaveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
+  const transactionResult = await callRoomMutationRpc(supabase, "app_leave_room", {
+    p_account_id: account.id,
+    p_room_code: roomCode,
+  });
+
+  if (transactionResult !== null) {
+    const room = toRoomRecord(transactionResult);
+
+    await broadcastMutationResult(supabase, room, transactionResult);
+
+    return getRoomViewByRoom(supabase, account, room);
+  }
+
   const room = await expireLobbyIfNeeded(supabase, await getRoomByCodeOrThrow(supabase, roomCode));
   const player = await requirePlayerForAccount(supabase, room.id, account.id);
 
@@ -1245,6 +1296,18 @@ async function expireLobbyIfNeeded(
     return room;
   }
 
+  const transactionResult = await callRoomMutationRpc(supabase, "app_expire_lobby_if_needed", {
+    p_room_id: room.id,
+  });
+
+  if (transactionResult !== null) {
+    const expiredRoom = toRoomRecord(transactionResult);
+
+    await broadcastMutationResult(supabase, expiredRoom, transactionResult);
+
+    return expiredRoom;
+  }
+
   const { data, error } = await supabase
     .from("rooms")
     .update({ disbanded_at: new Date().toISOString(), status: "disbanded" })
@@ -1767,6 +1830,53 @@ async function insertRoomEvent(
   });
 
   throwIfMutationError(error);
+}
+
+async function callRoomMutationRpc(
+  supabase: SupabaseClient,
+  functionName: string,
+  args: Record<string, unknown>,
+): Promise<RoomMutationResultRecord | null> {
+  const { data, error } = await supabase.rpc(functionName, args).single<RoomMutationResultRecord>();
+
+  if (error !== null) {
+    if (isMissingRpcFunctionError(error)) {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+function isMissingRpcFunctionError(error: { code?: string; message: string }): boolean {
+  return (
+    error.code === "PGRST202" || /could not find the function|schema cache/iu.test(error.message)
+  );
+}
+
+function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
+  return {
+    host_account_id: record.host_account_id,
+    id: record.id,
+    lobby_expires_at: record.lobby_expires_at,
+    public_room_code: record.public_room_code,
+    realtime_topic: record.realtime_topic,
+    status: record.status,
+  };
+}
+
+async function broadcastMutationResult(
+  supabase: SupabaseClient,
+  room: RoomRecord,
+  result: RoomMutationResultRecord,
+): Promise<void> {
+  if (result.notification_reason === null) {
+    return;
+  }
+
+  await broadcastRoomInvalidation(supabase, room, result.notification_reason);
 }
 
 async function broadcastRoomInvalidation(
