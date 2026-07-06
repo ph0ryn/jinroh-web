@@ -1417,16 +1417,19 @@ async function broadcastRoomInvalidation(
   });
 
   try {
-    await channel.send({
-      event: "room_changed",
-      payload: buildRealtimeNotificationPayload({
+    const result = await channel.httpSend(
+      "room_changed",
+      buildRealtimeNotificationPayload({
         reason,
         roomCode: room.public_room_code,
         scope: "room",
         sentAt: new Date().toISOString(),
       }),
-      type: "broadcast",
-    });
+    );
+
+    if (!result.success) {
+      throw new Error(result.error);
+    }
   } catch {
     // Realtime is an invalidation layer; HTTP mutations remain authoritative.
   } finally {

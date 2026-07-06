@@ -393,7 +393,7 @@ export default function LivePage() {
   const selfActions = roomSummary?.self?.actions ?? [];
   const roomStatusLabel = formatRoomStatus(roomSummary);
   const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy);
-  const canStartGame = !isBusy && roomSummary?.isHost === true && roomSummary.status === "lobby";
+  const canStartGame = !isBusy && canStartRoom(roomSummary);
   const canAdvancePhase =
     !isBusy &&
     roomSummary?.isHost === true &&
@@ -937,8 +937,12 @@ function getLiveGuidance(
       return { label: "Lobby", message: "Waiting for the host to start the game." };
     }
 
-    if (summary.players.length < 3) {
+    if (countJoinedPlayers(summary) < 3) {
       return { label: "Invite", message: "Invite at least three players before starting." };
+    }
+
+    if (countJoinedPlayers(summary) > 10) {
+      return { label: "Full", message: "Keep this table to ten active players or fewer." };
     }
 
     return { label: "Ready", message: "Start the game when everyone is at the table." };
@@ -988,7 +992,29 @@ function getStartHint(summary: RoomSummary | null, isBusy: boolean): string {
     return "Start is only available while the room is in lobby.";
   }
 
+  if (countJoinedPlayers(summary) < 3) {
+    return "Invite at least three active players before starting.";
+  }
+
+  if (countJoinedPlayers(summary) > 10) {
+    return "Start supports three to ten active players.";
+  }
+
   return "Start the game when every player is seated.";
+}
+
+function canStartRoom(summary: RoomSummary | null): boolean {
+  if (summary === null || !summary.isHost || summary.status !== "lobby") {
+    return false;
+  }
+
+  const joinedPlayerCount = countJoinedPlayers(summary);
+
+  return joinedPlayerCount >= 3 && joinedPlayerCount <= 10;
+}
+
+function countJoinedPlayers(summary: RoomSummary): number {
+  return summary.players.filter((player) => player.status === "joined").length;
 }
 
 function getAdvanceHint(summary: RoomSummary | null, isBusy: boolean): string {
