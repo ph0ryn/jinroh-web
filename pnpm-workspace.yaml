@@ -1,0 +1,34 @@
+packages:
+  - .
+
+allowBuilds:
+  sharp: true
+
+catalog:
+  '@stylistic/eslint-plugin': ^5.10.0
+  '@supabase/supabase-js': ^2.110.0
+  '@types/node': ^26.1.0
+  '@types/react': ^19.2.17
+  '@types/react-dom': ^19.2.3
+  '@typescript/native-preview': 7.0.0-dev.20260704.1
+  eslint: ^10.6.0
+  eslint-plugin-oxlint: ^1.72.0
+  lint-staged: ^17.0.8
+  next: ^16.2.10
+  oxfmt: ^0.57.0
+  oxlint: ^1.72.0
+  oxlint-tsgolint: ^0.24.0
+  react: ^19.2.7
+  react-dom: ^19.2.7
+  sort-package-json: ^4.0.0
+  typescript: ^6.0.3
+  typescript-eslint: ^8.62.1
+  vitest: ^4.1.9
+
+catalogMode: strict
+
+enablePrePostScripts: true
+
+minimumReleaseAge: 2880
+
+shellEmulator: true

@@ -1,0 +1,41 @@
+{
+  "name": "jinroh-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "fix": "oxlint --type-aware --type-check --fix && pnpm run format",
+    "format": "pnpm run lint --fix && oxfmt",
+    "preinstall": "npx only-allow pnpm",
+    "postinstall": "git config core.hooksPath .githooks",
+    "lint": "eslint && oxlint --type-aware --type-check",
+    "precommit": "pnpm run fix && eslint",
+    "start": "next start",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-oxlint": "catalog:",
+    "lint-staged": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "sort-package-json": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
+  },
+  "packageManager": "pnpm@11.1.1"
+}
