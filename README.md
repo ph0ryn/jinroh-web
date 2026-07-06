@@ -83,16 +83,18 @@ The expected result is one `rooms_active_code_unique` row and no
 ## Validation
 
 ```sh
-pnpm test
-pnpm run test:e2e
 pnpm run lint
+pnpm test
 pnpm run build
+pnpm run test:e2e
 ```
 
 The focused tests cover ruleset validation, token hashing, secret-safe game
 events, role-scoped night actions, winner judgement, and player result mapping.
-The E2E smoke test launches three isolated browser contexts and plays a room
-from creation through the final result, including the execution timeout path.
+The E2E smoke test starts the built app with `next start`, launches three
+isolated browser contexts, and plays a room from creation through the final
+result, including the execution timeout path. To test an already running
+deployment, pass `E2E_BASE_URL=https://... pnpm run test:e2e`.
 
 ## Architecture
 

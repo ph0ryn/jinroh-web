@@ -77,6 +77,7 @@ type Scenario = {
 
 type ActivityItem = {
   readonly id: string;
+  readonly dateTime: string;
   readonly time: string;
   readonly icon: IconName;
   readonly text: string;
@@ -381,6 +382,7 @@ const fallbackPlayer: Player = {
 
 const initialActivityItems: readonly ActivityItem[] = [
   {
+    dateTime: "2026-07-07T20:18:00+09:00",
     icon: "people",
     id: "activity-room",
     text: "Room 428913 opened with eight joined players.",
@@ -388,6 +390,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     visibility: "public",
   },
   {
+    dateTime: "2026-07-07T20:21:00+09:00",
     icon: "moon",
     id: "activity-night",
     text: "Night started. Role actions are waiting for eligible players.",
@@ -395,6 +398,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     visibility: "private",
   },
   {
+    dateTime: "2026-07-07T20:22:00+09:00",
     icon: "eye",
     id: "activity-seer",
     text: "Seer action submitted. Public room state remains unchanged.",
@@ -402,6 +406,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     visibility: "private",
   },
   {
+    dateTime: "2026-07-07T20:28:00+09:00",
     icon: "vote",
     id: "activity-vote",
     text: "Voting phase prepared with one action per living player.",
@@ -492,6 +497,7 @@ export function JinrohSurface() {
 
   function handlePrimaryAction() {
     const nextActivityItem: ActivityItem = {
+      dateTime: new Date().toISOString(),
       icon: primaryIconForPhase(scenario.phase),
       id: `activity-${Date.now()}`,
       text: `${scenario.primaryAction} confirmed in the local demo surface.`,
@@ -916,7 +922,7 @@ function ActivityStrip({ activityItems }: { readonly activityItems: readonly Act
       <div className="activityRows">
         {activityItems.map((activityItem) => (
           <div className="activityRow" key={activityItem.id}>
-            <time>{activityItem.time}</time>
+            <time dateTime={activityItem.dateTime}>{activityItem.time}</time>
             <Icon name={activityItem.icon} />
             <span>{activityItem.text}</span>
             <strong>{activityItem.visibility}</strong>

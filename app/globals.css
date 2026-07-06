@@ -481,10 +481,10 @@ a {
   align-items: center;
   align-self: start;
   display: grid;
-  height: clamp(330px, calc(100svh - 300px), 500px);
   justify-items: center;
-  min-height: 0;
-  overflow: hidden;
+  min-height: clamp(330px, calc(100svh - 300px), 500px);
+  overflow: visible;
+  padding-block: 12px;
 }
 
 .tableSurface {
@@ -1075,7 +1075,7 @@ a {
   }
 
   .tableBoard {
-    height: clamp(340px, calc(100svh - 330px), 430px);
+    min-height: clamp(340px, calc(100svh - 330px), 430px);
   }
 
   .tableSurface {
@@ -1265,7 +1265,7 @@ a {
   }
 
   .tableBoard {
-    height: clamp(310px, calc(100svh - 300px), 360px);
+    min-height: clamp(310px, calc(100svh - 300px), 360px);
   }
 
   .tableSurface {
@@ -1797,6 +1797,7 @@ a {
 
 @media (max-width: 720px) {
   .liveShell {
+    background-attachment: scroll, scroll;
     padding: 14px;
   }
 

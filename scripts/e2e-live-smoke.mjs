@@ -6,8 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
-const DEFAULT_EXISTING_URLS = ["http://localhost:3000", "http://127.0.0.1:3000"];
-const DEFAULT_MANAGED_URL = "http://localhost:3010";
+const DEFAULT_MANAGED_URL = `http://localhost:${process.env.E2E_PORT ?? "3010"}`;
 const SCREENSHOT_DIR =
   process.env.E2E_SCREENSHOT_DIR ?? join(tmpdir(), `jinroh-web-e2e-${Date.now()}`);
 const EXECUTION_TIMEOUT_WAIT_MS = Number(process.env.E2E_EXECUTION_TIMEOUT_WAIT_MS ?? "61500");
@@ -38,15 +37,9 @@ async function resolveBaseUrl() {
     return trimTrailingSlash(process.env.E2E_BASE_URL);
   }
 
-  for (const candidate of DEFAULT_EXISTING_URLS) {
-    if (await isReachable(candidate)) {
-      return candidate;
-    }
-  }
-
   const managedServer = spawn(
     "pnpm",
-    ["exec", "next", "dev", "--hostname", "localhost", "--port", "3010"],
+    ["exec", "next", "start", "--hostname", "localhost", "--port", process.env.E2E_PORT ?? "3010"],
     {
       env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
       stdio: ["ignore", "pipe", "pipe"],
@@ -64,13 +57,13 @@ async function resolveBaseUrl() {
     }
 
     if (managedServer.exitCode !== null) {
-      throw new Error(`Next dev server exited early.\n${output.join("")}`);
+      throw new Error(`Next start server exited early.\n${output.join("")}`);
     }
 
     await delay(250);
   }
 
-  throw new Error(`Timed out waiting for Next dev server.\n${output.join("")}`);
+  throw new Error(`Timed out waiting for Next start server.\n${output.join("")}`);
 }
 
 async function isReachable(baseUrl) {

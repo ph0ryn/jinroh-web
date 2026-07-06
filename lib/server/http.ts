@@ -35,13 +35,9 @@ export function parseBearerToken(request: Request): string | null {
     return null;
   }
 
-  const [scheme, token] = header.split(" ");
+  const match = /^Bearer (?<token>\S+)$/iu.exec(header.trim());
 
-  if (scheme?.toLowerCase() !== "bearer" || token === undefined || token.trim() === "") {
-    return null;
-  }
-
-  return token;
+  return match?.groups?.["token"] ?? null;
 }
 
 export async function readJson<Body>(request: Request): Promise<Body | null> {

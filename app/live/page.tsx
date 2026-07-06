@@ -73,7 +73,7 @@ export default function LivePage() {
     try {
       await work();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "The request failed.");
+      setStatusMessage(toRequestFailureMessage(error));
     } finally {
       setIsBusy(false);
     }
@@ -708,7 +708,7 @@ function EventLog({ summary }: { readonly summary: RoomSummary | null }) {
     <ol className="liveEventList">
       {events.map((event) => (
         <li key={`${event.kind}:${event.createdAt}`}>
-          <time>{formatDateTime(event.createdAt)}</time>
+          <time dateTime={event.createdAt}>{formatDateTime(event.createdAt)}</time>
           <strong>{formatEventKind(event.kind)}</strong>
           <p>{event.message}</p>
           {event.details.length === 0 ? null : (
@@ -766,6 +766,17 @@ function extractErrorMessage(value: unknown, status: number): string {
   }
 
   return `Request failed with HTTP ${status}.`;
+}
+
+function toRequestFailureMessage(error: unknown): string {
+  if (
+    error instanceof TypeError ||
+    (error instanceof Error && /failed to fetch|load failed|networkerror/iu.test(error.message))
+  ) {
+    return "Cannot reach the table. Check your connection, then try again.";
+  }
+
+  return error instanceof Error ? error.message : "The request failed.";
 }
 
 function isApiErrorResponse(value: unknown): value is ApiErrorResponse {

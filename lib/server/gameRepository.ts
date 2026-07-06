@@ -244,12 +244,20 @@ export async function createRoom(
     throw new Error(playerError.message);
   }
 
-  await supabase.from("game_states").insert({ room_id: room.id, status: "waiting" });
-  await supabase.from("realtime_topics").insert({
+  const { error: stateError } = await supabase
+    .from("game_states")
+    .insert({ room_id: room.id, status: "waiting" });
+
+  throwIfMutationError(stateError);
+
+  const { error: realtimeTopicError } = await supabase.from("realtime_topics").insert({
     room_id: room.id,
     scope: "room",
     topic: realtimeTopic,
   });
+
+  throwIfMutationError(realtimeTopicError);
+
   await insertRoomEvent(supabase, room.id, "room_created", player.id, account.id, {});
 
   return getRoomViewByRoom(supabase, account, room);
@@ -322,7 +330,7 @@ export async function getRoomView(account: AccountRecord, roomCode: string): Pro
 
 export async function leaveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
-  const room = await getRoomByCodeOrThrow(supabase, roomCode);
+  const room = await expireLobbyIfNeeded(supabase, await getRoomByCodeOrThrow(supabase, roomCode));
   const player = await requirePlayerForAccount(supabase, room.id, account.id);
 
   await supabase
@@ -365,6 +373,8 @@ export async function startRoom(
   if (room.host_account_id !== account.id) {
     throw new Error("Only the host can start the game.");
   }
+
+  await requireJoinedPlayerForAccount(supabase, room.id, account.id);
 
   if (room.status !== "lobby") {
     throw new Error("Room must be in lobby.");
@@ -472,7 +482,7 @@ export async function submitAction(
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
-  const player = await requirePlayerForAccount(supabase, room.id, account.id);
+  const player = await requireJoinedPlayerForAccount(supabase, room.id, account.id);
   const state = await getGameState(supabase, room.id);
   const assignment = await getAssignmentForPlayer(supabase, room.id, player.id);
   const submitterRoleId =
@@ -542,7 +552,7 @@ export async function submitAction(
 export async function resolveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
-  await requirePlayerForAccount(supabase, room.id, account.id);
+  await requireJoinedPlayerForAccount(supabase, room.id, account.id);
 
   if (room.host_account_id !== account.id) {
     throw new Error("Only the host can advance the phase.");
@@ -753,7 +763,10 @@ async function getRoomViewByRoom(
       getFinalOutcome(supabase, room.id),
       getPlayerResults(supabase, room.id),
     ]);
-  const currentPlayer = players.find((player) => player.account_id === account.id) ?? null;
+  const currentPlayer =
+    players.find((player) => player.account_id === account.id && player.status === "joined") ??
+    null;
+  const isHost = currentPlayer !== null && room.host_account_id === account.id;
   const assignmentByPlayer = new Map(
     assignments.map((assignment) => [assignment.player_id, assignment]),
   );
@@ -821,7 +834,7 @@ async function getRoomViewByRoom(
     hostPlayerId:
       players.find((player) => player.account_id === room.host_account_id)?.public_player_id ??
       null,
-    isHost: room.host_account_id === account.id,
+    isHost,
     lobbyExpiresAt: room.lobby_expires_at,
     players: publicPlayers,
     realtime: currentPlayer === null ? null : { topic: room.realtime_topic },
@@ -1200,6 +1213,20 @@ async function getRoomByCodeOrThrow(
   return data;
 }
 
+async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Promise<RoomRecord> {
+  const { data, error } = await supabase
+    .from("rooms")
+    .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
+    .eq("id", roomId)
+    .maybeSingle<RoomRecord>();
+
+  if (error !== null || data === null) {
+    throw new Error("Room not found.");
+  }
+
+  return data;
+}
+
 async function expireLobbyIfNeeded(
   supabase: SupabaseClient,
   room: RoomRecord,
@@ -1214,10 +1241,14 @@ async function expireLobbyIfNeeded(
     .eq("id", room.id)
     .eq("status", "lobby")
     .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
-    .single<RoomRecord>();
+    .maybeSingle<RoomRecord>();
 
   if (error !== null) {
     throw new Error(error.message);
+  }
+
+  if (data === null) {
+    return getRoomByIdOrThrow(supabase, room.id);
   }
 
   await insertRoomEvent(supabase, room.id, "room_disbanded", null, null, {
@@ -1255,6 +1286,20 @@ async function requirePlayerForAccount(
 
   if (player === null) {
     throw new Error("Current account is not a room player.");
+  }
+
+  return player;
+}
+
+async function requireJoinedPlayerForAccount(
+  supabase: SupabaseClient,
+  roomId: number,
+  accountId: number,
+): Promise<PlayerRecord> {
+  const player = await requirePlayerForAccount(supabase, roomId, accountId);
+
+  if (player.status !== "joined") {
+    throw new Error("Current account is not an active room player.");
   }
 
   return player;
