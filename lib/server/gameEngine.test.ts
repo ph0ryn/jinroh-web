@@ -58,6 +58,42 @@ describe("game engine", () => {
     ).not.toContain("1");
   });
 
+  it("removes the previous guard target when consecutive guard is denied", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "guard" },
+      { alive: true, playerId: "3", roleId: "seer" },
+      { alive: true, playerId: "4", roleId: "villager" },
+    ];
+    const ruleSet = {
+      ...makeDefaultRuleSetForPlayers(players.length),
+      guardConsecutiveTargetPolicy: "deny" as const,
+    };
+    const guardAction = getAvailableNightActions(players, 3, ruleSet, { "2": "3" }).find(
+      (action) => action.kind === "guard",
+    );
+
+    expect(guardAction?.eligibleTargetPlayerIds).not.toContain("3");
+    expect(guardAction?.eligibleTargetPlayerIds).toContain("4");
+  });
+
+  it("keeps the previous guard target eligible when consecutive guard is allowed", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "guard" },
+      { alive: true, playerId: "3", roleId: "seer" },
+    ];
+    const ruleSet = {
+      ...makeDefaultRuleSetForPlayers(players.length),
+      guardConsecutiveTargetPolicy: "allow" as const,
+    };
+    const guardAction = getAvailableNightActions(players, 3, ruleSet, { "2": "3" }).find(
+      (action) => action.kind === "guard",
+    );
+
+    expect(guardAction?.eligibleTargetPlayerIds).toContain("3");
+  });
+
   it("keeps normal night from resolving early unless caller asks after timeout", () => {
     const players: PlayerRuntimeState[] = [
       { alive: true, playerId: "1", roleId: "werewolf" },
@@ -115,6 +151,85 @@ describe("game engine", () => {
 
     expect(resolution.deaths).toEqual([{ playerId: "3", reason: "rule_effect" }]);
     expect(resolution.events.map((event) => event.kind)).toContain("inspection_result");
+  });
+
+  it("records guard target internally for the next night", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "guard" },
+      { alive: true, playerId: "3", roleId: "seer" },
+      { alive: true, playerId: "4", roleId: "villager" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "2", kind: "guard", targetPlayerId: "3" }],
+      currentPhase: "night",
+      dayNumber: 1,
+      nightNumber: 2,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(players.length),
+    });
+    const guardEvent = resolution.events.find((event) => event.kind === "guard_resolved");
+
+    expect(guardEvent).toMatchObject({
+      payload: { actorPlayerId: "2", targetPlayerId: "3" },
+      visibility: "internal",
+    });
+  });
+
+  it("keeps voter targets out of count-only public vote payloads", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "3", roleId: "villager" },
+    ];
+    const ruleSet = {
+      ...makeDefaultRuleSetForPlayers(players.length),
+      voteResultVisibility: "count_only" as const,
+    };
+    const resolution = resolvePhase({
+      actions: [
+        { actorPlayerId: "1", kind: "vote", targetPlayerId: "2" },
+        { actorPlayerId: "3", kind: "vote", targetPlayerId: "2" },
+      ],
+      currentPhase: "voting",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet,
+    });
+    const voteEvent = resolution.events.find((event) => event.kind === "vote_resolved");
+
+    expect(voteEvent?.payload).toMatchObject({ executionCandidatePlayerId: "2" });
+    expect(voteEvent?.payload["acceptedVotes"]).toBeUndefined();
+  });
+
+  it("includes voter targets in voter-to-target public vote payloads", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "3", roleId: "villager" },
+    ];
+    const ruleSet = {
+      ...makeDefaultRuleSetForPlayers(players.length),
+      voteResultVisibility: "voter_to_target" as const,
+    };
+    const resolution = resolvePhase({
+      actions: [
+        { actorPlayerId: "1", kind: "vote", targetPlayerId: "2" },
+        { actorPlayerId: "3", kind: "vote", targetPlayerId: "2" },
+      ],
+      currentPhase: "voting",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet,
+    });
+    const voteEvent = resolution.events.find((event) => event.kind === "vote_resolved");
+
+    expect(voteEvent?.payload["acceptedVotes"]).toEqual([
+      { targetPlayerId: "2", voterPlayerId: "1" },
+      { targetPlayerId: "2", voterPlayerId: "3" },
+    ]);
   });
 
   it("executes the selected player when execution resolves", () => {

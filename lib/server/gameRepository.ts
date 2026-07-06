@@ -407,14 +407,18 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
     return getRoomViewByRoom(supabase, account, room);
   }
 
-  const runtimePlayers = await getRuntimePlayers(supabase, room.id);
-  const ruleSet = await getRuleSet(supabase, room.id);
+  const [runtimePlayers, ruleSet, previousGuardTargetByPlayerId] = await Promise.all([
+    getRuntimePlayers(supabase, room.id),
+    getRuleSet(supabase, room.id),
+    getPreviousGuardTargetByPlayerId(supabase, room.id),
+  ]);
   const resolution = resolvePhase({
     actions: toSubmittedResolutionActions(actions, currentPendingActions, state, phaseTimedOut),
     currentPhase: state.phase,
     dayNumber: state.day_number,
     nightNumber: state.night_number,
     players: runtimePlayers,
+    previousGuardTargetByPlayerId,
     ruleSet,
   });
   const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
@@ -1101,6 +1105,37 @@ async function getPendingActions(
   return data;
 }
 
+async function getPreviousGuardTargetByPlayerId(
+  supabase: SupabaseClient,
+  roomId: number,
+): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from("game_events")
+    .select("payload,created_at")
+    .eq("room_id", roomId)
+    .eq("event_kind", "guard_resolved")
+    .eq("visibility", "internal")
+    .order("created_at", { ascending: true })
+    .returns<Pick<GameEventRecord, "created_at" | "payload">[]>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  const previousGuardTargetByPlayerId: Record<string, string> = {};
+
+  for (const event of data) {
+    const actorPlayerId = event.payload["actorPlayerId"];
+    const targetPlayerId = event.payload["targetPlayerId"];
+
+    if (typeof actorPlayerId === "string" && typeof targetPlayerId === "string") {
+      previousGuardTargetByPlayerId[actorPlayerId] = targetPlayerId;
+    }
+  }
+
+  return previousGuardTargetByPlayerId;
+}
+
 async function getPublicEvents(
   supabase: SupabaseClient,
   roomId: number,
@@ -1178,6 +1213,27 @@ function toVoteResolvedDetails(
 
     if (voteSummary !== "") {
       details.push({ label: "Votes", value: voteSummary });
+    }
+  }
+
+  const acceptedVotes = payload["acceptedVotes"];
+
+  if (Array.isArray(acceptedVotes)) {
+    const voterSummary = acceptedVotes
+      .flatMap((vote): string[] => {
+        if (!isRecord(vote)) {
+          return [];
+        }
+
+        const voterName = getOptionalPayloadPlayerName(vote["voterPlayerId"], players);
+        const targetName = getOptionalPayloadPlayerName(vote["targetPlayerId"], players);
+
+        return voterName === null || targetName === null ? [] : [`${voterName} -> ${targetName}`];
+      })
+      .join(", ");
+
+    if (voterSummary !== "") {
+      details.push({ label: "Ballots", value: voterSummary });
     }
   }
 

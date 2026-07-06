@@ -75,6 +75,7 @@ export type PhaseResolutionInput = {
   dayNumber: number;
   nightNumber: number;
   players: PlayerRuntimeState[];
+  previousGuardTargetByPlayerId?: Record<string, string>;
   ruleSet: RuleSet;
 };
 
@@ -165,6 +166,8 @@ export function resolvePhase(input: PhaseResolutionInput): PhaseResolution {
 export function getAvailableNightActions(
   players: readonly PlayerRuntimeState[],
   nightNumber: number,
+  ruleSet: RuleSet = makeDefaultRuleSetForPlayers(players.length),
+  previousGuardTargetByPlayerId: Readonly<Record<string, string>> = {},
 ): EngineAction[] {
   if (nightNumber <= 1) {
     return [];
@@ -205,16 +208,26 @@ export function getAvailableNightActions(
     }
 
     if (player.roleId === "guard") {
-      actions.push({
-        actorPlayerId: player.playerId,
-        actorRoleId: "guard",
-        eligibleTargetPlayerIds: alivePlayers
-          .filter((target) => target.playerId !== player.playerId)
-          .map((target) => target.playerId),
-        key: `guard:${nightNumber}:${player.playerId}`,
-        kind: "guard",
-        targetKind: "single_player",
-      });
+      const previousTargetId = previousGuardTargetByPlayerId[player.playerId];
+      const eligibleTargetPlayerIds = alivePlayers
+        .filter((target) => target.playerId !== player.playerId)
+        .filter(
+          (target) =>
+            ruleSet.guardConsecutiveTargetPolicy === "allow" ||
+            target.playerId !== previousTargetId,
+        )
+        .map((target) => target.playerId);
+
+      if (eligibleTargetPlayerIds.length > 0) {
+        actions.push({
+          actorPlayerId: player.playerId,
+          actorRoleId: "guard",
+          eligibleTargetPlayerIds,
+          key: `guard:${nightNumber}:${player.playerId}`,
+          kind: "guard",
+          targetKind: "single_player",
+        });
+      }
     }
   }
 
@@ -357,13 +370,26 @@ function createInitialInspectionEvents(
 
 function resolveNight(input: PhaseResolutionInput): PhaseResolution {
   const attack = input.actions.find((action) => action.kind === "attack");
-  const guardTargets = new Set(
-    input.actions
-      .filter((action) => action.kind === "guard" && action.targetPlayerId !== null)
-      .map((action) => action.targetPlayerId),
+  const guardActions = input.actions.filter(
+    (action) => action.kind === "guard" && action.targetPlayerId !== null,
   );
+  const guardTargets = new Set(guardActions.map((action) => action.targetPlayerId));
   const events: EngineEvent[] = [];
   const deaths: { playerId: string; reason: "attack" | "rule_effect" }[] = [];
+
+  for (const guardAction of guardActions) {
+    events.push({
+      kind: "guard_resolved",
+      message: null,
+      payload: {
+        actorPlayerId: guardAction.actorPlayerId,
+        targetPlayerId: guardAction.targetPlayerId,
+      },
+      visibility: "internal",
+      visibleToPlayerIds: [],
+      visibleToRoleIds: [],
+    });
+  }
 
   for (const inspect of input.actions.filter((action) => action.kind === "inspect")) {
     const target = input.players.find((player) => player.playerId === inspect.targetPlayerId);
@@ -563,7 +589,7 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
       {
         kind: "vote_resolved",
         message: "Voting ended with no execution.",
-        payload: { voteCountsByTarget: Object.fromEntries(voteCounts) },
+        payload: toVoteResolvedPayload(input, voteCounts),
         visibility: "public",
         visibleToPlayerIds: [],
         visibleToRoleIds: [],
@@ -587,10 +613,7 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
       {
         kind: "vote_resolved",
         message: "Voting selected an execution candidate.",
-        payload: {
-          executionCandidatePlayerId: top[0],
-          voteCountsByTarget: Object.fromEntries(voteCounts),
-        },
+        payload: toVoteResolvedPayload(input, voteCounts, top[0]),
         visibility: "public",
         visibleToPlayerIds: [],
         visibleToRoleIds: [],
@@ -602,6 +625,32 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
     nextPhase: "execution",
     nextPhaseDurationSeconds: 60,
   };
+}
+
+function toVoteResolvedPayload(
+  input: PhaseResolutionInput,
+  voteCounts: ReadonlyMap<string, number>,
+  executionCandidatePlayerId?: string,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    voteCountsByTarget: Object.fromEntries(voteCounts),
+  };
+
+  if (executionCandidatePlayerId !== undefined) {
+    payload["executionCandidatePlayerId"] = executionCandidatePlayerId;
+  }
+
+  if (input.ruleSet.voteResultVisibility === "voter_to_target") {
+    payload["acceptedVotes"] = input.actions
+      .filter((action) => action.kind === "vote" && action.targetPlayerId !== null)
+      .map((action) => ({
+        targetPlayerId: action.targetPlayerId,
+        voterPlayerId: action.actorPlayerId,
+      }))
+      .toSorted((left, right) => left.voterPlayerId.localeCompare(right.voterPlayerId));
+  }
+
+  return payload;
 }
 
 function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
@@ -667,7 +716,12 @@ function openNight(
   const nextNightNumber = input.nightNumber + 1;
 
   return {
-    actionsToOpen: getAvailableNightActions(nextPlayers, nextNightNumber),
+    actionsToOpen: getAvailableNightActions(
+      nextPlayers,
+      nextNightNumber,
+      input.ruleSet,
+      input.previousGuardTargetByPlayerId,
+    ),
     deaths,
     events: [
       ...events,
