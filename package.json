@@ -12,7 +12,8 @@
     "lint": "eslint && oxlint --type-aware --type-check",
     "precommit": "pnpm run fix && eslint",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e-live-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "catalog:",
@@ -32,6 +33,7 @@
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
+    "playwright": "catalog:",
     "sort-package-json": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",

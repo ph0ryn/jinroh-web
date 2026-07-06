@@ -65,16 +65,34 @@ pnpm dev
 Apply the Supabase schema files in `supabase/migrations/` to a fresh Supabase
 project before using the app.
 
+For an existing Supabase project, apply migrations in order. To verify room-code
+reuse hardening after `0003_restore_active_room_code_reuse.sql`, run:
+
+```sql
+select indexname, indexdef
+from pg_indexes
+where schemaname = 'public'
+  and tablename = 'rooms'
+  and indexname in ('rooms_active_code_unique', 'rooms_public_room_code_global_unique')
+order by indexname;
+```
+
+The expected result is one `rooms_active_code_unique` row and no
+`rooms_public_room_code_global_unique` row.
+
 ## Validation
 
 ```sh
 pnpm test
+pnpm run test:e2e
 pnpm run lint
 pnpm run build
 ```
 
 The focused tests cover ruleset validation, token hashing, secret-safe game
 events, role-scoped night actions, winner judgement, and player result mapping.
+The E2E smoke test launches three isolated browser contexts and plays a room
+from creation through the final result, including the execution timeout path.
 
 ## Architecture
 
