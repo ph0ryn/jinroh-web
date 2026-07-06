@@ -112,6 +112,7 @@ type CurrentActionRecord = {
 };
 
 type PendingActionRecord = {
+  id: number;
   current_action_id: number;
   submitter_player_id: number;
   submitted_at: string;
@@ -151,6 +152,8 @@ type GameRuleSetRecord = {
   options: Record<string, unknown>;
   role_counts: Record<string, unknown>;
 };
+
+type JsonObject = Record<string, unknown>;
 
 export type IdentityResult = {
   token: string;
@@ -227,63 +230,9 @@ export async function createRoom(
     p_public_room_code: roomCode,
     p_realtime_topic: realtimeTopic,
   });
+  const room = toRoomRecord(transactionResult);
 
-  if (transactionResult !== null) {
-    const room = toRoomRecord(transactionResult);
-
-    await broadcastMutationResult(supabase, room, transactionResult);
-
-    return getRoomViewByRoom(supabase, account, room);
-  }
-
-  const { data: room, error: roomError } = await supabase
-    .from("rooms")
-    .insert({
-      host_account_id: account.id,
-      lobby_expires_at: lobbyExpiresAt,
-      public_room_code: roomCode,
-      realtime_topic: realtimeTopic,
-      status: "lobby",
-    })
-    .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
-    .single<RoomRecord>();
-
-  if (roomError !== null) {
-    throw new Error(roomError.message);
-  }
-
-  const { data: player, error: playerError } = await supabase
-    .from("players")
-    .insert({
-      account_id: account.id,
-      display_name: normalizedDisplayName,
-      public_player_id: playerId,
-      room_id: room.id,
-      status: "joined",
-    })
-    .select("id,public_player_id,room_id,account_id,display_name,status")
-    .single<PlayerRecord>();
-
-  if (playerError !== null) {
-    throw new Error(playerError.message);
-  }
-
-  const { error: stateError } = await supabase
-    .from("game_states")
-    .insert({ room_id: room.id, status: "waiting" });
-
-  throwIfMutationError(stateError);
-
-  const { error: realtimeTopicError } = await supabase.from("realtime_topics").insert({
-    room_id: room.id,
-    scope: "room",
-    topic: realtimeTopic,
-  });
-
-  throwIfMutationError(realtimeTopicError);
-
-  await insertRoomEvent(supabase, room.id, "room_created", player.id, account.id, {});
-  await broadcastRoomInvalidation(supabase, room, "room_created");
+  await broadcastMutationResult(supabase, room, transactionResult);
 
   return getRoomViewByRoom(supabase, account, room);
 }
@@ -300,61 +249,11 @@ export async function joinRoom(
     p_public_player_id: createPublicPlayerId(),
     p_room_code: roomCode,
   });
+  const room = toRoomRecord(transactionResult);
 
-  if (transactionResult !== null) {
-    const room = toRoomRecord(transactionResult);
+  await broadcastMutationResult(supabase, room, transactionResult);
 
-    await broadcastMutationResult(supabase, room, transactionResult);
-
-    return getRoomViewByRoom(supabase, account, room);
-  }
-
-  const room = await getRoomByCodeOrThrow(supabase, roomCode);
-  const activeRoom = await expireLobbyIfNeeded(supabase, room);
-
-  if (activeRoom.status !== "lobby" && activeRoom.status !== "playing") {
-    throw new Error("Room is not joinable.");
-  }
-
-  const existingPlayer = await getPlayerForAccount(supabase, activeRoom.id, account.id);
-
-  if (existingPlayer !== null) {
-    const eventKind = existingPlayer.status === "left" ? "player_joined" : "player_reconnected";
-
-    await supabase
-      .from("players")
-      .update({ last_seen_at: new Date().toISOString(), status: "joined" })
-      .eq("id", existingPlayer.id);
-    await insertRoomEvent(supabase, activeRoom.id, eventKind, existingPlayer.id, account.id, {});
-    await broadcastRoomInvalidation(supabase, activeRoom, eventKind);
-
-    return getRoomViewByRoom(supabase, account, activeRoom);
-  }
-
-  if (activeRoom.status !== "lobby") {
-    throw new Error("New players can only join during lobby.");
-  }
-
-  const { data: player, error } = await supabase
-    .from("players")
-    .insert({
-      account_id: account.id,
-      display_name: normalizeDisplayName(displayName),
-      public_player_id: createPublicPlayerId(),
-      room_id: activeRoom.id,
-      status: "joined",
-    })
-    .select("id,public_player_id,room_id,account_id,display_name,status")
-    .single<PlayerRecord>();
-
-  if (error !== null) {
-    throw new Error(error.message);
-  }
-
-  await insertRoomEvent(supabase, activeRoom.id, "player_joined", player.id, account.id, {});
-  await broadcastRoomInvalidation(supabase, activeRoom, "player_joined");
-
-  return getRoomViewByRoom(supabase, account, activeRoom);
+  return getRoomViewByRoom(supabase, account, room);
 }
 
 export async function getRoomView(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
@@ -371,49 +270,11 @@ export async function leaveRoom(account: AccountRecord, roomCode: string): Promi
     p_account_id: account.id,
     p_room_code: roomCode,
   });
+  const room = toRoomRecord(transactionResult);
 
-  if (transactionResult !== null) {
-    const room = toRoomRecord(transactionResult);
+  await broadcastMutationResult(supabase, room, transactionResult);
 
-    await broadcastMutationResult(supabase, room, transactionResult);
-
-    return getRoomViewByRoom(supabase, account, room);
-  }
-
-  const room = await expireLobbyIfNeeded(supabase, await getRoomByCodeOrThrow(supabase, roomCode));
-  const player = await requirePlayerForAccount(supabase, room.id, account.id);
-
-  await supabase
-    .from("players")
-    .update({ left_at: new Date().toISOString(), status: "left" })
-    .eq("id", player.id);
-  await insertRoomEvent(supabase, room.id, "player_left", player.id, account.id, {});
-
-  let nextRoom = room;
-  let reason = "player_left";
-
-  if (room.status === "lobby" && room.host_account_id === account.id) {
-    const { data, error } = await supabase
-      .from("rooms")
-      .update({ disbanded_at: new Date().toISOString(), status: "disbanded" })
-      .eq("id", room.id)
-      .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
-      .single<RoomRecord>();
-
-    if (error !== null) {
-      throw new Error(error.message);
-    }
-
-    nextRoom = data;
-    await insertRoomEvent(supabase, room.id, "room_disbanded", player.id, account.id, {
-      reason: "host_left_lobby",
-    });
-    reason = "room_disbanded";
-  }
-
-  await broadcastRoomInvalidation(supabase, nextRoom, reason);
-
-  return getRoomViewByRoom(supabase, account, nextRoom);
+  return getRoomViewByRoom(supabase, account, room);
 }
 
 export async function startRoom(
@@ -447,85 +308,29 @@ export async function startRoom(
 
   const phaseInstanceId = randomUUID();
   const phaseEndsAt = secondsFromNow(startResult.phaseDurationSeconds);
-
-  const { data: claimedRoom, error: claimedRoomError } = await supabase
-    .from("rooms")
-    .update({ started_at: new Date().toISOString(), status: "playing" })
-    .eq("id", room.id)
-    .eq("status", "lobby")
-    .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
-    .single<RoomRecord>();
-
-  if (claimedRoomError !== null) {
-    throw new Error("Room must be in lobby.");
-  }
-
-  const { error: ruleSetError } = await supabase.from("game_rule_sets").insert({
-    engine_version: ENGINE_VERSION,
-    options: {
-      dayMode: startResult.ruleSet.dayMode,
-      guardConsecutiveTargetPolicy: startResult.ruleSet.guardConsecutiveTargetPolicy,
-      initialInspectionPolicy: startResult.ruleSet.initialInspectionPolicy,
-      voteResultVisibility: startResult.ruleSet.voteResultVisibility,
-    },
-    role_counts: startResult.ruleSet.roleCounts,
-    role_registry_version: ROLE_REGISTRY_VERSION,
-    room_id: room.id,
-  });
-
-  throwIfMutationError(ruleSetError);
-
-  const { error: stateError } = await supabase
-    .from("game_states")
-    .update({
-      night_number: 1,
-      phase: "night",
-      phase_ends_at: phaseEndsAt,
-      phase_instance_id: phaseInstanceId,
-      phase_started_at: new Date().toISOString(),
-      resolved_role_setup: {
-        activeRoleIds: Object.entries(startResult.ruleSet.roleCounts)
-          .filter(([, count]) => count > 0)
-          .map(([roleId]) => roleId),
-        engineVersion: ENGINE_VERSION,
-        roleRegistryVersion: ROLE_REGISTRY_VERSION,
-      },
-      revision: 1,
-      status: "playing",
-    })
-    .eq("room_id", room.id)
-    .eq("status", "waiting")
-    .select("id")
-    .single<{ id: number }>();
-
-  throwIfMutationError(stateError);
-
-  const { error: assignmentError } = await supabase.from("role_assignments").insert(
-    startResult.assignments.map((assignment) => ({
-      player_id: Number(assignment.playerId),
+  const transactionResult = await callRoomMutationRpc(supabase, "app_start_room", {
+    p_account_id: account.id,
+    p_actions: serializeActions(startResult.actions),
+    p_assignments: startResult.assignments.map((assignment) => ({
+      player_id: Number.parseInt(assignment.playerId, 10),
       role_id: assignment.roleId,
-      room_id: room.id,
     })),
-  );
+    p_engine_version: ENGINE_VERSION,
+    p_events: serializeEvents(startResult.initialEvents),
+    p_expected_player_ids: joinedPlayers.map((player) => player.id),
+    p_options: serializeRuleSetOptions(startResult.ruleSet),
+    p_phase_ends_at: phaseEndsAt,
+    p_phase_instance_id: phaseInstanceId,
+    p_resolved_role_setup: buildResolvedRoleSetup(startResult.ruleSet),
+    p_role_counts: startResult.ruleSet.roleCounts,
+    p_role_registry_version: ROLE_REGISTRY_VERSION,
+    p_room_code: roomCode,
+  });
+  const startedRoom = toRoomRecord(transactionResult);
 
-  throwIfMutationError(assignmentError);
+  await broadcastMutationResult(supabase, startedRoom, transactionResult);
 
-  const { error: playerStateError } = await supabase.from("game_player_states").insert(
-    joinedPlayers.map((player) => ({
-      alive: true,
-      player_id: player.id,
-      room_id: room.id,
-    })),
-  );
-
-  throwIfMutationError(playerStateError);
-
-  await insertActions(supabase, room.id, phaseInstanceId, phaseEndsAt, startResult.actions);
-  await insertGameEvents(supabase, room.id, phaseInstanceId, startResult.initialEvents);
-  await insertRoomEvent(supabase, room.id, "game_started", null, account.id, {});
-  await broadcastRoomInvalidation(supabase, claimedRoom, "game_started");
-
-  return getRoomViewByRoom(supabase, account, claimedRoom);
+  return getRoomViewByRoom(supabase, account, startedRoom);
 }
 
 export async function submitAction(
@@ -536,71 +341,16 @@ export async function submitAction(
   targetPublicPlayerId: string | null,
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
-  const room = await getRoomByCodeOrThrow(supabase, roomCode);
-  const player = await requireJoinedPlayerForAccount(supabase, room.id, account.id);
-  const state = await getGameState(supabase, room.id);
-  const assignment = await getAssignmentForPlayer(supabase, room.id, player.id);
-  const submitterRoleId =
-    assignment !== null && isRoleId(assignment.role_id) ? assignment.role_id : null;
-  const targetPlayer =
-    targetPublicPlayerId === null
-      ? null
-      : await getPlayerByPublicId(supabase, room.id, targetPublicPlayerId);
-  const { data: action, error: actionError } = await supabase
-    .from("current_actions")
-    .select(
-      "id,action_key,action_kind,actor_player_id,actor_role_id,target_kind,eligible_target_player_ids,phase_instance_id,closes_at",
-    )
-    .eq("room_id", room.id)
-    .eq("action_key", actionKey)
-    .eq("phase_instance_id", phaseInstanceId)
-    .maybeSingle<CurrentActionRecord>();
-
-  if (actionError !== null || action === null) {
-    throw new Error("Action is not available.");
-  }
-
-  if (
-    state?.status !== "playing" ||
-    state.phase_instance_id !== phaseInstanceId ||
-    action.phase_instance_id !== phaseInstanceId
-  ) {
-    throw new Error("Action belongs to a stale phase.");
-  }
-
-  if (action.closes_at !== null && Date.parse(action.closes_at) <= Date.now()) {
-    throw new Error("Action window is closed.");
-  }
-
-  if (!canSubmitAction(action, player.id, submitterRoleId, targetPlayer?.id ?? null)) {
-    throw new Error("Action is not allowed.");
-  }
-
-  const { error: pendingActionError } = await supabase.from("pending_actions").insert({
-    current_action_id: action.id,
-    room_id: room.id,
-    submitter_player_id: player.id,
-    target_player_id: targetPlayer?.id ?? null,
+  const transactionResult = await callRoomMutationRpc(supabase, "app_submit_action", {
+    p_account_id: account.id,
+    p_action_key: actionKey,
+    p_phase_instance_id: phaseInstanceId,
+    p_room_code: roomCode,
+    p_target_public_player_id: targetPublicPlayerId,
   });
+  const room = toRoomRecord(transactionResult);
 
-  if (pendingActionError !== null) {
-    if (pendingActionError.code === "23505") {
-      return getRoomViewByRoom(supabase, account, room);
-    }
-
-    throw new Error(pendingActionError.message);
-  }
-
-  const { error: submittedEventError } = await supabase.from("game_events").insert({
-    event_kind: "action_submitted",
-    payload: { actionKind: action.action_kind },
-    phase_instance_id: phaseInstanceId,
-    room_id: room.id,
-    visibility: "internal",
-  });
-
-  throwIfMutationError(submittedEventError);
-  await broadcastRoomInvalidation(supabase, room, "action_window_changed");
+  await broadcastMutationResult(supabase, room, transactionResult);
 
   return getRoomViewByRoom(supabase, account, room);
 }
@@ -620,18 +370,24 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
 
   const state = await getGameState(supabase, room.id);
 
-  if (state?.status !== "playing" || state.phase === null) {
+  if (state?.status !== "playing" || state.phase === null || state.phase_instance_id === null) {
     return getRoomViewByRoom(supabase, account, room);
   }
 
-  const actions = await getCurrentActions(supabase, room.id);
+  const actions = (await getCurrentActions(supabase, room.id)).filter(
+    (action) => action.phase_instance_id === state.phase_instance_id,
+  );
   const pendingActions = await getPendingActions(supabase, room.id);
+  const currentActionIds = new Set(actions.map((action) => action.id));
+  const currentPendingActions = pendingActions.filter((pendingAction) =>
+    currentActionIds.has(pendingAction.current_action_id),
+  );
   const now = Date.now();
   const phaseTimedOut = state.phase_ends_at !== null && Date.parse(state.phase_ends_at) <= now;
   const allActionsSubmitted =
     actions.length > 0 &&
     actions.every((action) =>
-      pendingActions.some((pendingAction) => pendingAction.current_action_id === action.id),
+      currentPendingActions.some((pendingAction) => pendingAction.current_action_id === action.id),
     );
   const canResolve =
     phaseTimedOut || ((state.phase !== "night" || state.night_number === 1) && allActionsSubmitted);
@@ -640,172 +396,64 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
     return getRoomViewByRoom(supabase, account, room);
   }
 
-  const claimedState = await claimPhaseResolution(supabase, state);
-
-  if (claimedState === null) {
-    return getRoomViewByRoom(supabase, account, room);
-  }
-
-  if (claimedState.phase === null) {
-    await releasePhaseResolution(supabase, claimedState);
-
-    return getRoomViewByRoom(supabase, account, room);
-  }
-
-  let stateFinalized = false;
-
-  try {
-    const runtimePlayers = await getRuntimePlayers(supabase, room.id);
-    const ruleSet = await getRuleSet(supabase, room.id);
-    const resolution = resolvePhase({
-      actions: toSubmittedResolutionActions(actions, pendingActions, claimedState, phaseTimedOut),
-      currentPhase: claimedState.phase,
-      dayNumber: claimedState.day_number,
-      nightNumber: claimedState.night_number,
-      players: runtimePlayers,
-      ruleSet,
-    });
-
-    for (const death of resolution.deaths) {
-      const { error: deathError } = await supabase
-        .from("game_player_states")
-        .update({
-          alive: false,
-          death_reason: death.reason,
-          died_at: new Date().toISOString(),
-        })
-        .eq("room_id", room.id)
-        .eq("player_id", Number(death.playerId));
-
-      throwIfMutationError(deathError);
-    }
-
-    const currentActionIds = actions.map((action) => action.id);
-    const { error: pendingDeleteError } =
-      currentActionIds.length === 0
-        ? { error: null }
-        : await supabase.from("pending_actions").delete().in("current_action_id", currentActionIds);
-    const { error: actionDeleteError } = await supabase
-      .from("current_actions")
-      .delete()
-      .eq("room_id", room.id)
-      .eq("phase_instance_id", claimedState.phase_instance_id);
-
-    throwIfMutationError(pendingDeleteError);
-    throwIfMutationError(actionDeleteError);
-
-    const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
-    const nextEndsAt =
-      resolution.nextPhaseDurationSeconds === null
+  const runtimePlayers = await getRuntimePlayers(supabase, room.id);
+  const ruleSet = await getRuleSet(supabase, room.id);
+  const resolution = resolvePhase({
+    actions: toSubmittedResolutionActions(actions, currentPendingActions, state, phaseTimedOut),
+    currentPhase: state.phase,
+    dayNumber: state.day_number,
+    nightNumber: state.night_number,
+    players: runtimePlayers,
+    ruleSet,
+  });
+  const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
+  const nextEndsAt =
+    resolution.nextPhaseDurationSeconds === null
+      ? null
+      : secondsFromNow(resolution.nextPhaseDurationSeconds);
+  const finalOutcome = resolution.finalOutcome;
+  const transactionResult = await callRoomMutationRpc(supabase, "app_resolve_phase", {
+    p_account_id: account.id,
+    p_actions: serializeActions(resolution.actionsToOpen),
+    p_deaths: resolution.deaths.map((death) => ({
+      player_id: Number.parseInt(death.playerId, 10),
+      reason: death.reason,
+    })),
+    p_events: serializeEvents(resolution.events),
+    p_expected_current_action_ids: actions
+      .map((action) => action.id)
+      .toSorted((left, right) => left - right),
+    p_expected_pending_action_ids: currentPendingActions
+      .map((action) => action.id)
+      .toSorted((left, right) => left - right),
+    p_expected_revision: state.revision,
+    p_final_outcome:
+      finalOutcome === null
         ? null
-        : secondsFromNow(resolution.nextPhaseDurationSeconds);
+        : {
+            reason: finalOutcome.reason,
+            winner_team: finalOutcome.winnerTeam,
+          },
+    p_next_day_number: resolution.nextDayNumber,
+    p_next_night_number: resolution.nextNightNumber,
+    p_next_phase: resolution.nextPhase,
+    p_next_phase_ends_at: nextEndsAt,
+    p_next_phase_instance_id: nextPhaseInstanceId,
+    p_phase_instance_id: state.phase_instance_id,
+    p_player_results:
+      finalOutcome === null
+        ? []
+        : runtimePlayers.map((runtimePlayer) => ({
+            player_id: Number.parseInt(runtimePlayer.playerId, 10),
+            result: didPlayerWin(runtimePlayer.roleId, finalOutcome.winnerTeam) ? "win" : "lose",
+          })),
+    p_room_code: roomCode,
+  });
+  const resolvedRoom = toRoomRecord(transactionResult);
 
-    if (resolution.finalOutcome !== null) {
-      const { data: outcome, error: outcomeError } = await supabase
-        .from("final_outcomes")
-        .insert({
-          payload: {},
-          reason: resolution.finalOutcome.reason,
-          room_id: room.id,
-          winner_team: resolution.finalOutcome.winnerTeam,
-        })
-        .select("id")
-        .single<{ id: number }>();
+  await broadcastMutationResult(supabase, resolvedRoom, transactionResult);
 
-      if (outcomeError !== null) {
-        throw new Error(outcomeError.message);
-      }
-
-      const finalRuntimePlayers = await getRuntimePlayers(supabase, room.id);
-      const { error: resultError } = await supabase.from("player_results").insert(
-        finalRuntimePlayers.map((runtimePlayer) => ({
-          player_id: Number(runtimePlayer.playerId),
-          result: didPlayerWin(runtimePlayer.roleId, resolution.finalOutcome!.winnerTeam)
-            ? "win"
-            : "lose",
-          room_id: room.id,
-        })),
-      );
-
-      throwIfMutationError(resultError);
-
-      const { error: finalStateError } = await supabase
-        .from("game_states")
-        .update({
-          final_outcome_id: outcome.id,
-          phase: null,
-          phase_ends_at: null,
-          phase_instance_id: null,
-          revision: claimedState.revision + 1,
-          status: "ended",
-        })
-        .eq("id", claimedState.id)
-        .eq("revision", claimedState.revision)
-        .eq("status", "assigning_roles")
-        .select("id")
-        .single<{ id: number }>();
-
-      throwIfMutationError(finalStateError);
-      stateFinalized = true;
-
-      const { error: roomEndError } = await supabase
-        .from("rooms")
-        .update({ ended_at: new Date().toISOString(), status: "ended" })
-        .eq("id", room.id);
-
-      throwIfMutationError(roomEndError);
-    } else {
-      const { error: nextStateError } = await supabase
-        .from("game_states")
-        .update({
-          day_number: resolution.nextDayNumber,
-          night_number: resolution.nextNightNumber,
-          phase: resolution.nextPhase,
-          phase_ends_at: nextEndsAt,
-          phase_instance_id: nextPhaseInstanceId,
-          phase_started_at: new Date().toISOString(),
-          revision: claimedState.revision + 1,
-          status: "playing",
-        })
-        .eq("id", claimedState.id)
-        .eq("revision", claimedState.revision)
-        .eq("status", "assigning_roles")
-        .select("id")
-        .single<{ id: number }>();
-
-      throwIfMutationError(nextStateError);
-      stateFinalized = true;
-
-      if (nextPhaseInstanceId !== null && nextEndsAt !== null) {
-        await insertActions(
-          supabase,
-          room.id,
-          nextPhaseInstanceId,
-          nextEndsAt,
-          resolution.actionsToOpen,
-        );
-      }
-    }
-
-    await insertGameEvents(supabase, room.id, nextPhaseInstanceId, resolution.events);
-    await broadcastRoomInvalidation(
-      supabase,
-      room,
-      resolution.finalOutcome === null ? "phase_changed" : "game_ended",
-    );
-
-    return getRoomView(account, roomCode);
-  } catch (error) {
-    if (!stateFinalized) {
-      try {
-        await releasePhaseResolution(supabase, claimedState);
-      } catch {
-        // Keep the original resolution error as the API failure.
-      }
-    }
-
-    throw error;
-  }
+  return getRoomViewByRoom(supabase, account, resolvedRoom);
 }
 
 async function getRoomViewByRoom(
@@ -1161,27 +809,6 @@ function labelActionProgress(phase: GameStateRecord["phase"]): string {
   }
 }
 
-function canSubmitAction(
-  action: CurrentActionRecord,
-  submitterPlayerId: number,
-  submitterRoleId: RoleId | null,
-  targetPlayerId: number | null,
-): boolean {
-  if (action.actor_player_id !== null && action.actor_player_id !== submitterPlayerId) {
-    return false;
-  }
-
-  if (action.actor_player_id === null && action.actor_role_id !== submitterRoleId) {
-    return false;
-  }
-
-  if (action.target_kind === "none") {
-    return targetPlayerId === null;
-  }
-
-  return targetPlayerId !== null && action.eligible_target_player_ids.includes(targetPlayerId);
-}
-
 function toSubmittedResolutionActions(
   actions: readonly CurrentActionRecord[],
   pendingActions: readonly PendingActionRecord[],
@@ -1274,20 +901,6 @@ async function getRoomByCodeOrThrow(
   return data;
 }
 
-async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Promise<RoomRecord> {
-  const { data, error } = await supabase
-    .from("rooms")
-    .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
-    .eq("id", roomId)
-    .maybeSingle<RoomRecord>();
-
-  if (error !== null || data === null) {
-    throw new Error("Room not found.");
-  }
-
-  return data;
-}
-
 async function expireLobbyIfNeeded(
   supabase: SupabaseClient,
   room: RoomRecord,
@@ -1299,37 +912,11 @@ async function expireLobbyIfNeeded(
   const transactionResult = await callRoomMutationRpc(supabase, "app_expire_lobby_if_needed", {
     p_room_id: room.id,
   });
+  const expiredRoom = toRoomRecord(transactionResult);
 
-  if (transactionResult !== null) {
-    const expiredRoom = toRoomRecord(transactionResult);
+  await broadcastMutationResult(supabase, expiredRoom, transactionResult);
 
-    await broadcastMutationResult(supabase, expiredRoom, transactionResult);
-
-    return expiredRoom;
-  }
-
-  const { data, error } = await supabase
-    .from("rooms")
-    .update({ disbanded_at: new Date().toISOString(), status: "disbanded" })
-    .eq("id", room.id)
-    .eq("status", "lobby")
-    .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
-    .maybeSingle<RoomRecord>();
-
-  if (error !== null) {
-    throw new Error(error.message);
-  }
-
-  if (data === null) {
-    return getRoomByIdOrThrow(supabase, room.id);
-  }
-
-  await insertRoomEvent(supabase, room.id, "room_disbanded", null, null, {
-    reason: "lobby_expired",
-  });
-  await broadcastRoomInvalidation(supabase, data, "room_disbanded");
-
-  return data;
+  return expiredRoom;
 }
 
 async function getPlayerForAccount(
@@ -1379,31 +966,13 @@ async function requireJoinedPlayerForAccount(
   return player;
 }
 
-async function getPlayerByPublicId(
-  supabase: SupabaseClient,
-  roomId: number,
-  publicPlayerId: string,
-): Promise<PlayerRecord> {
-  const { data, error } = await supabase
-    .from("players")
-    .select("id,public_player_id,room_id,account_id,display_name,status")
-    .eq("room_id", roomId)
-    .eq("public_player_id", publicPlayerId)
-    .maybeSingle<PlayerRecord>();
-
-  if (error !== null || data === null) {
-    throw new Error("Target player not found.");
-  }
-
-  return data;
-}
-
 async function getPlayers(supabase: SupabaseClient, roomId: number): Promise<PlayerRecord[]> {
   const { data, error } = await supabase
     .from("players")
     .select("id,public_player_id,room_id,account_id,display_name,status")
     .eq("room_id", roomId)
     .order("joined_at", { ascending: true })
+    .order("id", { ascending: true })
     .returns<PlayerRecord[]>();
 
   if (error !== null) {
@@ -1432,47 +1001,6 @@ async function getGameState(
   return data;
 }
 
-async function claimPhaseResolution(
-  supabase: SupabaseClient,
-  state: GameStateRecord,
-): Promise<GameStateRecord | null> {
-  if (state.phase_instance_id === null) {
-    return null;
-  }
-
-  const { data, error } = await supabase
-    .from("game_states")
-    .update({ status: "assigning_roles" })
-    .eq("id", state.id)
-    .eq("status", "playing")
-    .eq("revision", state.revision)
-    .eq("phase_instance_id", state.phase_instance_id)
-    .select(
-      "id,room_id,status,phase,phase_instance_id,phase_ends_at,day_number,night_number,revision,final_outcome_id",
-    )
-    .maybeSingle<GameStateRecord>();
-
-  if (error !== null) {
-    throw new Error(error.message);
-  }
-
-  return data;
-}
-
-async function releasePhaseResolution(
-  supabase: SupabaseClient,
-  state: GameStateRecord,
-): Promise<void> {
-  const { error } = await supabase
-    .from("game_states")
-    .update({ status: "playing" })
-    .eq("id", state.id)
-    .eq("status", "assigning_roles")
-    .eq("revision", state.revision);
-
-  throwIfMutationError(error);
-}
-
 async function getAssignments(
   supabase: SupabaseClient,
   roomId: number,
@@ -1482,25 +1010,6 @@ async function getAssignments(
     .select("player_id,role_id")
     .eq("room_id", roomId)
     .returns<RoleAssignmentRecord[]>();
-
-  if (error !== null) {
-    throw new Error(error.message);
-  }
-
-  return data;
-}
-
-async function getAssignmentForPlayer(
-  supabase: SupabaseClient,
-  roomId: number,
-  playerId: number,
-): Promise<RoleAssignmentRecord | null> {
-  const { data, error } = await supabase
-    .from("role_assignments")
-    .select("player_id,role_id")
-    .eq("room_id", roomId)
-    .eq("player_id", playerId)
-    .maybeSingle<RoleAssignmentRecord>();
 
   if (error !== null) {
     throw new Error(error.message);
@@ -1570,7 +1079,7 @@ async function getPendingActions(
 ): Promise<PendingActionRecord[]> {
   const { data, error } = await supabase
     .from("pending_actions")
-    .select("current_action_id,submitter_player_id,target_player_id,submitted_at")
+    .select("id,current_action_id,submitter_player_id,target_player_id,submitted_at")
     .eq("room_id", roomId)
     .returns<PendingActionRecord[]>();
 
@@ -1813,47 +1322,18 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
   };
 }
 
-async function insertRoomEvent(
-  supabase: SupabaseClient,
-  roomId: number,
-  eventKind: string,
-  actorPlayerId: number | null,
-  actorAccountId: number | null,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await supabase.from("room_events").insert({
-    actor_account_id: actorAccountId,
-    actor_player_id: actorPlayerId,
-    event_kind: eventKind,
-    payload,
-    room_id: roomId,
-  });
-
-  throwIfMutationError(error);
-}
-
 async function callRoomMutationRpc(
   supabase: SupabaseClient,
   functionName: string,
   args: Record<string, unknown>,
-): Promise<RoomMutationResultRecord | null> {
+): Promise<RoomMutationResultRecord> {
   const { data, error } = await supabase.rpc(functionName, args).single<RoomMutationResultRecord>();
 
   if (error !== null) {
-    if (isMissingRpcFunctionError(error)) {
-      return null;
-    }
-
     throw new Error(error.message);
   }
 
   return data;
-}
-
-function isMissingRpcFunctionError(error: { code?: string; message: string }): boolean {
-  return (
-    error.code === "PGRST202" || /could not find the function|schema cache/iu.test(error.message)
-  );
 }
 
 function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
@@ -1865,6 +1345,52 @@ function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
     realtime_topic: record.realtime_topic,
     status: record.status,
   };
+}
+
+function serializeRuleSetOptions(ruleSet: RuleSet): JsonObject {
+  return {
+    dayMode: ruleSet.dayMode,
+    guardConsecutiveTargetPolicy: ruleSet.guardConsecutiveTargetPolicy,
+    initialInspectionPolicy: ruleSet.initialInspectionPolicy,
+    voteResultVisibility: ruleSet.voteResultVisibility,
+  };
+}
+
+function buildResolvedRoleSetup(ruleSet: RuleSet): JsonObject {
+  return {
+    activeRoleIds: Object.entries(ruleSet.roleCounts)
+      .filter(([, count]) => count > 0)
+      .map(([roleId]) => roleId),
+    engineVersion: ENGINE_VERSION,
+    roleRegistryVersion: ROLE_REGISTRY_VERSION,
+  };
+}
+
+function serializeActions(actions: readonly EngineAction[]): JsonObject[] {
+  return actions.map((action) => ({
+    action_key: action.key,
+    action_kind: action.kind,
+    actor_player_id:
+      action.actorPlayerId === null ? null : Number.parseInt(action.actorPlayerId, 10),
+    actor_role_id: action.actorRoleId,
+    eligible_target_player_ids: action.eligibleTargetPlayerIds.map((playerId) =>
+      Number.parseInt(playerId, 10),
+    ),
+    target_kind: action.targetKind,
+  }));
+}
+
+function serializeEvents(events: readonly EngineEvent[]): JsonObject[] {
+  return events.map((event) => ({
+    event_kind: event.kind,
+    payload: event.payload,
+    public_message: event.message,
+    visibility: event.visibility,
+    visible_to_player_ids: event.visibleToPlayerIds.map((playerId) =>
+      Number.parseInt(playerId, 10),
+    ),
+    visible_to_role_ids: event.visibleToRoleIds,
+  }));
 }
 
 async function broadcastMutationResult(
@@ -1909,93 +1435,6 @@ async function broadcastRoomInvalidation(
     } catch {
       // Realtime cleanup failure should not fail the authoritative mutation.
     }
-  }
-}
-
-async function insertActions(
-  supabase: SupabaseClient,
-  roomId: number,
-  phaseInstanceId: string,
-  closesAt: string,
-  actions: readonly EngineAction[],
-): Promise<void> {
-  if (actions.length === 0) {
-    return;
-  }
-
-  const { error } = await supabase.from("current_actions").insert(
-    actions.map((action) => ({
-      action_key: action.key,
-      action_kind: action.kind,
-      actor_player_id:
-        action.actorPlayerId === null ? null : Number.parseInt(action.actorPlayerId, 10),
-      actor_role_id: action.actorRoleId,
-      closes_at: closesAt,
-      eligible_target_player_ids: action.eligibleTargetPlayerIds.map((playerId) =>
-        Number.parseInt(playerId, 10),
-      ),
-      phase_instance_id: phaseInstanceId,
-      room_id: roomId,
-      target_kind: action.targetKind,
-    })),
-  );
-
-  throwIfMutationError(error);
-}
-
-async function insertGameEvents(
-  supabase: SupabaseClient,
-  roomId: number,
-  phaseInstanceId: string | null,
-  events: readonly EngineEvent[],
-): Promise<void> {
-  for (const event of events) {
-    const { data, error } = await supabase
-      .from("game_events")
-      .insert({
-        event_kind: event.kind,
-        payload: event.payload,
-        phase_instance_id: phaseInstanceId,
-        public_message: event.message,
-        room_id: roomId,
-        visibility: event.visibility,
-      })
-      .select("id")
-      .single<{ id: number }>();
-
-    if (error !== null) {
-      throw new Error(error.message);
-    }
-
-    if (event.visibleToPlayerIds.length > 0) {
-      const { error: visiblePlayerError } = await supabase
-        .from("game_event_visible_players")
-        .insert(
-          event.visibleToPlayerIds.map((playerId) => ({
-            game_event_id: data.id,
-            player_id: Number.parseInt(playerId, 10),
-          })),
-        );
-
-      throwIfMutationError(visiblePlayerError);
-    }
-
-    if (event.visibleToRoleIds.length > 0) {
-      const { error: visibleRoleError } = await supabase.from("game_event_visible_roles").insert(
-        event.visibleToRoleIds.map((roleId) => ({
-          game_event_id: data.id,
-          role_id: roleId,
-        })),
-      );
-
-      throwIfMutationError(visibleRoleError);
-    }
-  }
-}
-
-function throwIfMutationError(error: { message: string } | null): void {
-  if (error !== null) {
-    throw new Error(error.message);
   }
 }
 

@@ -292,6 +292,10 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     errors.push("At least three joined players are required.");
   }
 
+  if (playerCount > 10) {
+    errors.push("At most ten joined players are supported.");
+  }
+
   if (totalRoles !== playerCount) {
     errors.push(`Role count (${totalRoles}) must match joined player count (${playerCount}).`);
   }

@@ -39,6 +39,22 @@ describe("ruleset validation", () => {
     });
   });
 
+  it("rejects unsupported player counts", () => {
+    const tooFew = validateRuleSet(makeDefaultRuleSetForPlayers(2), 2);
+    const tooMany = validateRuleSet(makeDefaultRuleSetForPlayers(11), 11);
+
+    expect(tooFew.ok).toBe(false);
+    expect(tooMany.ok).toBe(false);
+
+    if (!tooFew.ok) {
+      expect(tooFew.errors).toContain("At least three joined players are required.");
+    }
+
+    if (!tooMany.ok) {
+      expect(tooMany.errors).toContain("At most ten joined players are supported.");
+    }
+  });
+
   it("normalizes an empty role input to the default player-count aware setup", () => {
     const normalized = normalizeRuleSet(
       {
