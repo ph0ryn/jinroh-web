@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +8,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 
 const DEFAULT_MANAGED_URL = `http://localhost:${process.env.E2E_PORT ?? "3010"}`;
+const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
+const IS_ORDERED_SPEECH_E2E = process.env.E2E_RULESET === "ordered_speech";
 const SCREENSHOT_DIR =
   process.env.E2E_SCREENSHOT_DIR ?? join(tmpdir(), `jinroh-web-e2e-${Date.now()}`);
 const EXECUTION_TIMEOUT_WAIT_MS = Number(process.env.E2E_EXECUTION_TIMEOUT_WAIT_MS ?? "61500");
 
-let cleanupManagedServer = () => {};
+let cleanupManagedServer = async () => {};
 
 async function main() {
   const baseUrl = await resolveBaseUrl();
@@ -41,13 +44,14 @@ async function resolveBaseUrl() {
     "pnpm",
     ["exec", "next", "start", "--hostname", "localhost", "--port", process.env.E2E_PORT ?? "3010"],
     {
+      detached: true,
       env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
   const output = [];
 
-  cleanupManagedServer = () => managedServer.kill();
+  cleanupManagedServer = () => stopManagedServer(managedServer);
   managedServer.stdout?.on("data", (chunk) => output.push(String(chunk)));
   managedServer.stderr?.on("data", (chunk) => output.push(String(chunk)));
 
@@ -108,7 +112,7 @@ async function runLiveSmoke(baseUrl) {
     await refresh(host.page);
     await waitMetric(host.page, "Players", "3");
 
-    await host.page.getByRole("button", { name: "Start game" }).click();
+    await startGame(host, baseUrl, roomCode);
     await waitPhase(host.page, "night");
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "night");
@@ -121,12 +125,16 @@ async function runLiveSmoke(baseUrl) {
     await waitPhase(player2.page, "day");
     await waitPhase(player3.page, "day");
 
-    await submitAll(players);
-    await advance(host);
-    await waitPhase(host.page, "voting");
-    await refreshAll([player2, player3]);
-    await waitPhase(player2.page, "voting");
-    await waitPhase(player3.page, "voting");
+    if (IS_ORDERED_SPEECH_E2E) {
+      await resolveOrderedSpeechDay(players, host);
+    } else {
+      await submitAll(players);
+      await advance(host);
+      await waitPhase(host.page, "voting");
+      await refreshAll([player2, player3]);
+      await waitPhase(player2.page, "voting");
+      await waitPhase(player3.page, "voting");
+    }
 
     await submitAll(players);
     await advance(host);
@@ -193,6 +201,53 @@ async function createPlayer(browser, baseUrl, label, displayName, errors, warnin
   await page.getByLabel("Display name").fill(displayName);
 
   return { context, label, page };
+}
+
+async function startGame(host, baseUrl, roomCode) {
+  if (!IS_ORDERED_SPEECH_E2E) {
+    await host.page.getByRole("button", { name: "Start game" }).click();
+
+    return;
+  }
+
+  const token = await host.page.evaluate(
+    (key) => window.localStorage.getItem(key),
+    IDENTITY_STORAGE_KEY,
+  );
+
+  if (token === null) {
+    throw new Error("Host identity token is missing.");
+  }
+
+  const response = await fetch(`${baseUrl}/api/rooms/${roomCode}/start`, {
+    body: JSON.stringify({
+      ruleSet: {
+        dayMode: "ordered_speech",
+        guardConsecutiveTargetPolicy: "deny",
+        initialInspectionPolicy: "enabled",
+        roleCounts: {
+          fox: 0,
+          guard: 0,
+          madman: 0,
+          seer: 1,
+          villager: 1,
+          werewolf: 1,
+        },
+        voteResultVisibility: "count_only",
+      },
+    }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ordered speech start failed: ${response.status}`);
+  }
+
+  await refresh(host.page);
 }
 
 async function clickAndWaitForMetric(page, buttonName, metricLabel) {
@@ -288,6 +343,30 @@ async function submitAll(players) {
   for (const player of players) {
     await submitVisibleActions(player);
   }
+}
+
+async function resolveOrderedSpeechDay(players, host) {
+  for (let slotAttempt = 0; slotAttempt <= players.length * 2 + 1; slotAttempt += 1) {
+    await refreshAll(players);
+    await submitAll(players);
+    await advance(host);
+    await refreshAll(players);
+
+    const hostPhase = await readMetric(host.page, "Phase");
+
+    if (hostPhase === "voting") {
+      await waitPhase(players[1].page, "voting");
+      await waitPhase(players[2].page, "voting");
+
+      return;
+    }
+
+    await waitPhase(host.page, "day");
+    await waitPhase(players[1].page, "day");
+    await waitPhase(players[2].page, "day");
+  }
+
+  throw new Error("Ordered speech day did not reach voting.");
 }
 
 async function submitVisibleActions(player) {
@@ -417,8 +496,41 @@ function trimTrailingSlash(value) {
   return value.replace(/\/$/, "");
 }
 
+async function stopManagedServer(managedServer) {
+  if (managedServer.exitCode !== null) {
+    return;
+  }
+
+  if (managedServer.pid === undefined) {
+    managedServer.kill();
+
+    return;
+  }
+
+  killProcessGroup(managedServer.pid, "SIGTERM");
+
+  await Promise.race([
+    once(managedServer, "exit"),
+    delay(3000).then(() => {
+      if (managedServer.exitCode === null && managedServer.pid !== undefined) {
+        killProcessGroup(managedServer.pid, "SIGKILL");
+      }
+    }),
+  ]);
+}
+
+function killProcessGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
 try {
   await main();
 } finally {
-  cleanupManagedServer();
+  await cleanupManagedServer();
 }

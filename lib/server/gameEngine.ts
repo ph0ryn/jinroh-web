@@ -81,8 +81,14 @@ export type PhaseResolutionInput = {
 
 export type SubmittedAction = {
   actorPlayerId: string;
+  actionKey?: string;
   kind: ActionKind;
   targetPlayerId: string | null;
+};
+
+type OrderedSpeechSlot = {
+  speakerPlayerId: string;
+  slotIndex: number;
 };
 
 export type PhaseResolution = {
@@ -150,6 +156,10 @@ export function resolvePhase(input: PhaseResolutionInput): PhaseResolution {
 
   if (input.currentPhase === "night") {
     return resolveNight(input);
+  }
+
+  if (input.currentPhase === "day" && input.ruleSet.dayMode === "ordered_speech") {
+    return resolveOrderedSpeechDay(input);
   }
 
   if (input.currentPhase === "day") {
@@ -505,35 +515,135 @@ function openDay(
     };
   }
 
+  const nextDayNumber = input.dayNumber + 1;
+  const alivePlayers = nextPlayers.filter((player) => player.alive);
+  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, nextDayNumber);
+  const firstSpeechSlot = orderedSpeechSlots[0];
+  const actionsToOpen =
+    input.ruleSet.dayMode === "ordered_speech" && firstSpeechSlot !== undefined
+      ? [toOrderedSpeechAction(firstSpeechSlot, nextDayNumber)]
+      : alivePlayers.map((player) => ({
+          actorPlayerId: player.playerId,
+          actorRoleId: null,
+          eligibleTargetPlayerIds: [],
+          key: `day-ready:${nextDayNumber}:${player.playerId}`,
+          kind: "day_ready" as const,
+          targetKind: "none" as const,
+        }));
+
   return {
-    actionsToOpen: nextPlayers
-      .filter((player) => player.alive)
-      .map((player) => ({
-        actorPlayerId: player.playerId,
-        actorRoleId: null,
-        eligibleTargetPlayerIds: [],
-        key: `day-ready:${input.dayNumber + 1}:${player.playerId}`,
-        kind: "day_ready",
-        targetKind: "none",
-      })),
+    actionsToOpen,
     deaths,
     events: [
       ...events,
       {
         kind: "phase_changed",
-        message: "Day started. Discuss at the table or in your voice call.",
-        payload: { phase: "day" },
+        message:
+          input.ruleSet.dayMode === "ordered_speech"
+            ? "Day started. Follow the current speech turn."
+            : "Day started. Discuss at the table or in your voice call.",
+        payload: {
+          dayMode: input.ruleSet.dayMode,
+          phase: "day",
+          ...(firstSpeechSlot === undefined
+            ? {}
+            : {
+                speakerPlayerId: firstSpeechSlot.speakerPlayerId,
+                speechSlotIndex: firstSpeechSlot.slotIndex,
+              }),
+        },
         visibility: "public",
         visibleToPlayerIds: [],
         visibleToRoleIds: [],
       },
     ],
     finalOutcome: null,
-    nextDayNumber: input.dayNumber + 1,
+    nextDayNumber,
     nextNightNumber: input.nightNumber,
     nextPhase: "day",
-    nextPhaseDurationSeconds: nextPlayers.filter((player) => player.alive).length * 90,
+    nextPhaseDurationSeconds:
+      input.ruleSet.dayMode === "ordered_speech" ? 90 : alivePlayers.length * 90,
   };
+}
+
+function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
+  const currentSpeechAction = input.actions.find((action) => action.kind === "end_speech");
+  const currentSlotIndex = parseSpeechSlotIndex(currentSpeechAction?.actionKey);
+  const alivePlayers = input.players.filter((player) => player.alive);
+  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, input.dayNumber);
+  const nextSpeechSlot =
+    currentSlotIndex === null ? undefined : orderedSpeechSlots[currentSlotIndex + 1];
+
+  if (nextSpeechSlot === undefined) {
+    return openVoting(input);
+  }
+
+  return {
+    actionsToOpen: [toOrderedSpeechAction(nextSpeechSlot, input.dayNumber)],
+    deaths: [],
+    events: [
+      {
+        kind: "phase_changed",
+        message: "Next speech turn started.",
+        payload: {
+          dayMode: "ordered_speech",
+          phase: "day",
+          speakerPlayerId: nextSpeechSlot.speakerPlayerId,
+          speechSlotIndex: nextSpeechSlot.slotIndex,
+        },
+        visibility: "public",
+        visibleToPlayerIds: [],
+        visibleToRoleIds: [],
+      },
+    ],
+    finalOutcome: null,
+    nextDayNumber: input.dayNumber,
+    nextNightNumber: input.nightNumber,
+    nextPhase: "day",
+    nextPhaseDurationSeconds: 90,
+  };
+}
+
+function createOrderedSpeechSlots(
+  alivePlayers: readonly PlayerRuntimeState[],
+  dayNumber: number,
+): OrderedSpeechSlot[] {
+  const orderedPlayerIds = stableShuffle(
+    alivePlayers.map((player) => player.playerId),
+    `speech:${dayNumber}:${alivePlayers.map((player) => player.playerId).join(":")}`,
+  );
+  const rounds = dayNumber === 1 ? 2 : 1;
+
+  return [...Array(rounds).keys()].flatMap((roundIndex) =>
+    orderedPlayerIds.map((speakerPlayerId, playerIndex) => ({
+      speakerPlayerId,
+      slotIndex: roundIndex * orderedPlayerIds.length + playerIndex,
+    })),
+  );
+}
+
+function toOrderedSpeechAction(slot: OrderedSpeechSlot, dayNumber: number): EngineAction {
+  return {
+    actorPlayerId: slot.speakerPlayerId,
+    actorRoleId: null,
+    eligibleTargetPlayerIds: [],
+    key: `end-speech:${dayNumber}:${slot.slotIndex}:${slot.speakerPlayerId}`,
+    kind: "end_speech",
+    targetKind: "none",
+  };
+}
+
+function parseSpeechSlotIndex(actionKey: string | undefined): number | null {
+  const match = actionKey?.match(/^end-speech:(?<dayNumber>\d+):(?<slotIndex>\d+):/);
+  const slotIndex = match?.groups?.["slotIndex"];
+
+  if (slotIndex === undefined) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(slotIndex, 10);
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function openVoting(input: PhaseResolutionInput): PhaseResolution {

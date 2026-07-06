@@ -657,7 +657,10 @@ function toPublicActionProgress(
   );
 
   return {
-    label: labelActionProgress(state.phase),
+    label:
+      state.phase === "day" && actions.some((action) => action.action_kind === "end_speech")
+        ? "Current speech turn."
+        : labelActionProgress(state.phase),
     required: actions.length,
     submitted: submittedActionIds.size,
     visibility: "public",
@@ -794,6 +797,8 @@ function labelAction(actionKind: string): string {
       return "Choose attack target";
     case "day_ready":
       return "Ready for voting";
+    case "end_speech":
+      return "End speech turn";
     case "execution_skip":
       return "End last words";
     case "first_night_ready":
@@ -841,6 +846,7 @@ function toSubmittedResolutionActions(
     return [
       {
         actorPlayerId: String(pendingAction.submitter_player_id),
+        actionKey: action.action_key,
         kind: action.action_kind as SubmittedAction["kind"],
         targetPlayerId:
           pendingAction.target_player_id === null ? null : String(pendingAction.target_player_id),
@@ -849,7 +855,9 @@ function toSubmittedResolutionActions(
   });
 
   if (state.phase !== "execution" || !phaseTimedOut) {
-    return submittedActions;
+    return state.phase === "day" && phaseTimedOut
+      ? [...submittedActions, ...toTimedOutSpeechActions(actions, pendingActions)]
+      : submittedActions;
   }
 
   const submittedActionIds = new Set(pendingActions.map((action) => action.current_action_id));
@@ -862,11 +870,33 @@ function toSubmittedResolutionActions(
     )
     .map((action) => ({
       actorPlayerId: String(action.actor_player_id),
+      actionKey: action.action_key,
       kind: "execution_skip" as const,
       targetPlayerId: null,
     }));
 
   return [...submittedActions, ...timedOutExecutionActions];
+}
+
+function toTimedOutSpeechActions(
+  actions: readonly CurrentActionRecord[],
+  pendingActions: readonly PendingActionRecord[],
+): SubmittedAction[] {
+  const submittedActionIds = new Set(pendingActions.map((action) => action.current_action_id));
+
+  return actions
+    .filter(
+      (action) =>
+        action.action_kind === "end_speech" &&
+        action.actor_player_id !== null &&
+        !submittedActionIds.has(action.id),
+    )
+    .map((action) => ({
+      actorPlayerId: String(action.actor_player_id),
+      actionKey: action.action_key,
+      kind: "end_speech" as const,
+      targetPlayerId: null,
+    }));
 }
 
 async function createUniqueRoomCode(supabase: SupabaseClient): Promise<string> {

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ const PLAYER_NAMES = ["Sora", "Ren", "Mika", "Yui", "Haru", "Nao", "Iro", "Kai"]
 const SCREENSHOT_DIR =
   process.env.E2E_SCREENSHOT_DIR ?? join(tmpdir(), `jinroh-web-role-e2e-${Date.now()}`);
 
-let cleanupManagedServer = () => {};
+let cleanupManagedServer = async () => {};
 
 async function main() {
   const baseUrl = await resolveBaseUrl();
@@ -43,13 +44,14 @@ async function resolveBaseUrl() {
     "pnpm",
     ["exec", "next", "start", "--hostname", "localhost", "--port", process.env.E2E_PORT ?? "3014"],
     {
+      detached: true,
       env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
   const output = [];
 
-  cleanupManagedServer = () => managedServer.kill();
+  cleanupManagedServer = () => stopManagedServer(managedServer);
   managedServer.stdout?.on("data", (chunk) => output.push(String(chunk)));
   managedServer.stderr?.on("data", (chunk) => output.push(String(chunk)));
 
@@ -511,6 +513,39 @@ function trimTrailingSlash(value) {
   return value.replace(/\/$/, "");
 }
 
+async function stopManagedServer(managedServer) {
+  if (managedServer.exitCode !== null) {
+    return;
+  }
+
+  if (managedServer.pid === undefined) {
+    managedServer.kill();
+
+    return;
+  }
+
+  killProcessGroup(managedServer.pid, "SIGTERM");
+
+  await Promise.race([
+    once(managedServer, "exit"),
+    delay(3000).then(() => {
+      if (managedServer.exitCode === null && managedServer.pid !== undefined) {
+        killProcessGroup(managedServer.pid, "SIGKILL");
+      }
+    }),
+  ]);
+}
+
+function killProcessGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
 async function loadE2EEnv() {
   const env = { ...process.env };
   const shellEnvKeys = new Set(Object.keys(process.env));
@@ -558,5 +593,5 @@ function unquoteEnvValue(value) {
 try {
   await main();
 } finally {
-  cleanupManagedServer();
+  await cleanupManagedServer();
 }

@@ -23,6 +23,7 @@ export type ActionKind =
   | "attack"
   | "day_ready"
   | "vote"
+  | "end_speech"
   | "execution_skip";
 
 export type DeathReason = "attack" | "execution" | "rule_effect";
