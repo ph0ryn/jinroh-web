@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import type { CSSProperties, ReactNode } from "react";
@@ -539,6 +540,9 @@ export function JinrohSurface() {
             <button className="iconButton" type="button" aria-label="Copy room code">
               <Icon name="copy" />
             </button>
+            <Link className="secondaryButton compactButton" href="/live">
+              Live console
+            </Link>
             <button
               className="primaryButton compactButton"
               type="button"
@@ -745,6 +749,9 @@ function HomeSurface({
           <button className="primaryButton" type="button" onClick={onCreateRoom}>
             Create room
           </button>
+          <Link className="secondaryButton" href="/live">
+            Open live console
+          </Link>
         </section>
 
         <section className="homeChoice">

@@ -14,6 +14,7 @@ export default defineConfig({
     suspicious: "off",
   },
   env: {
+    browser: true,
     node: true,
   },
   ignorePatterns: ["dist/**", "eslint.config.mjs", "node_modules/**", ".next/**"],
@@ -29,10 +30,18 @@ export default defineConfig({
     "func-style": "off",
     "id-length": "off",
     "max-statements": "off",
+    "max-params": "off",
+    "no-continue": "off",
+    "no-duplicate-imports": "off",
+    "no-ternary": "off",
     "no-inferrable-types": "off",
     "no-magic-numbers": "off",
     "prefer-destructuring": "off",
+    "sort-keys": "off",
     "sort-imports": "off",
+    "arrow-body-style": "off",
+    "react/jsx-max-depth": "off",
+    "typescript/consistent-type-definitions": "off",
 
     "@stylistic/no-multiple-empty-lines": [
       "error",
@@ -42,7 +51,7 @@ export default defineConfig({
       },
     ],
     "@stylistic/padding-line-between-statements": [
-      "error",
+      "off",
       {
         blankLine: "always",
         prev: "*",

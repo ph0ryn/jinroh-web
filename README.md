@@ -20,7 +20,7 @@ voting, execution, and locked final results.
   browser view.
 - Visualize a complete game path with Werewolf, Villager, Madman, Seer, Guard,
   and Fox roles while backend implementation follows the current product spec.
-- Provide a sponsor-worthy mobile-first UI that also works as a desktop
+- Provide a high-polish mobile-first UI that also works as a desktop
   progress board.
 
 ## UI Surface
@@ -37,7 +37,7 @@ Jinroh Web direction:
   tabs.
 
 This UI does not add new persisted game behavior by itself. Use `docs/spec.md`
-as the implementation boundary for the current MVP.
+as the implementation boundary for the current product.
 
 ## Local Setup
 

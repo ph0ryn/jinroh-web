@@ -35,7 +35,13 @@ html {
   background: var(--ink-950);
   color: var(--paper-100);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   font-size: 16px;
   letter-spacing: 0;
   scroll-behavior: smooth;
@@ -48,6 +54,10 @@ body {
 
 button,
 input {
+  font: inherit;
+}
+
+select {
   font: inherit;
 }
 
@@ -473,7 +483,12 @@ a {
   aspect-ratio: 1;
   background:
     radial-gradient(circle at 50% 44%, rgba(116, 48, 45, 0.18), transparent 22%),
-    radial-gradient(circle at 50% 50%, rgba(136, 83, 41, 0.95), rgba(70, 40, 23, 0.96) 54%, rgba(30, 19, 13, 0.98) 70%),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(136, 83, 41, 0.95),
+      rgba(70, 40, 23, 0.96) 54%,
+      rgba(30, 19, 13, 0.98) 70%
+    ),
     linear-gradient(120deg, rgba(217, 173, 95, 0.12), transparent 48%);
   border: 1px solid rgba(217, 173, 95, 0.38);
   border-radius: 50%;
@@ -1277,5 +1292,385 @@ a {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+.liveShell {
+  background:
+    linear-gradient(90deg, rgba(7, 11, 10, 0.92), rgba(7, 11, 10, 0.72)),
+    url("/images/jinroh-tabletop.png") center top / cover fixed no-repeat;
+  display: grid;
+  gap: 18px;
+  min-height: 100svh;
+  padding: 22px;
+}
+
+.liveHero {
+  align-items: end;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.liveHero h1 {
+  font-size: clamp(2rem, 6vw, 4.6rem);
+  line-height: 0.96;
+  margin: 0 0 14px;
+  max-width: 840px;
+}
+
+.liveHero p {
+  color: var(--paper-200);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 720px;
+}
+
+.liveKicker {
+  color: var(--brass-300);
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.liveBackLink,
+.liveEntryPanel,
+.liveStatusBar,
+.livePanel {
+  backdrop-filter: blur(18px);
+  background: rgba(7, 11, 10, 0.74);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-tight);
+}
+
+.liveBackLink {
+  color: var(--paper-200);
+  flex: 0 0 auto;
+  font-weight: 760;
+  padding: 12px 14px;
+}
+
+.liveEntryPanel {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px) auto;
+  padding: 14px;
+}
+
+.liveEntryPanel label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.84rem;
+  font-weight: 780;
+  gap: 7px;
+}
+
+.liveEntryPanel input,
+.liveActionRow select {
+  background: rgba(241, 230, 202, 0.08);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  color: var(--paper-100);
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.liveEntryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.liveStatusBar {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 14px;
+}
+
+.liveStatusBar span {
+  color: var(--brass-300);
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.liveStatusBar strong {
+  color: var(--paper-200);
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.liveGrid {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1fr) minmax(280px, 0.82fr);
+}
+
+.livePanel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.livePanelHeading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.livePanelHeading span,
+.liveSelfView span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.livePanelHeading strong {
+  color: var(--brass-300);
+  text-transform: capitalize;
+}
+
+.liveMetrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.liveMetrics div {
+  background: rgba(241, 230, 202, 0.06);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  padding: 10px;
+}
+
+.liveMetrics dt,
+.liveMetrics dd {
+  margin: 0;
+}
+
+.liveMetrics dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.liveMetrics dd {
+  color: var(--paper-100);
+  font-weight: 820;
+  overflow-wrap: anywhere;
+}
+
+.livePlayerList,
+.liveActionList,
+.liveEventList,
+.liveControlStack {
+  display: grid;
+  gap: 10px;
+}
+
+.livePlayerRow {
+  align-items: center;
+  background: rgba(241, 230, 202, 0.05);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 10px;
+}
+
+.livePlayerRow.current {
+  border-color: var(--brass-300);
+}
+
+.livePlayerRow span:not(.liveAvatar) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.livePlayerRow strong,
+.livePlayerRow small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.livePlayerRow small,
+.livePlayerRow em,
+.liveSelfView p,
+.liveActionRow span,
+.liveEventList time,
+.liveEventList p,
+.liveEmptyState p {
+  color: var(--muted);
+}
+
+.livePlayerRow em {
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
+.liveAvatar {
+  align-items: center;
+  background: linear-gradient(135deg, var(--forest-700), var(--ink-900));
+  border: 2px solid var(--green-500);
+  border-radius: 50%;
+  display: inline-flex;
+  font-weight: 820;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.liveControlStack {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.liveSelfView,
+.liveActionRow,
+.liveEmptyState {
+  background: rgba(241, 230, 202, 0.05);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  padding: 12px;
+}
+
+.liveSelfView {
+  display: grid;
+  gap: 5px;
+}
+
+.liveSelfView strong {
+  color: var(--paper-100);
+}
+
+.liveSelfView p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.liveActionRow {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+}
+
+.liveActionRow div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.liveActionRow strong,
+.liveActionRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.liveEventList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.liveEventList li {
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 4px;
+  padding: 0 0 14px 12px;
+}
+
+.liveEventList li:last-child {
+  padding-bottom: 0;
+}
+
+.liveEventList strong {
+  color: var(--paper-100);
+  text-transform: capitalize;
+}
+
+.liveEventList p {
+  line-height: 1.45;
+  margin: 0;
+}
+
+.liveEmptyState {
+  display: grid;
+  gap: 8px;
+  min-height: 180px;
+  place-content: center;
+  text-align: center;
+}
+
+.liveEmptyState.compact {
+  min-height: 112px;
+}
+
+.liveEmptyState strong {
+  color: var(--paper-100);
+}
+
+.liveEmptyState p {
+  line-height: 1.5;
+  margin: 0 auto;
+  max-width: 360px;
+}
+
+@media (max-width: 1120px) {
+  .liveGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .liveEntryPanel {
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 0.6fr);
+  }
+
+  .liveEntryActions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .liveEntryActions button {
+    flex: 1 1 140px;
+  }
+}
+
+@media (max-width: 720px) {
+  .liveShell {
+    padding: 14px;
+  }
+
+  .liveHero {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .liveBackLink {
+    text-align: center;
+  }
+
+  .liveEntryPanel,
+  .liveActionRow,
+  .liveControlStack {
+    grid-template-columns: 1fr;
+  }
+
+  .liveStatusBar {
+    align-items: start;
+    display: grid;
+  }
+
+  .liveMetrics {
+    grid-template-columns: 1fr;
   }
 }
