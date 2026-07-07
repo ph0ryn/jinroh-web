@@ -8,7 +8,7 @@ track the state that is tedious or error-prone to manage by hand: anonymous room
 identity, lobby membership, role-safe private views, phase timers, night actions,
 voting, execution, and locked final results.
 
-![Jinroh Web tabletop hero](public/images/jinroh-tabletop.jpg)
+![Jinroh Web tabletop hero](public/images/jinroh-og.jpg)
 
 ## Product Goals
 
@@ -55,6 +55,7 @@ SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SITE_URL=
 ```
 
 Generate the token hash secret with:
@@ -66,7 +67,10 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 `NEXT_PUBLIC_SUPABASE_URL` should match `SUPABASE_URL`. Add
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` to enable Supabase Realtime invalidation in the
 browser. Without the public key, the live table still works through polling.
-Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser.
+`NEXT_PUBLIC_SITE_URL` is optional locally. Set it to the deployed origin when
+you want Open Graph images to resolve to a canonical URL; Vercel deployment URL
+environment variables are used as a fallback. Never expose
+`SUPABASE_SERVICE_ROLE_KEY` to the browser.
 
 ## Database Setup
 
@@ -176,6 +180,7 @@ SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SITE_URL=
 ```
 
 Deployment order:
