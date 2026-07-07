@@ -11,13 +11,13 @@ const DEFAULT_MANAGED_URL = `http://localhost:${process.env.E2E_PORT ?? "3010"}`
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const IS_ORDERED_SPEECH_E2E = process.env.E2E_RULESET === "ordered_speech";
 const MOOD_BACKGROUND_BY_NAME = {
-  day: "jinroh-day.jpg",
-  execution: "jinroh-voting.jpg",
-  lobby: "jinroh-lobby.jpg",
+  day: "jinroh-day-same-angle.jpg",
+  execution: "jinroh-voting-same-angle.jpg",
+  lobby: "jinroh-lobby-same-angle.jpg",
   night: "jinroh-night.jpg",
-  result: "jinroh-result.jpg",
-  setup: "jinroh-lobby.jpg",
-  voting: "jinroh-voting.jpg",
+  result: "jinroh-result-same-angle.jpg",
+  setup: "jinroh-lobby-same-angle.jpg",
+  voting: "jinroh-voting-same-angle.jpg",
 };
 const SCREENSHOT_DIR =
   process.env.E2E_SCREENSHOT_DIR ?? join(tmpdir(), `jinroh-web-e2e-${Date.now()}`);

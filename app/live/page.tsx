@@ -77,11 +77,11 @@ const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
 const LIVE_MOOD_BACKGROUND_SOURCES = [
-  "/images/jinroh-lobby.jpg",
-  "/images/jinroh-day.jpg",
-  "/images/jinroh-voting.jpg",
+  "/images/jinroh-lobby-same-angle.jpg",
+  "/images/jinroh-day-same-angle.jpg",
+  "/images/jinroh-voting-same-angle.jpg",
   "/images/jinroh-night.jpg",
-  "/images/jinroh-result.jpg",
+  "/images/jinroh-result-same-angle.jpg",
 ] as const;
 
 const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {

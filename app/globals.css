@@ -1280,7 +1280,7 @@ a {
   --live-accent: var(--brass-300);
   --live-accent-rgb: 217, 173, 95;
   --live-avatar-border: rgba(119, 189, 117, 0.86);
-  --live-bg-image: url("/images/jinroh-lobby.jpg");
+  --live-bg-image: url("/images/jinroh-lobby-same-angle.jpg");
   --live-danger-bg: rgba(116, 48, 45, 0.42);
   --live-danger-border: rgba(167, 71, 61, 0.62);
   --live-input-bg: rgba(241, 230, 202, 0.08);
@@ -1342,7 +1342,7 @@ a {
   --live-accent: #d8af68;
   --live-accent-rgb: 216, 175, 104;
   --live-avatar-border: rgba(216, 175, 104, 0.58);
-  --live-bg-image: url("/images/jinroh-lobby.jpg");
+  --live-bg-image: url("/images/jinroh-lobby-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.075);
   --live-muted: #a9a08c;
   --live-panel-bg: rgba(7, 11, 10, 0.76);
@@ -1383,7 +1383,7 @@ a {
   --live-accent: #f0c66e;
   --live-accent-rgb: 240, 198, 110;
   --live-avatar-border: rgba(119, 189, 117, 0.9);
-  --live-bg-image: url("/images/jinroh-day.jpg");
+  --live-bg-image: url("/images/jinroh-day-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.13);
   --live-muted: #d1c19a;
   --live-panel-bg: rgba(18, 18, 13, 0.6);
@@ -1404,7 +1404,7 @@ a {
   --live-accent: #e29a58;
   --live-accent-rgb: 226, 154, 88;
   --live-avatar-border: rgba(226, 154, 88, 0.84);
-  --live-bg-image: url("/images/jinroh-voting.jpg");
+  --live-bg-image: url("/images/jinroh-voting-same-angle.jpg");
   --live-danger-bg: rgba(116, 48, 45, 0.56);
   --live-input-bg: rgba(241, 230, 202, 0.075);
   --live-muted: #c8ad8b;
@@ -1425,7 +1425,7 @@ a {
   --live-accent: #efb36b;
   --live-accent-rgb: 239, 179, 107;
   --live-avatar-border: rgba(167, 71, 61, 0.86);
-  --live-bg-image: url("/images/jinroh-voting.jpg");
+  --live-bg-image: url("/images/jinroh-voting-same-angle.jpg");
   --live-danger-bg: rgba(116, 48, 45, 0.66);
   --live-input-bg: rgba(241, 230, 202, 0.07);
   --live-muted: #c2a58a;
@@ -1446,7 +1446,7 @@ a {
   --live-accent: #d8af68;
   --live-accent-rgb: 216, 175, 104;
   --live-avatar-border: rgba(216, 175, 104, 0.62);
-  --live-bg-image: url("/images/jinroh-result.jpg");
+  --live-bg-image: url("/images/jinroh-result-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.08);
   --live-muted: #aaa18d;
   --live-panel-bg: rgba(8, 12, 10, 0.74);
@@ -1466,7 +1466,7 @@ a {
   --live-accent: #bda982;
   --live-accent-rgb: 189, 169, 130;
   --live-avatar-border: rgba(189, 169, 130, 0.6);
-  --live-bg-image: url("/images/jinroh-result.jpg");
+  --live-bg-image: url("/images/jinroh-result-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.055);
   --live-muted: #9f9788;
   --live-panel-bg: rgba(7, 8, 8, 0.82);
