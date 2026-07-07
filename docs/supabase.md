@@ -449,6 +449,22 @@ commit 後に Realtime 通知を送る。
 
 commit 後に Realtime 通知を送る。
 
+### Room Heartbeat
+
+Room を開いている Browser は定期的に heartbeat を送る。
+
+- Account を認証する
+- public room code で Room を取得して lock する
+- lobby 期限切れを確認し、必要なら `disbanded` にする
+- 現在の Account に対応する Player が `left` ではないことを確認する
+- 現在 Player の `last_seen_at` を更新する
+- 現在 Player が `disconnected` なら `joined` に戻す
+- 一定時間 heartbeat がない他の `joined` Player を `disconnected` にする
+- `player_disconnected` / `player_reconnected` event を必要な場合だけ記録する
+
+単なる heartbeat 更新だけでは Realtime 通知しない。
+Player status が変わった場合だけ Realtime 通知する。
+
 ### Lobby Expiration
 
 Lobby expiration は正しさの一部。
@@ -460,6 +476,8 @@ Lobby expiration は正しさの一部。
 - `room_disbanded` event を記録する
 
 scheduled cleanup はあってもよいが、正しさの入口にしない。
+`app_cleanup_expired_lobbies` は、放置された expired lobby を batch で
+`disbanded` にし、`room_disbanded` event を記録する maintenance 用入口である。
 
 ## Game Tables
 

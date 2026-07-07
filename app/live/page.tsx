@@ -69,6 +69,8 @@ type RuleSetNumberLimit = {
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const ROOM_SYNC_INTERVAL_MS = 4_000;
 
 const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
   dayMode: DEFAULT_RULE_SET.dayMode,
@@ -214,13 +216,52 @@ export default function LivePage() {
 
     const intervalId = window.setInterval(() => {
       void syncRoom();
-    }, 4000);
+    }, ROOM_SYNC_INTERVAL_MS);
 
     return () => {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
   }, [activeRoomCode, identityToken, rememberRoom]);
+
+  useEffect(() => {
+    if (
+      identityToken === null ||
+      activeRoomCode === null ||
+      roomSummary?.currentPlayerId === null
+    ) {
+      return;
+    }
+
+    let isCancelled = false;
+    const activeToken = identityToken;
+
+    async function heartbeatRoom(): Promise<void> {
+      try {
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}/heartbeat`, {
+          method: "POST",
+          token: activeToken,
+        });
+
+        if (!isCancelled) {
+          rememberRoom(summary, { resetActionTargets: false });
+        }
+      } catch {
+        // Heartbeat is presence maintenance; explicit room actions surface request errors.
+      }
+    }
+
+    void heartbeatRoom();
+
+    const intervalId = window.setInterval(() => {
+      void heartbeatRoom();
+    }, HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeRoomCode, identityToken, rememberRoom, roomSummary?.currentPlayerId]);
 
   useEffect(() => {
     if (identityToken === null || activeRoomCode === null || activeRealtimeTopic === null) {

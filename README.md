@@ -98,7 +98,7 @@ If a manually applied database is missing migration history rows, repair only
 after verifying the schema:
 
 ```sh
-pnpm exec supabase migration repair --linked --status applied 0001 0002 0003 0004 0005 0006 0007 0008
+pnpm exec supabase migration repair --linked --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011
 ```
 
 To verify room-code reuse hardening after
@@ -136,6 +136,19 @@ Basic play flow:
   execution, normal night, and result.
 - Werewolf players can open night chat; it is writable during night and
   read-only outside night.
+- Open room pages heartbeat in the background. Players with stale heartbeats
+  are shown as disconnected and become joined again when their browser resumes.
+
+Optional maintenance endpoint for cron or manual cleanup:
+
+```sh
+curl -X POST http://localhost:3000/api/maintenance/expire-lobbies \
+  -H "content-type: application/json" \
+  -d '{"limit":50}'
+```
+
+The endpoint only disbands already-expired lobby rooms and returns the number
+of rooms changed.
 
 ## Validation
 

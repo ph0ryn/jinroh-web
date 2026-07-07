@@ -188,6 +188,10 @@ export type IdentityResult = {
   token: string;
 };
 
+export type ExpiredLobbyCleanupResult = {
+  expiredRooms: number;
+};
+
 export async function createIdentity(): Promise<IdentityResult> {
   const supabase = createServiceClient();
   const token = createAccountToken();
@@ -246,6 +250,9 @@ export async function createRoom(
   displayName: string,
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
+
+  await cleanupExpiredLobbiesWithClient(supabase, 50);
+
   const roomCode = await createUniqueRoomCode(supabase);
   const lobbyExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const realtimeTopic = `room:${randomBytes(24).toString("base64url")}`;
@@ -264,6 +271,13 @@ export async function createRoom(
   await broadcastMutationResult(supabase, room, transactionResult);
 
   return getRoomViewByRoom(supabase, account, room);
+}
+
+export async function cleanupExpiredLobbies(limit = 50): Promise<ExpiredLobbyCleanupResult> {
+  const supabase = createServiceClient();
+  const expiredRooms = await cleanupExpiredLobbiesWithClient(supabase, limit);
+
+  return { expiredRooms: expiredRooms.length };
 }
 
 export async function joinRoom(
@@ -297,6 +311,23 @@ export async function leaveRoom(account: AccountRecord, roomCode: string): Promi
   const supabase = createServiceClient();
   const transactionResult = await callRoomMutationRpc(supabase, "app_leave_room", {
     p_account_id: account.id,
+    p_room_code: roomCode,
+  });
+  const room = toRoomRecord(transactionResult);
+
+  await broadcastMutationResult(supabase, room, transactionResult);
+
+  return getRoomViewByRoom(supabase, account, room);
+}
+
+export async function heartbeatRoom(
+  account: AccountRecord,
+  roomCode: string,
+): Promise<RoomSummary> {
+  const supabase = createServiceClient();
+  const transactionResult = await callRoomMutationRpc(supabase, "app_heartbeat_room_player", {
+    p_account_id: account.id,
+    p_disconnect_after_seconds: 45,
     p_room_code: roomCode,
   });
   const room = toRoomRecord(transactionResult);
@@ -1719,6 +1750,27 @@ async function callRoomMutationRpc(
   }
 
   return data;
+}
+
+async function cleanupExpiredLobbiesWithClient(
+  supabase: SupabaseClient,
+  limit: number,
+): Promise<RoomMutationResultRecord[]> {
+  const { data, error } = await supabase.rpc("app_cleanup_expired_lobbies", { p_limit: limit });
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  const results = (data ?? []) as RoomMutationResultRecord[];
+
+  await Promise.all(
+    results.map(async (result) => {
+      await broadcastMutationResult(supabase, toRoomRecord(result), result);
+    }),
+  );
+
+  return results;
 }
 
 function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {

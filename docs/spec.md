@@ -317,6 +317,18 @@ Player が退出するとき:
 - room-disbanded event が記録される
 - スケジュールされたクリーンアップが存在しても、リクエスト時の期限切れ確認は
   なお必要である
+- メンテナンス用 batch cleanup は、放置された期限切れロビーを同じ
+  `disbanded` 状態へ移すだけで、通常の読み書き時チェックを置き換えない
+
+### 接続状態
+
+Room を開いている Browser は heartbeat を送る。
+
+- heartbeat は現在 Player の `last_seen_at` を更新する
+- heartbeat が一定時間途絶えた `joined` Player は `disconnected` になる
+- `disconnected` Player が再び heartbeat または join を行うと `joined` に戻る
+- `left` Player は heartbeat で復帰せず、明示的な join を使う
+- 接続状態は参加状態であり、生死や role assignment とは分ける
 
 ## リアルタイムモデル
 
