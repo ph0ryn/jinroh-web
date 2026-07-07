@@ -204,10 +204,7 @@ pnpm run lint
 pnpm test
 pnpm exec tsc --noEmit --incremental false --pretty false
 pnpm run build
-pnpm run test:e2e
-pnpm run test:e2e:roles
-pnpm run test:e2e:security
-E2E_RULESET=ordered_speech E2E_PORT=3015 node scripts/e2e-live-smoke.mjs
+pnpm run test:e2e:all
 ```
 
 The focused tests cover ruleset validation, token hashing, secret-safe game
@@ -215,6 +212,11 @@ events, role-scoped night actions, winner judgement, and player result mapping.
 The E2E smoke test starts the built app with `next start`, launches three
 isolated browser contexts, and plays a room from creation through the final
 result, including the execution timeout path.
+
+`test:e2e:all` runs the live smoke flow, ordered-speech flow, role coverage,
+and security coverage sequentially. The individual commands remain available:
+`test:e2e`, `test:e2e:roles`, `test:e2e:security`, and
+`E2E_RULESET=ordered_speech E2E_PORT=3015 node scripts/e2e-live-smoke.mjs`.
 
 `test:e2e:roles` launches eight isolated browser contexts and verifies the
 default role set, role-private night actions, night conversation visibility,
