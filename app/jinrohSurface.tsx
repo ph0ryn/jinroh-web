@@ -5,16 +5,7 @@ import { useMemo, useState } from "react";
 
 import type { CSSProperties, ReactNode } from "react";
 
-type LocalView =
-  | "home"
-  | "lobby"
-  | "board"
-  | "night"
-  | "day"
-  | "voting"
-  | "execution"
-  | "result"
-  | "demo";
+type LocalView = "home" | "lobby" | "board" | "night" | "day" | "voting" | "execution" | "result";
 
 type IconName =
   | "board"
@@ -111,7 +102,6 @@ const navItems: readonly NavItem[] = [
   { detail: "Ballots", icon: "vote", label: "Voting", mobileLabel: "Vote", view: "voting" },
   { detail: "Reveal", icon: "flag", label: "Execution", mobileLabel: "Exec", view: "execution" },
   { detail: "Outcome", icon: "result", label: "Result", mobileLabel: "Result", view: "result" },
-  { detail: "Scripted flow", icon: "skull", label: "Demo", mobileLabel: "Demo", view: "demo" },
 ];
 
 const phaseTrack: readonly { readonly label: string; readonly view: LocalView }[] = [
@@ -194,17 +184,6 @@ const scenarios: Record<LocalView, Scenario> = {
     secondaryAction: "End speech turn",
     summary: "Discussion remains human-led while the app tracks ready checks and phase timing.",
     title: "Day",
-  },
-  demo: {
-    boardTone: "night",
-    dayNumber: 2,
-    nightNumber: 3,
-    notice: "Demo table cycles through the product surface with local state only.",
-    phase: "night",
-    primaryAction: "Advance demo",
-    secondaryAction: "Reset demo",
-    summary: "A guided mode shows hosts and players how the table behaves from lobby to result.",
-    title: "Demo table",
   },
   execution: {
     boardTone: "execution",
@@ -439,39 +418,6 @@ const actionRows: readonly {
   { icon: "vote", label: "Living players", status: "Locked" },
 ];
 
-const demoSteps: readonly {
-  readonly label: string;
-  readonly view: LocalView;
-  readonly text: string;
-}[] = [
-  {
-    label: "Home",
-    text: "Anonymous identity and display-name preference are prepared.",
-    view: "home",
-  },
-  {
-    label: "Lobby",
-    text: "Room code, player list, host state, and rule set are visible.",
-    view: "lobby",
-  },
-  {
-    label: "Night",
-    text: "Secret action progress is shown only as allowed public state.",
-    view: "night",
-  },
-  {
-    label: "Day",
-    text: "Discussion stays outside the app while readiness is tracked.",
-    view: "day",
-  },
-  { label: "Voting", text: "Each living player receives one vote action.", view: "voting" },
-  {
-    label: "Result",
-    text: "The ended game surfaces public outcome and private result.",
-    view: "result",
-  },
-];
-
 export function JinrohSurface() {
   const [activeView, setActiveView] = useState<LocalView>("home");
   const [selectedPlayerId, setSelectedPlayerId] = useState("sora");
@@ -500,7 +446,7 @@ export function JinrohSurface() {
       dateTime: new Date().toISOString(),
       icon: primaryIconForPhase(scenario.phase),
       id: `activity-${Date.now()}`,
-      text: `${scenario.primaryAction} confirmed in the local demo surface.`,
+      text: `${scenario.primaryAction} confirmed in the local product surface.`,
       time: "now",
       visibility: activeView === "night" ? "private" : "public",
     };
@@ -522,10 +468,6 @@ export function JinrohSurface() {
     const nextView = phaseTrack[currentTrackIndex + 1]?.view ?? "lobby";
 
     setActiveView(nextView);
-  }
-
-  function handleDemoStep(view: LocalView) {
-    setActiveView(view);
   }
 
   async function handleCopyRoomCode() {
@@ -693,27 +635,6 @@ export function JinrohSurface() {
                 ))}
               </div>
             </section>
-
-            <section className="panelSection">
-              <div className="sectionHeading">
-                <span>Demo states</span>
-                <strong>Local</strong>
-              </div>
-              <div className="demoList">
-                {demoSteps.map((step) => (
-                  <button
-                    aria-pressed={step.view === activeView}
-                    className={step.view === activeView ? "demoStep active" : "demoStep"}
-                    key={step.view}
-                    type="button"
-                    onClick={() => handleDemoStep(step.view)}
-                  >
-                    <strong>{step.label}</strong>
-                    <span>{step.text}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
           </aside>
         </div>
 
@@ -729,7 +650,7 @@ export function JinrohSurface() {
       </div>
 
       <nav className="mobileTabs" aria-label="Mobile state tabs">
-        {navItems.slice(0, 8).map((item) => (
+        {navItems.map((item) => (
           <button
             aria-current={item.view === activeView ? "page" : undefined}
             aria-label={item.label}
