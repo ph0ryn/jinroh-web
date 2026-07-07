@@ -74,6 +74,7 @@ export type PhaseResolutionInput = {
   currentPhase: GamePhase;
   dayNumber: number;
   nightNumber: number;
+  orderedSpeechSlots?: readonly OrderedSpeechSlot[];
   players: PlayerRuntimeState[];
   previousGuardTargetByPlayerId?: Record<string, string>;
   ruleSet: RuleSet;
@@ -86,7 +87,7 @@ export type SubmittedAction = {
   targetPlayerId: string | null;
 };
 
-type OrderedSpeechSlot = {
+export type OrderedSpeechSlot = {
   speakerPlayerId: string;
   slotIndex: number;
 };
@@ -100,6 +101,7 @@ export type PhaseResolution = {
   nextNightNumber: number;
   nextPhase: GamePhase | null;
   nextPhaseDurationSeconds: number | null;
+  speechSlotsToCreate: OrderedSpeechSlot[];
 };
 
 export function startGame(
@@ -511,6 +513,7 @@ function openDay(
       nextNightNumber: input.nightNumber,
       nextPhase: null,
       nextPhaseDurationSeconds: null,
+      speechSlotsToCreate: [],
     };
   }
 
@@ -564,6 +567,7 @@ function openDay(
       input.ruleSet.dayMode === "ordered_speech"
         ? input.ruleSet.daySpeechSeconds
         : alivePlayers.length * input.ruleSet.dayReadyCheckSecondsPerPlayer,
+    speechSlotsToCreate: input.ruleSet.dayMode === "ordered_speech" ? orderedSpeechSlots : [],
   };
 }
 
@@ -571,7 +575,7 @@ function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
   const currentSpeechAction = input.actions.find((action) => action.kind === "end_speech");
   const currentSlotIndex = parseSpeechSlotIndex(currentSpeechAction?.actionKey);
   const alivePlayers = input.players.filter((player) => player.alive);
-  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, input.dayNumber, input.ruleSet);
+  const orderedSpeechSlots = getOrderedSpeechSlots(input, alivePlayers);
   const nextSpeechSlot =
     currentSlotIndex === null ? undefined : orderedSpeechSlots[currentSlotIndex + 1];
 
@@ -602,7 +606,19 @@ function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
     nextNightNumber: input.nightNumber,
     nextPhase: "day",
     nextPhaseDurationSeconds: input.ruleSet.daySpeechSeconds,
+    speechSlotsToCreate: [],
   };
+}
+
+function getOrderedSpeechSlots(
+  input: PhaseResolutionInput,
+  alivePlayers: readonly PlayerRuntimeState[],
+): OrderedSpeechSlot[] {
+  if (input.orderedSpeechSlots !== undefined && input.orderedSpeechSlots.length > 0) {
+    return input.orderedSpeechSlots.toSorted((left, right) => left.slotIndex - right.slotIndex);
+  }
+
+  return createOrderedSpeechSlots(alivePlayers, input.dayNumber, input.ruleSet);
 }
 
 function createOrderedSpeechSlots(
@@ -676,6 +692,7 @@ function openVoting(input: PhaseResolutionInput): PhaseResolution {
     nextNightNumber: input.nightNumber,
     nextPhase: "voting",
     nextPhaseDurationSeconds: input.ruleSet.votingSeconds,
+    speechSlotsToCreate: [],
   };
 }
 
@@ -736,6 +753,7 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
     nextNightNumber: input.nightNumber,
     nextPhase: "execution",
     nextPhaseDurationSeconds: input.ruleSet.executionLastWordsSeconds,
+    speechSlotsToCreate: [],
   };
 }
 
@@ -810,6 +828,7 @@ function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
       nextNightNumber: input.nightNumber,
       nextPhase: null,
       nextPhaseDurationSeconds: null,
+      speechSlotsToCreate: [],
     };
   }
 
@@ -851,6 +870,7 @@ function openNight(
     nextNightNumber,
     nextPhase: "night",
     nextPhaseDurationSeconds: input.ruleSet.nightSeconds,
+    speechSlotsToCreate: [],
   };
 }
 

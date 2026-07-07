@@ -204,6 +204,7 @@ describe("game engine", () => {
     expect(resolution.nextDayNumber).toBe(1);
     expect(resolution.nextPhaseDurationSeconds).toBe(90);
     expect(resolution.actionsToOpen).toHaveLength(1);
+    expect(resolution.speechSlotsToCreate).toHaveLength(6);
     expect(resolution.actionsToOpen[0]).toMatchObject({
       kind: "end_speech",
       targetKind: "none",
@@ -239,6 +240,42 @@ describe("game engine", () => {
     expect(resolution.nextPhase).toBe("day");
     expect(resolution.actionsToOpen).toHaveLength(1);
     expect(resolution.actionsToOpen[0]?.key).toContain("end-speech:1:1:");
+  });
+
+  it("advances ordered speech using persisted slot order", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "3", roleId: "villager" },
+    ];
+    const ruleSet = {
+      ...makeDefaultRuleSetForPlayers(players.length),
+      dayMode: "ordered_speech" as const,
+    };
+    const resolution = resolvePhase({
+      actions: [
+        {
+          actorPlayerId: "3",
+          actionKey: "end-speech:1:0:3",
+          kind: "end_speech",
+          targetPlayerId: null,
+        },
+      ],
+      currentPhase: "day",
+      dayNumber: 1,
+      nightNumber: 1,
+      orderedSpeechSlots: [
+        { slotIndex: 0, speakerPlayerId: "3" },
+        { slotIndex: 1, speakerPlayerId: "1" },
+        { slotIndex: 2, speakerPlayerId: "2" },
+      ],
+      players,
+      ruleSet,
+    });
+
+    expect(resolution.nextPhase).toBe("day");
+    expect(resolution.actionsToOpen).toHaveLength(1);
+    expect(resolution.actionsToOpen[0]?.key).toBe("end-speech:1:1:1");
   });
 
   it("opens voting after the final ordered speech slot", () => {

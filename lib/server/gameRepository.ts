@@ -49,6 +49,7 @@ import {
   startGame,
   type EngineAction,
   type EngineEvent,
+  type OrderedSpeechSlot,
   type PlayerRuntimeState,
   type SubmittedAction,
 } from "./gameEngine";
@@ -129,6 +130,11 @@ type PendingActionRecord = {
   submitter_player_id: number;
   submitted_at: string;
   target_player_id: number | null;
+};
+
+type DaySpeechSlotRecord = {
+  slot_index: number;
+  speaker_player_id: number;
 };
 
 type GameEventRecord = {
@@ -481,16 +487,19 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
     return getRoomViewByRoom(supabase, account, room);
   }
 
-  const [runtimePlayers, ruleSet, previousGuardTargetByPlayerId] = await Promise.all([
-    getRuntimePlayers(supabase, room.id),
-    getRuleSet(supabase, room.id),
-    getPreviousGuardTargetByPlayerId(supabase, room.id),
-  ]);
+  const [runtimePlayers, ruleSet, previousGuardTargetByPlayerId, orderedSpeechSlots] =
+    await Promise.all([
+      getRuntimePlayers(supabase, room.id),
+      getRuleSet(supabase, room.id),
+      getPreviousGuardTargetByPlayerId(supabase, room.id),
+      state.phase === "day" ? getDaySpeechSlots(supabase, room.id, state.phase_instance_id) : [],
+    ]);
   const resolution = resolvePhase({
     actions: toSubmittedResolutionActions(actions, currentPendingActions, state, phaseTimedOut),
     currentPhase: state.phase,
     dayNumber: state.day_number,
     nightNumber: state.night_number,
+    orderedSpeechSlots,
     players: runtimePlayers,
     previousGuardTargetByPlayerId,
     ruleSet,
@@ -508,6 +517,7 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
       player_id: Number.parseInt(death.playerId, 10),
       reason: death.reason,
     })),
+    p_day_speech_slots: serializeDaySpeechSlots(resolution.speechSlotsToCreate),
     p_events: serializeEvents(resolution.events),
     p_expected_current_action_ids: actions
       .map((action) => action.id)
@@ -1323,6 +1333,29 @@ async function getCurrentActions(
   return data;
 }
 
+async function getDaySpeechSlots(
+  supabase: SupabaseClient,
+  roomId: number,
+  phaseInstanceId: string,
+): Promise<OrderedSpeechSlot[]> {
+  const { data, error } = await supabase
+    .from("day_speech_slots")
+    .select("slot_index,speaker_player_id")
+    .eq("room_id", roomId)
+    .eq("phase_instance_id", phaseInstanceId)
+    .order("slot_index", { ascending: true })
+    .returns<DaySpeechSlotRecord[]>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return data.map((slot) => ({
+    slotIndex: slot.slot_index,
+    speakerPlayerId: String(slot.speaker_player_id),
+  }));
+}
+
 async function getPendingActions(
   supabase: SupabaseClient,
   roomId: number,
@@ -1776,6 +1809,13 @@ function serializeActions(actions: readonly EngineAction[]): JsonObject[] {
       Number.parseInt(playerId, 10),
     ),
     target_kind: action.targetKind,
+  }));
+}
+
+function serializeDaySpeechSlots(slots: readonly OrderedSpeechSlot[]): JsonObject[] {
+  return slots.map((slot) => ({
+    slot_index: slot.slotIndex,
+    speaker_player_id: Number.parseInt(slot.speakerPlayerId, 10),
   }));
 }
 
