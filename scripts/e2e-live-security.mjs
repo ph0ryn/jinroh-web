@@ -74,7 +74,7 @@ async function runSecurityCoverage(baseUrl) {
 
   const host = players[0];
   const roomSummary = await apiFetch(baseUrl, "/api/rooms", {
-    body: { displayName: host.displayName },
+    body: { displayName: host.displayName, targetPlayerCount: players.length },
     method: "POST",
     token: host.token,
   });

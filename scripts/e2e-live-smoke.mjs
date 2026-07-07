@@ -105,6 +105,7 @@ async function runLiveSmoke(baseUrl) {
     ];
     const [host, player2, player3] = players;
 
+    await host.page.getByLabel("Players").selectOption("3");
     await clickAndWaitForMetric(host.page, "Create room", "Code");
     const roomCode = await readMetric(host.page, "Code");
     await waitMood(host.page, "lobby");
@@ -124,7 +125,7 @@ async function runLiveSmoke(baseUrl) {
     }
 
     await refresh(host.page);
-    await waitMetric(host.page, "Players", "3");
+    await waitSeated(host.page, 3, 3);
 
     await startGame(host, baseUrl, roomCode);
     await waitPhase(host.page, "night");
@@ -316,6 +317,13 @@ async function clickAndWaitForMetric(page, buttonName, metricLabel) {
         (label) => {
           const textOf = (element) => (element === null ? null : element.textContent.trim());
 
+          if (
+            label === "Code" &&
+            document.querySelector('[aria-label="Room invite tools"] strong') !== null
+          ) {
+            return true;
+          }
+
           return [...document.querySelectorAll(".liveMetrics div")].some(
             (row) => textOf(row.querySelector("dt")) === label,
           );
@@ -340,6 +348,14 @@ async function readMetric(page, label) {
   return page.evaluate((metricLabel) => {
     const textOf = (element) => (element === null ? null : element.textContent.trim());
 
+    if (metricLabel === "Code") {
+      const inviteCode = textOf(document.querySelector('[aria-label="Room invite tools"] strong'));
+
+      if (inviteCode !== null) {
+        return inviteCode;
+      }
+    }
+
     for (const row of document.querySelectorAll(".liveMetrics div")) {
       const term = textOf(row.querySelector("dt"));
 
@@ -350,6 +366,10 @@ async function readMetric(page, label) {
 
     return null;
   }, label);
+}
+
+async function waitSeated(page, seated, target) {
+  await page.getByText(`${seated} / ${target} seated`).first().waitFor({ timeout: 10000 });
 }
 
 async function assertInviteTools(page, roomCode) {
@@ -372,6 +392,7 @@ async function assertCopyRoomCode(page, roomCode) {
     roomCode,
     { timeout: 5000 },
   );
+  await page.getByRole("button", { name: "Copied!" }).waitFor({ timeout: 5000 });
 
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
 
@@ -384,6 +405,12 @@ async function waitMetric(page, label, expected) {
   await page.waitForFunction(
     ({ expected, label }) => {
       const textOf = (element) => (element === null ? null : element.textContent.trim());
+
+      if (label === "Code") {
+        return (
+          textOf(document.querySelector('[aria-label="Room invite tools"] strong')) === expected
+        );
+      }
 
       for (const row of document.querySelectorAll(".liveMetrics div")) {
         const term = textOf(row.querySelector("dt"));
@@ -663,7 +690,7 @@ async function readEvidence(page) {
     const bodyText = document.body.textContent;
 
     return {
-      hasLiveTable: bodyText.includes("Jinroh Web table"),
+      hasLiveTable: document.querySelector(".liveShell") !== null,
       hasResult:
         bodyText.includes("won. Start a new room") ||
         bodyText.includes("You won this game.") ||

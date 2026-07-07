@@ -1,4 +1,7 @@
 export const ROLE_IDS = ["werewolf", "villager", "madman", "seer", "guard", "fox"] as const;
+export const MIN_ROOM_PLAYERS = 3;
+export const MAX_ROOM_PLAYERS = 10;
+export const DEFAULT_TARGET_PLAYER_COUNT = 6;
 
 export type RoleId = (typeof ROLE_IDS)[number];
 
@@ -34,6 +37,7 @@ export type RoomSummary = {
   code: string;
   status: RoomStatus;
   lobbyExpiresAt: string;
+  targetPlayerCount: number;
   hostPlayerId: string | null;
   currentPlayerId: string | null;
   isHost: boolean;

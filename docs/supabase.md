@@ -284,6 +284,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 - room status
 - host account reference
 - room realtime topic
+- target player count
 - lobby expiration time
 - created time
 - started time
@@ -304,6 +305,7 @@ Room status。
 - active Room の public room code は衝突させない
 - `disbanded` / `ended` の古い Room の code は再利用してよい
 - Room は `lobby` で作成する
+- target player count は 3 から 10 の整数
 - lobby Room は30分以内に開始されなければ期限切れ
 - 期限切れの Room は物理削除せず `disbanded` にする
 - host account reference は Browser に返さない
@@ -390,6 +392,7 @@ Room lifecycle と lobby 操作の履歴。
 - random realtime topic を発行する
 - Room を `lobby` で作成する
 - host Account を保存する
+- target player count を保存する
 - host Player を作成する
 - display name を host Player に snapshot する
 - lobby expiration time を設定する
@@ -405,6 +408,7 @@ commit 後に Realtime 通知を送る。
 - Account を認証する
 - public room code で Room を取得して lock する
 - lobby 期限切れを確認し、必要なら `disbanded` にする
+- 新規 Player または `left` / `disconnected` Player の再参加で target player count を超えないことを確認する
 - 新規 Player は `lobby` の間だけ作成する
 - 既存 Player は `lobby` または `playing` で再参加させる
 - 新規 Player 作成時だけ display name を snapshot する
@@ -421,6 +425,7 @@ Room start は game start transaction と同じ境界で扱う。
 - Room を lock する
 - Room が `lobby` か確認する
 - lobby 期限切れでないことを確認する
+- joined Player 数が target player count と一致することを確認する
 - RuleSet を検証する
 - `game_states` を lock して `assigning_roles` にする
 - role assignment を確定する
@@ -999,7 +1004,7 @@ Room start と game start は同じ transaction で扱う。
 - Room row を lock する
 - Room が `lobby` で期限切れでないことを確認する
 - authenticated Account が host であることを確認する
-- Player 数と selected RuleSet を検証する
+- Player 数が target player count と一致することと selected RuleSet を検証する
 - Role registry version と engine version を固定する
 - `game_states.status = assigning_roles` にする
 - role assignment を決める

@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
 import {
+  DEFAULT_TARGET_PLAYER_COUNT,
   DEFAULT_RULE_SET,
+  MAX_ROOM_PLAYERS,
+  MIN_ROOM_PLAYERS,
   makeDefaultRuleSetForPlayers,
   ROLE_DEFINITIONS,
   ROLE_IDS,
@@ -76,7 +79,14 @@ const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
-const MAX_ROOM_PLAYERS = 10;
+const PLAYER_COUNT_OPTIONS = Array.from(
+  { length: MAX_ROOM_PLAYERS - MIN_ROOM_PLAYERS + 1 },
+  (unusedValue, index) => {
+    void unusedValue;
+
+    return MIN_ROOM_PLAYERS + index;
+  },
+);
 const LIVE_MOOD_BACKGROUND_SOURCES = [
   "/images/jinroh-lobby-same-angle.jpg",
   "/images/jinroh-day-same-angle.jpg",
@@ -127,19 +137,21 @@ const EMPTY_ROOM_STEPS = [
 ] as const;
 
 export default function LivePage() {
-  const [identityToken, setIdentityToken] = useState(() => readStorage(IDENTITY_STORAGE_KEY));
-  const [displayName, setDisplayName] = useState(
-    () => readStorage(DISPLAY_NAME_STORAGE_KEY) ?? "Sora",
-  );
-  const [roomCodeInput, setRoomCodeInput] = useState(
-    () => readStorage(ROOM_CODE_STORAGE_KEY) ?? "",
-  );
+  const [identityToken, setIdentityToken] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("Sora");
+  const [roomCodeInput, setRoomCodeInput] = useState("");
+  const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
+  const [savedRoomCode, setSavedRoomCode] = useState<string | null>(null);
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
   const [startRuleSetSettings, setStartRuleSetSettings] = useState<StartRuleSetSettings>(
     DEFAULT_START_RULE_SET_SETTINGS,
   );
+  const [isStartSettingsOpen, setIsStartSettingsOpen] = useState(false);
   const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
   const [nightConversationDraft, setNightConversationDraft] = useState("");
+  const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
+  const copiedInviteResetTimerRef = useRef<number | null>(null);
+  const ignoredRoomCodeRef = useRef<string | null>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState(
     "Your browser identity stays local and can rejoin the room.",
@@ -161,6 +173,7 @@ export default function LivePage() {
       }
 
       if (savedRoomCode !== null) {
+        setSavedRoomCode(savedRoomCode);
         setRoomCodeInput(savedRoomCode);
       }
     }, 0);
@@ -185,6 +198,37 @@ export default function LivePage() {
       preloadedImages.length = 0;
     };
   }, []);
+
+  useEffect(
+    () => () => {
+      if (copiedInviteResetTimerRef.current !== null) {
+        window.clearTimeout(copiedInviteResetTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!isStartSettingsOpen) {
+      return;
+    }
+
+    function handleSettingsKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setIsStartSettingsOpen(false);
+      }
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleSettingsKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      window.removeEventListener("keydown", handleSettingsKeyDown);
+    };
+  }, [isStartSettingsOpen]);
 
   async function withBusy(work: () => Promise<void>): Promise<void> {
     setIsBusy(true);
@@ -214,8 +258,13 @@ export default function LivePage() {
 
   const rememberRoom = useCallback(
     (nextSummary: RoomSummary, options: RememberRoomOptions = {}) => {
+      if (ignoredRoomCodeRef.current === nextSummary.code) {
+        return;
+      }
+
       writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
       writeStorage(ROOM_CODE_STORAGE_KEY, nextSummary.code);
+      setSavedRoomCode(nextSummary.code);
       setRoomCodeInput(nextSummary.code);
       setRoomSummary(nextSummary);
 
@@ -225,6 +274,57 @@ export default function LivePage() {
     },
     [displayName],
   );
+
+  useEffect(() => {
+    if (identityToken === null && savedRoomCode !== null) {
+      removeStorage(ROOM_CODE_STORAGE_KEY);
+      setSavedRoomCode(null);
+      setRoomCodeInput("");
+      setStatusMessage("Saved room expired. Create or join a room.");
+    }
+  }, [identityToken, savedRoomCode]);
+
+  useEffect(() => {
+    if (identityToken === null || roomSummary !== null || savedRoomCode === null) {
+      return;
+    }
+
+    if (ignoredRoomCodeRef.current === savedRoomCode) {
+      return;
+    }
+
+    let isCancelled = false;
+    const activeToken = identityToken;
+
+    setStatusMessage(`Restoring room ${savedRoomCode}.`);
+
+    async function restoreSavedRoom(): Promise<void> {
+      try {
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${savedRoomCode}`, {
+          method: "GET",
+          token: activeToken,
+        });
+
+        if (!isCancelled) {
+          rememberRoom(summary, { resetActionTargets: false });
+          setStatusMessage(`Room ${summary.code} restored.`);
+        }
+      } catch {
+        if (!isCancelled) {
+          removeStorage(ROOM_CODE_STORAGE_KEY);
+          setSavedRoomCode(null);
+          setRoomCodeInput("");
+          setStatusMessage("Saved room could not be restored. Create or join a room.");
+        }
+      }
+    }
+
+    void restoreSavedRoom();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [identityToken, rememberRoom, roomSummary, savedRoomCode]);
 
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
@@ -434,18 +534,33 @@ export default function LivePage() {
     const normalizedRoomCode = nextRoomCode.replace(/\D/g, "").slice(0, 6);
 
     setRoomCodeInput(normalizedRoomCode);
-    writeStorage(ROOM_CODE_STORAGE_KEY, normalizedRoomCode);
+  }
+
+  function handleTargetPlayerCountChange(nextTargetPlayerCount: number): void {
+    if (
+      Number.isInteger(nextTargetPlayerCount) &&
+      nextTargetPlayerCount >= MIN_ROOM_PLAYERS &&
+      nextTargetPlayerCount <= MAX_ROOM_PLAYERS
+    ) {
+      setTargetPlayerCount(nextTargetPlayerCount);
+    }
   }
 
   function handleCreateRoom(): void {
     void withBusy(async () => {
+      if (roomSummary !== null || savedRoomCode !== null) {
+        setStatusMessage("Leave the current room before creating another room.");
+        return;
+      }
+
       const token = await ensureIdentityToken();
       const summary = await apiFetch<RoomSummary>("/api/rooms", {
-        body: { displayName },
+        body: { displayName, targetPlayerCount },
         method: "POST",
         token,
       });
 
+      ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
       setStatusMessage(`Room ${summary.code} created. Share the code with players.`);
     });
@@ -453,6 +568,11 @@ export default function LivePage() {
 
   function handleJoinRoom(): void {
     void withBusy(async () => {
+      if (roomSummary !== null || savedRoomCode !== null) {
+        setStatusMessage("Leave the current room before joining another room.");
+        return;
+      }
+
       const roomCode = requireRoomCode(roomCodeInput);
       const token = await ensureIdentityToken();
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
@@ -461,6 +581,7 @@ export default function LivePage() {
         token,
       });
 
+      ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
       setStatusMessage(`Joined room ${summary.code}.`);
     });
@@ -540,12 +661,20 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
-      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/leave`, {
+      await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/leave`, {
         method: "POST",
         token,
       });
 
-      rememberRoom(summary, { resetActionTargets: true });
+      ignoredRoomCodeRef.current = roomCode;
+      removeStorage(ROOM_CODE_STORAGE_KEY);
+      setSavedRoomCode(null);
+      setRoomSummary(null);
+      setRoomCodeInput("");
+      setTargetByActionKey({});
+      setIsNightConversationOpen(false);
+      setNightConversationDraft("");
+      setIsStartSettingsOpen(false);
       setStatusMessage("Left the room.");
     });
   }
@@ -608,7 +737,18 @@ export default function LivePage() {
     const didCopy = await writeClipboardText(roomCode);
 
     if (didCopy) {
+      if (copiedInviteResetTimerRef.current !== null) {
+        window.clearTimeout(copiedInviteResetTimerRef.current);
+      }
+
+      setCopiedInviteRoomCode(roomCode);
       setStatusMessage(`Room code ${roomCode} copied.`);
+      copiedInviteResetTimerRef.current = window.setTimeout(() => {
+        setCopiedInviteRoomCode((currentRoomCode) =>
+          currentRoomCode === roomCode ? null : currentRoomCode,
+        );
+        copiedInviteResetTimerRef.current = null;
+      }, 1_600);
       return;
     }
 
@@ -656,187 +796,368 @@ export default function LivePage() {
   const roomStatusLabel = formatRoomStatus(roomSummary);
   const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy);
   const canStartGame = !isBusy && canStartRoom(roomSummary);
+  const canConfigureStartSettings = roomSummary?.isHost === true && roomSummary.status === "lobby";
   const canAdvancePhase =
     !isBusy &&
     roomSummary?.isHost === true &&
     roomSummary.status === "playing" &&
     roomSummary.game?.status === "playing";
-  const startHint = getStartHint(roomSummary, isBusy);
-  const advanceHint = getAdvanceHint(roomSummary, isBusy);
-  const leaveHint = getLeaveHint(roomSummary, isBusy);
+  const controlHint = getControlHint(roomSummary, isBusy);
   const liveMood = getLiveMood(roomSummary);
+  const isRoomEntryAvailable = roomSummary === null && savedRoomCode === null;
+  let liveGridClassName = "liveGrid";
+
+  if (roomSummary === null) {
+    liveGridClassName = "liveGrid liveGridSetup";
+  } else if (roomSummary.status === "lobby") {
+    liveGridClassName = "liveGrid liveGridLobby";
+  }
 
   return (
     <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
       <section className="liveHero">
         <Link className="liveBackLink" href="/">
-          Back to overview
+          Overview
         </Link>
-        <div>
-          <p className="liveKicker">Jinroh Web table</p>
-          <h1>Run the table without leaking secrets.</h1>
-          <p>
-            Create a room, share the code, and let each browser show only the role, action, and
-            result that player is allowed to see.
-          </p>
+        <div className="liveHeroTitle">
+          <h1>{roomSummary === null ? "Room setup" : `Room ${roomSummary.code}`}</h1>
+          <p>{roomStatusLabel}</p>
         </div>
       </section>
 
-      <section className="liveEntryPanel" aria-label="Room entry">
-        <label>
-          Display name
-          <input
-            autoComplete="nickname"
-            maxLength={32}
-            value={displayName}
-            onChange={(event) => handleDisplayNameChange(event.target.value)}
-          />
-        </label>
-        <label>
-          Room code
-          <input
-            autoComplete="one-time-code"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder="123456"
-            value={roomCodeInput}
-            onChange={(event) => handleRoomCodeChange(event.target.value)}
-          />
-        </label>
-        <div className="liveEntryActions">
-          <button type="button" onClick={handleCreateRoom} disabled={isBusy}>
-            Create room
-          </button>
-          <button
-            className="secondaryButton"
-            type="button"
-            onClick={handleJoinRoom}
-            disabled={isBusy}
-          >
-            Join
-          </button>
-          <button
-            className="secondaryButton"
-            type="button"
-            onClick={handleRefreshRoom}
-            disabled={isBusy}
-          >
-            Refresh
-          </button>
-        </div>
-      </section>
+      <div className={isRoomEntryAvailable ? "liveTopStack" : "liveTopStack liveTopStackCompact"}>
+        {isRoomEntryAvailable ? (
+          <section className="liveEntryPanel" aria-label="Room entry">
+            <label>
+              Display name
+              <input
+                autoComplete="nickname"
+                maxLength={32}
+                value={displayName}
+                onChange={(event) => handleDisplayNameChange(event.target.value)}
+              />
+            </label>
+            <label>
+              Room code
+              <input
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="123456"
+                value={roomCodeInput}
+                onChange={(event) => handleRoomCodeChange(event.target.value)}
+              />
+            </label>
+            <label>
+              Players
+              <select
+                value={targetPlayerCount}
+                onChange={(event) => handleTargetPlayerCountChange(Number(event.target.value))}
+              >
+                {PLAYER_COUNT_OPTIONS.map((playerCount) => (
+                  <option key={playerCount} value={playerCount}>
+                    {playerCount}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="liveEntryActions">
+              <button type="button" onClick={handleCreateRoom} disabled={isBusy}>
+                Create room
+              </button>
+              <button
+                className="secondaryButton"
+                type="button"
+                onClick={handleJoinRoom}
+                disabled={isBusy}
+              >
+                Join
+              </button>
+            </div>
+          </section>
+        ) : null}
 
-      <section className="liveStatusBar" aria-live="polite">
-        <span>{liveGuidance.label}</span>
-        <strong>{liveGuidance.message}</strong>
-        <small>{statusMessage}</small>
-      </section>
+        <section className="liveStatusBar" aria-live="polite">
+          <span>{liveGuidance.label}</span>
+          <strong>{liveGuidance.message}</strong>
+          <small>{statusMessage}</small>
+        </section>
+      </div>
 
-      <div className="liveGrid">
-        <section className="livePanel liveRoomPanel" aria-label="Room state">
-          <div className="livePanelHeading">
-            <span>Room</span>
-            <strong>{roomStatusLabel}</strong>
-          </div>
+      <div className={liveGridClassName}>
+        {roomSummary === null ? (
+          <section className="livePanel liveRoomPanel" aria-label="Room state">
+            <div className="livePanelHeading">
+              <span>Room</span>
+              <strong>{roomStatusLabel}</strong>
+            </div>
 
-          {roomSummary === null ? (
-            <EmptyRoomState />
-          ) : (
-            <>
-              <RoomMetrics summary={roomSummary} />
+            {savedRoomCode === null ? (
+              <EmptyRoomState />
+            ) : (
+              <SavedRoomState roomCode={savedRoomCode} />
+            )}
+          </section>
+        ) : null}
+
+        {roomSummary?.status === "lobby" ? (
+          <>
+            <section className="livePanel liveInvitePanel" aria-label="Invite">
+              <div className="livePanelHeading">
+                <span>Invite</span>
+                <div className="livePanelHeadingActions">
+                  <strong>{roomStatusLabel}</strong>
+                  <button
+                    className="secondaryButton liveCompactButton"
+                    type="button"
+                    onClick={handleRefreshRoom}
+                    disabled={isBusy}
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
               <RoomInviteTools
+                copiedRoomCode={copiedInviteRoomCode}
                 summary={roomSummary}
                 onCopyRoomCode={handleCopyRoomCode}
                 onShareRoom={handleShareRoom}
               />
-              <PlayerList players={roomSummary.players} />
-            </>
-          )}
-        </section>
+              <LobbyRequirements summary={roomSummary} />
+            </section>
 
-        <section className="livePanel liveControlPanel" aria-label="Game controls">
-          <div className="livePanelHeading">
-            <span>Controls</span>
-            <strong>{roomSummary?.isHost === true ? "Host" : "Player"}</strong>
-          </div>
+            <section className="livePanel liveSeatPanel" aria-label="Lobby seats">
+              <div className="livePanelHeading">
+                <span>Lobby</span>
+                <strong>
+                  {countJoinedPlayers(roomSummary)} / {roomSummary.targetPlayerCount} seated
+                </strong>
+              </div>
+              <PlayerSeatGrid summary={roomSummary} />
+            </section>
+          </>
+        ) : null}
 
-          {roomSummary?.isHost === true && roomSummary.status === "lobby" ? (
-            <StartRuleSetPanel
-              playerCount={roomSummary.players.length}
-              settings={startRuleSetSettings}
-              onNumberChange={handleStartRuleSetNumberChange}
-              onSettingsChange={handleStartRuleSetChange}
+        {roomSummary !== null && roomSummary.status !== "lobby" ? (
+          <section className="livePanel liveRoomPanel" aria-label="Room state">
+            <div className="livePanelHeading">
+              <span>Room</span>
+              <div className="livePanelHeadingActions">
+                <strong>{roomStatusLabel}</strong>
+                <button
+                  className="secondaryButton liveCompactButton"
+                  type="button"
+                  onClick={handleRefreshRoom}
+                  disabled={isBusy}
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <RoomMetrics summary={roomSummary} />
+            <RoomInviteTools
+              copiedRoomCode={copiedInviteRoomCode}
+              summary={roomSummary}
+              onCopyRoomCode={handleCopyRoomCode}
+              onShareRoom={handleShareRoom}
             />
-          ) : null}
+            <PlayerList players={roomSummary.players} />
+          </section>
+        ) : null}
 
-          <div className="liveControlStack">
-            <button
-              className="primaryLiveButton"
-              aria-describedby="start-game-hint"
-              type="button"
-              onClick={handleStartGame}
-              disabled={!canStartGame}
-            >
-              Start game
-            </button>
-            <button
-              className="secondaryButton"
-              aria-describedby="advance-phase-hint"
-              type="button"
-              onClick={handleResolvePhase}
-              disabled={!canAdvancePhase}
-            >
-              Advance phase
-            </button>
-            <button
-              className="dangerButton"
-              aria-describedby="leave-room-hint"
-              type="button"
-              onClick={handleLeaveRoom}
-              disabled={isBusy || roomSummary === null}
-            >
-              Leave room
-            </button>
-          </div>
-          <div className="liveControlHints">
-            <p id="start-game-hint">{startHint}</p>
-            <p id="advance-phase-hint">{advanceHint}</p>
-            <p id="leave-room-hint">{leaveHint}</p>
-          </div>
+        {roomSummary?.status === "lobby" ? (
+          <section className="livePanel liveControlPanel" aria-label="Lobby controls">
+            <div className="livePanelHeading">
+              <span>{roomSummary.isHost ? "Host controls" : "Player controls"}</span>
+              <div className="livePanelHeadingActions">
+                <strong>{roomSummary.isHost ? "Host" : "Player"}</strong>
+                {canConfigureStartSettings ? (
+                  <button
+                    className="secondaryButton liveCompactButton"
+                    aria-controls="start-settings-dialog"
+                    aria-expanded={isStartSettingsOpen}
+                    aria-haspopup="dialog"
+                    type="button"
+                    onClick={() => setIsStartSettingsOpen(true)}
+                  >
+                    Settings
+                  </button>
+                ) : null}
+              </div>
+            </div>
 
-          <SelfView
-            isNightConversationOpen={isNightConversationOpen}
-            isBusy={isBusy}
-            nightConversationDraft={nightConversationDraft}
-            summary={roomSummary}
-            onNightConversationDraftChange={setNightConversationDraft}
-            onSendNightConversation={handleSendNightConversation}
-            onToggleNightConversation={() =>
-              setIsNightConversationOpen((currentValue) => !currentValue)
-            }
-          />
-          <ActionList
-            actions={selfActions}
-            isBusy={isBusy}
-            players={roomSummary?.players ?? []}
-            summary={roomSummary}
-            targetByActionKey={targetByActionKey}
-            onTargetChange={(actionKey, playerId) =>
-              setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
-            }
-            onSubmitAction={handleSubmitAction}
-          />
-        </section>
+            <div className="liveLobbyPanel">
+              <strong>
+                {roomSummary.isHost ? "Start when everyone is seated" : "Waiting for host"}
+              </strong>
+              <p>{controlHint}</p>
+            </div>
 
-        <section className="livePanel liveEventPanel" aria-label="Public event log">
-          <div className="livePanelHeading">
-            <span>Public log</span>
-            <strong>{roomSummary?.game?.events.length ?? 0} events</strong>
-          </div>
-          <EventLog summary={roomSummary} />
-        </section>
+            <div className="liveLobbyActions">
+              {roomSummary.isHost ? (
+                <button
+                  className="primaryLiveButton"
+                  aria-describedby="control-hint"
+                  type="button"
+                  onClick={handleStartGame}
+                  disabled={!canStartGame}
+                >
+                  Start game
+                </button>
+              ) : null}
+              <button
+                className="dangerButton"
+                aria-describedby="control-hint"
+                type="button"
+                onClick={handleLeaveRoom}
+                disabled={isBusy}
+              >
+                Leave room
+              </button>
+            </div>
+            <p className="srOnly" id="control-hint">
+              {controlHint}
+            </p>
+          </section>
+        ) : null}
+
+        {roomSummary !== null && roomSummary.status !== "lobby" ? (
+          <>
+            <section className="livePanel liveControlPanel" aria-label="Game controls">
+              <div className="livePanelHeading">
+                <span>Controls</span>
+                <strong>{roomSummary.isHost ? "Host" : "Player"}</strong>
+              </div>
+
+              <div className="liveControlStack">
+                <button
+                  className="secondaryButton"
+                  aria-describedby="control-hint"
+                  type="button"
+                  onClick={handleResolvePhase}
+                  disabled={!canAdvancePhase}
+                >
+                  Advance phase
+                </button>
+                <button
+                  className="dangerButton"
+                  aria-describedby="control-hint"
+                  type="button"
+                  onClick={handleLeaveRoom}
+                  disabled={isBusy}
+                >
+                  Leave room
+                </button>
+              </div>
+              <div className="liveControlHints">
+                <p id="control-hint">{controlHint}</p>
+              </div>
+
+              <SelfView
+                isNightConversationOpen={isNightConversationOpen}
+                isBusy={isBusy}
+                nightConversationDraft={nightConversationDraft}
+                summary={roomSummary}
+                onNightConversationDraftChange={setNightConversationDraft}
+                onSendNightConversation={handleSendNightConversation}
+                onToggleNightConversation={() =>
+                  setIsNightConversationOpen((currentValue) => !currentValue)
+                }
+              />
+              <ActionList
+                actions={selfActions}
+                isBusy={isBusy}
+                players={roomSummary.players}
+                summary={roomSummary}
+                targetByActionKey={targetByActionKey}
+                onTargetChange={(actionKey, playerId) =>
+                  setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
+                }
+                onSubmitAction={handleSubmitAction}
+              />
+            </section>
+
+            <section className="livePanel liveEventPanel" aria-label="Public event log">
+              <div className="livePanelHeading">
+                <span>Public log</span>
+                <strong>{roomSummary.game?.events.length ?? 0} events</strong>
+              </div>
+              <EventLog summary={roomSummary} />
+            </section>
+          </>
+        ) : null}
       </div>
+
+      {canConfigureStartSettings && isStartSettingsOpen ? (
+        <StartSettingsDialog
+          playerCount={roomSummary.targetPlayerCount}
+          settings={startRuleSetSettings}
+          onClose={() => setIsStartSettingsOpen(false)}
+          onNumberChange={handleStartRuleSetNumberChange}
+          onSettingsChange={handleStartRuleSetChange}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function StartSettingsDialog({
+  playerCount,
+  settings,
+  onClose,
+  onNumberChange,
+  onSettingsChange,
+}: {
+  readonly playerCount: number;
+  readonly settings: StartRuleSetSettings;
+  readonly onClose: () => void;
+  readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
+  readonly onSettingsChange: <Key extends keyof StartRuleSetSettings>(
+    key: Key,
+    value: StartRuleSetSettings[Key],
+  ) => void;
+}) {
+  return (
+    <div
+      className="liveModalBackdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="liveModal"
+        id="start-settings-dialog"
+        aria-labelledby="start-settings-title"
+        aria-modal="true"
+        role="dialog"
+      >
+        <div className="liveModalHeader">
+          <div>
+            <span>Game setup</span>
+            <h2 id="start-settings-title">Start settings</h2>
+          </div>
+          <button
+            className="secondaryButton liveIconButton"
+            aria-label="Close settings"
+            type="button"
+            onClick={onClose}
+          >
+            <span aria-hidden="true">X</span>
+          </button>
+        </div>
+
+        <StartRuleSetPanel
+          playerCount={playerCount}
+          settings={settings}
+          onNumberChange={onNumberChange}
+          onSettingsChange={onSettingsChange}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -860,16 +1181,29 @@ function EmptyRoomState() {
   );
 }
 
+function SavedRoomState({ roomCode }: { readonly roomCode: string }) {
+  return (
+    <div className="liveEmptyState">
+      <strong>Restoring room {roomCode}</strong>
+      <p>This browser already has a room. Leave that room before creating or joining another.</p>
+    </div>
+  );
+}
+
 function RoomInviteTools({
+  copiedRoomCode,
   summary,
   onCopyRoomCode,
   onShareRoom,
 }: {
+  readonly copiedRoomCode: string | null;
   readonly summary: RoomSummary;
   readonly onCopyRoomCode: (roomCode: string) => void;
   readonly onShareRoom: (roomCode: string) => void;
 }) {
-  const openSeats = Math.max(MAX_ROOM_PLAYERS - summary.players.length, 0);
+  const joinedPlayerCount = countJoinedPlayers(summary);
+  const openSeats = Math.max(summary.targetPlayerCount - joinedPlayerCount, 0);
+  const didCopyCurrentRoom = copiedRoomCode === summary.code;
 
   return (
     <div className="liveInviteTools" aria-label="Room invite tools">
@@ -880,11 +1214,11 @@ function RoomInviteTools({
       </div>
       <div>
         <button
-          className="secondaryButton"
+          className={didCopyCurrentRoom ? "secondaryButton liveCopiedButton" : "secondaryButton"}
           type="button"
           onClick={() => onCopyRoomCode(summary.code)}
         >
-          Copy code
+          {didCopyCurrentRoom ? "Copied!" : "Copy code"}
         </button>
         <button className="secondaryButton" type="button" onClick={() => onShareRoom(summary.code)}>
           Share invite
@@ -894,9 +1228,42 @@ function RoomInviteTools({
   );
 }
 
+function LobbyRequirements({ summary }: { readonly summary: RoomSummary }) {
+  const joinedPlayerCount = countJoinedPlayers(summary);
+  const requiredPlayers = Math.max(summary.targetPlayerCount - joinedPlayerCount, 0);
+  const progressPercent = Math.min(
+    100,
+    Math.round((joinedPlayerCount / summary.targetPlayerCount) * 100),
+  );
+
+  return (
+    <div className="liveLobbyRequirements">
+      <div>
+        <span>Start requirement</span>
+        <strong>
+          {requiredPlayers === 0
+            ? "All seats are filled."
+            : `${requiredPlayers} more player${requiredPlayers === 1 ? "" : "s"} needed.`}
+        </strong>
+      </div>
+      <div
+        className="liveProgressTrack"
+        aria-label={`${joinedPlayerCount} of ${summary.targetPlayerCount} seats filled`}
+      >
+        <span style={{ width: `${progressPercent}%` }} />
+      </div>
+      <ul>
+        <li>Share the code with separate browser sessions.</li>
+        <li>Settings stay behind the host Settings button.</li>
+      </ul>
+    </div>
+  );
+}
+
 function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
   const game = summary.game;
   const phaseEndsAt = game?.phaseEndsAt ?? null;
+  const joinedPlayerCount = countJoinedPlayers(summary);
 
   return (
     <dl className="liveMetrics">
@@ -905,20 +1272,14 @@ function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
         <dd>{summary.code}</dd>
       </div>
       <div>
-        <dt>Players</dt>
-        <dd>{summary.players.length}</dd>
+        <dt>Seats</dt>
+        <dd>
+          {joinedPlayerCount} / {summary.targetPlayerCount}
+        </dd>
       </div>
       <div>
         <dt>Phase</dt>
         <dd>{game?.phase ?? "setup"}</dd>
-      </div>
-      <div>
-        <dt>Window</dt>
-        <dd>{formatPhaseWindow(game?.phaseInstanceId ?? null)}</dd>
-      </div>
-      <div>
-        <dt>Progress</dt>
-        <dd>{formatActionProgress(game?.actionProgress ?? null)}</dd>
       </div>
       <div className={phaseEndsAt === null ? undefined : "liveTimerMetric"}>
         <dt>Timer</dt>
@@ -926,14 +1287,24 @@ function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
           <PhaseCountdown key={phaseEndsAt ?? "closed"} phaseEndsAt={phaseEndsAt} />
         </dd>
       </div>
-      <div>
-        <dt>Ends</dt>
-        <dd>{formatDateTime(phaseEndsAt)}</dd>
-      </div>
-      <div>
-        <dt>Winner</dt>
-        <dd>{game?.winnerTeam ?? "none"}</dd>
-      </div>
+      {game?.actionProgress === null || game?.actionProgress === undefined ? null : (
+        <div>
+          <dt>Progress</dt>
+          <dd>{formatActionProgress(game.actionProgress)}</dd>
+        </div>
+      )}
+      {phaseEndsAt === null ? null : (
+        <div>
+          <dt>Ends</dt>
+          <dd>{formatDateTime(phaseEndsAt)}</dd>
+        </div>
+      )}
+      {game?.winnerTeam === null || game?.winnerTeam === undefined ? null : (
+        <div>
+          <dt>Winner</dt>
+          <dd>{game.winnerTeam}</dd>
+        </div>
+      )}
     </dl>
   );
 }
@@ -976,6 +1347,45 @@ function PlayerList({ players }: { readonly players: readonly PublicPlayer[] }) 
   );
 }
 
+function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
+  const joinedPlayers = summary.players.filter((player) => player.status === "joined");
+  const emptySeats = Array.from(
+    { length: Math.max(summary.targetPlayerCount - joinedPlayers.length, 0) },
+    (unusedValue, index) => {
+      void unusedValue;
+
+      return index + joinedPlayers.length + 1;
+    },
+  );
+
+  return (
+    <div className="liveSeatGrid" aria-label="Lobby seats">
+      {joinedPlayers.map((player, index) => (
+        <div className={player.isCurrent ? "liveSeatCard current" : "liveSeatCard"} key={player.id}>
+          <span className="liveAvatar" aria-hidden="true">
+            {player.displayName.slice(0, 1)}
+          </span>
+          <span>
+            <strong>{player.displayName}</strong>
+            <small>Seat {index + 1}</small>
+          </span>
+          <em>{player.isHost ? "Host" : "Player"}</em>
+        </div>
+      ))}
+      {emptySeats.map((seatNumber) => (
+        <div className="liveSeatCard empty" key={`empty-${seatNumber}`}>
+          <span className="liveAvatar" aria-hidden="true" />
+          <span>
+            <strong>Open seat</strong>
+            <small>Seat {seatNumber}</small>
+          </span>
+          <em>Open</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StartRuleSetPanel({
   playerCount,
   settings,
@@ -990,7 +1400,7 @@ function StartRuleSetPanel({
     value: StartRuleSetSettings[Key],
   ) => void;
 }) {
-  const canPreviewRoleMix = playerCount >= 3 && playerCount <= 10;
+  const canPreviewRoleMix = playerCount >= MIN_ROOM_PLAYERS && playerCount <= MAX_ROOM_PLAYERS;
   const previewRuleSet = canPreviewRoleMix ? makeDefaultRuleSetForPlayers(playerCount) : null;
   const activeRoleIds =
     previewRuleSet === null
@@ -998,12 +1408,7 @@ function StartRuleSetPanel({
       : ROLE_IDS.filter((roleId) => previewRuleSet.roleCounts[roleId] > 0);
 
   return (
-    <div className="liveRuleSetPanel" aria-label="Start settings">
-      <div className="liveRuleSetHeader">
-        <span>Start settings</span>
-        <strong>{playerCount} players</strong>
-      </div>
-
+    <div className="liveRuleSetPanel">
       <div className="liveRuleSetGrid">
         <label className="liveRuleSetField">
           <span>Day mode</span>
@@ -1646,6 +2051,12 @@ function writeStorage(key: string, value: string): void {
   }
 }
 
+function removeStorage(key: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(key);
+  }
+}
+
 function requireRoomCode(roomCode: string): string {
   if (!/^\d{6}$/.test(roomCode)) {
     throw new Error("Enter a six-digit room code.");
@@ -1713,19 +2124,29 @@ function getLiveGuidance(
   }
 
   if (summary.status === "lobby") {
+    const joinedPlayerCount = countJoinedPlayers(summary);
+
     if (!summary.isHost) {
-      return { label: "Lobby", message: "Waiting for the host to start the game." };
+      return {
+        label: "Lobby",
+        message: `${joinedPlayerCount}/${summary.targetPlayerCount} seats filled. Waiting for the host.`,
+      };
     }
 
-    if (countJoinedPlayers(summary) < 3) {
-      return { label: "Invite", message: "Invite at least three players before starting." };
+    if (joinedPlayerCount < summary.targetPlayerCount) {
+      return {
+        label: "Invite",
+        message: `${summary.targetPlayerCount - joinedPlayerCount} more player${
+          summary.targetPlayerCount - joinedPlayerCount === 1 ? "" : "s"
+        } needed before starting.`,
+      };
     }
 
-    if (countJoinedPlayers(summary) > 10) {
-      return { label: "Full", message: "Keep this table to ten active players or fewer." };
+    if (joinedPlayerCount > summary.targetPlayerCount) {
+      return { label: "Full", message: "Leave extra seats before starting this room." };
     }
 
-    return { label: "Ready", message: "Start the game when everyone is at the table." };
+    return { label: "Ready", message: "Every selected seat is filled. Start when ready." };
   }
 
   if (actionCount > 0) {
@@ -1772,15 +2193,39 @@ function getStartHint(summary: RoomSummary | null, isBusy: boolean): string {
     return "Start is only available while the room is in lobby.";
   }
 
-  if (countJoinedPlayers(summary) < 3) {
-    return "Invite at least three active players before starting.";
+  const joinedPlayerCount = countJoinedPlayers(summary);
+
+  if (joinedPlayerCount < summary.targetPlayerCount) {
+    return `${summary.targetPlayerCount - joinedPlayerCount} more active player${
+      summary.targetPlayerCount - joinedPlayerCount === 1 ? "" : "s"
+    } needed before starting.`;
   }
 
-  if (countJoinedPlayers(summary) > 10) {
-    return "Start supports three to ten active players.";
+  if (joinedPlayerCount > summary.targetPlayerCount) {
+    return "This room has more active players than the selected seat count.";
   }
 
   return "Start the game when every player is seated.";
+}
+
+function getControlHint(summary: RoomSummary | null, isBusy: boolean): string {
+  if (summary === null) {
+    return "Create or join a room to use table controls.";
+  }
+
+  if (summary.status === "lobby") {
+    return getStartHint(summary, isBusy);
+  }
+
+  if (summary.status === "playing" && summary.game?.status === "playing") {
+    return getAdvanceHint(summary, isBusy);
+  }
+
+  if (summary.status === "disbanded") {
+    return "This room is closed.";
+  }
+
+  return "Review the result or leave this room.";
 }
 
 function canStartRoom(summary: RoomSummary | null): boolean {
@@ -1790,7 +2235,7 @@ function canStartRoom(summary: RoomSummary | null): boolean {
 
   const joinedPlayerCount = countJoinedPlayers(summary);
 
-  return joinedPlayerCount >= 3 && joinedPlayerCount <= 10;
+  return joinedPlayerCount === summary.targetPlayerCount;
 }
 
 function countJoinedPlayers(summary: RoomSummary): number {
@@ -1815,18 +2260,6 @@ function getAdvanceHint(summary: RoomSummary | null, isBusy: boolean): string {
   }
 
   return "Advance after the table is ready or the phase timer has elapsed.";
-}
-
-function getLeaveHint(summary: RoomSummary | null, isBusy: boolean): string {
-  if (summary === null) {
-    return "Join or create a room before leaving.";
-  }
-
-  if (isBusy) {
-    return "Wait for the current sync to finish.";
-  }
-
-  return "Leave this room.";
 }
 
 function getActionButtonLabel(action: PublicAction, isBusy: boolean): string {
@@ -1867,10 +2300,6 @@ function formatWinner(winnerTeam: string | null): string {
   }
 
   return "Fox";
-}
-
-function formatPhaseWindow(phaseInstanceId: string | null): string {
-  return phaseInstanceId === null ? "closed" : "open";
 }
 
 function formatActionProgress(

@@ -114,6 +114,7 @@ async function runRoleCoverage(baseUrl, supabase) {
 
     const host = players[0];
 
+    await host.page.getByLabel("Players").selectOption(String(players.length));
     await clickAndWaitForMetric(host.page, "Create room", "Code");
     const roomCode = await readMetric(host.page, "Code");
 
@@ -128,7 +129,7 @@ async function runRoleCoverage(baseUrl, supabase) {
     }
 
     await refresh(host.page);
-    await waitMetric(host.page, "Players", String(players.length));
+    await waitSeated(host.page, players.length, players.length);
     await host.page.getByRole("button", { name: "Start game" }).click();
     await waitPhase(host.page, "night");
     await refreshAll(players.slice(1));
@@ -668,6 +669,13 @@ async function clickAndWaitForMetric(page, buttonName, metricLabel) {
     (label) => {
       const textOf = (element) => (element === null ? null : element.textContent.trim());
 
+      if (
+        label === "Code" &&
+        document.querySelector('[aria-label="Room invite tools"] strong') !== null
+      ) {
+        return true;
+      }
+
       return [...document.querySelectorAll(".liveMetrics div")].some(
         (row) => textOf(row.querySelector("dt")) === label,
       );
@@ -681,6 +689,14 @@ async function readMetric(page, label) {
   return page.evaluate((metricLabel) => {
     const textOf = (element) => (element === null ? null : element.textContent.trim());
 
+    if (metricLabel === "Code") {
+      const inviteCode = textOf(document.querySelector('[aria-label="Room invite tools"] strong'));
+
+      if (inviteCode !== null) {
+        return inviteCode;
+      }
+    }
+
     for (const row of document.querySelectorAll(".liveMetrics div")) {
       if (textOf(row.querySelector("dt")) === metricLabel) {
         return textOf(row.querySelector("dd"));
@@ -691,10 +707,20 @@ async function readMetric(page, label) {
   }, label);
 }
 
+async function waitSeated(page, seated, target) {
+  await page.getByText(`${seated} / ${target} seated`).first().waitFor({ timeout: 10000 });
+}
+
 async function waitMetric(page, label, expected) {
   await page.waitForFunction(
     ({ expected, label }) => {
       const textOf = (element) => (element === null ? null : element.textContent.trim());
+
+      if (label === "Code") {
+        return (
+          textOf(document.querySelector('[aria-label="Room invite tools"] strong')) === expected
+        );
+      }
 
       for (const row of document.querySelectorAll(".liveMetrics div")) {
         if (

@@ -190,6 +190,7 @@ Room は、1 回の人狼ゲームを行える場所である。
 - Room は保存用の内部 ID を持つ。
 - Room は参加用の短い公開コードを持つ。
 - 公開コードは 6 桁の数字文字列である。
+- Room は作成時に選ばれた目標参加人数を持つ。
 - アクティブなルームコードは衝突してはならない。
 - 終了済みまたは解散済みの古いルームでは、後からコード再利用を許してもよい。
 - Room はロビー状態から始まる。
@@ -262,6 +263,7 @@ Room が作成されるとき:
 - Room は `lobby` で開始する
 - ホスト Player が作成される
 - request された表示名は、ホスト Player の表示名として snapshot される
+- request された目標参加人数は、Room の開始条件として snapshot される
 - Room に 30 分後のロビー有効期限が設定される
 - Room に private なリアルタイムトピックが割り当てられる
 - room-created event が記録される
@@ -272,6 +274,7 @@ Account が Room に参加するとき:
 
 - 公開コードで Room を探す
 - まずロビーの期限切れ状態を確認する
+- 新規 Player は Room の目標参加人数を超えて参加できない
 - 新しい Player は Room が `lobby` の間だけ参加できる
 - 既存の Player は Room が `lobby` または `playing` の間に再参加できる
 - request された表示名は、新しい Player を作成するときだけ snapshot する
@@ -285,6 +288,7 @@ Room が開始されるとき:
 - ホスト Account だけが開始できる
 - Room はまだ `lobby` でなければならない
 - Room は期限切れであってはならない
+- joined Player 数は Room の目標参加人数と一致しなければならない
 - Room は `playing` に変わる
 - RuleSet と role assignment が固定される
 - GameState が First night として開始する
@@ -516,7 +520,7 @@ Next.js API から再読み込みする。
 - 同じ Account が複数の Room に参加してもよい。
 - リアルタイムメッセージは状態変更の成功後に送信する。
 - Realtime payload は invalidation 用の reason と safe room identifier だけを持つ。
-- 初期対応人数は 3 から 10 人である。
+- 初期対応人数は 3 から 10 人であり、Room 作成時に開始人数を選ぶ。
 - 初期 Role は Werewolf / Villager / Madman / Seer / Guard / Fox である。
 - RuleSet はゲーム開始時に固定する。
 - First night は user-visible phase として `night` を使い、`nightNumber === 1`

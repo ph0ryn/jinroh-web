@@ -3,6 +3,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import {
   DEFAULT_RULE_SET,
+  MAX_ROOM_PLAYERS,
+  MIN_ROOM_PLAYERS,
   getRoleName,
   isRoleId,
   type PrivateGameEvent,
@@ -74,9 +76,10 @@ type RoomRecord = {
   host_account_id: number;
   realtime_topic: string;
   lobby_expires_at: string;
+  target_player_count: number;
 };
 
-type RoomMutationResultRecord = RoomRecord & {
+type RoomMutationResultRecord = Omit<RoomRecord, "target_player_count"> & {
   actor_player_id: number | null;
   notification_reason: string | null;
 };
@@ -266,7 +269,16 @@ export async function authenticate(rawToken: string): Promise<AccountRecord | nu
 export async function createRoom(
   account: AccountRecord,
   displayName: string,
+  targetPlayerCount: number,
 ): Promise<RoomSummary> {
+  if (
+    !Number.isInteger(targetPlayerCount) ||
+    targetPlayerCount < MIN_ROOM_PLAYERS ||
+    targetPlayerCount > MAX_ROOM_PLAYERS
+  ) {
+    throw new Error("Target player count is out of range.");
+  }
+
   const supabase = createServiceClient();
 
   await cleanupExpiredLobbiesWithClient(supabase, 50);
@@ -283,6 +295,7 @@ export async function createRoom(
     p_public_player_id: playerId,
     p_public_room_code: roomCode,
     p_realtime_topic: realtimeTopic,
+    p_target_player_count: targetPlayerCount,
   });
   const room = toRoomRecord(transactionResult);
 
@@ -375,6 +388,11 @@ export async function startRoom(
 
   const players = await getPlayers(supabase, room.id);
   const joinedPlayers = players.filter((player) => player.status === "joined");
+
+  if (joinedPlayers.length !== room.target_player_count) {
+    throw new Error("Room must have the selected number of active players before starting.");
+  }
+
   const startResult = startGame(
     joinedPlayers.map((player) => ({ id: String(player.id), name: player.display_name })),
     ruleSetInput,
@@ -613,6 +631,7 @@ async function getRoomViewByRoom(
   account: AccountRecord,
   room: RoomRecord,
 ): Promise<RoomSummary> {
+  const currentRoom = await getRoomByIdOrThrow(supabase, room.id);
   const [
     players,
     state,
@@ -624,20 +643,20 @@ async function getRoomViewByRoom(
     results,
     nightConversationMessages,
   ] = await Promise.all([
-    getPlayers(supabase, room.id),
-    getGameState(supabase, room.id),
-    getAssignments(supabase, room.id),
-    getGamePlayerStates(supabase, room.id),
-    getCurrentActions(supabase, room.id),
-    getPendingActions(supabase, room.id),
-    getFinalOutcome(supabase, room.id),
-    getPlayerResults(supabase, room.id),
-    getNightConversationMessages(supabase, room.id),
+    getPlayers(supabase, currentRoom.id),
+    getGameState(supabase, currentRoom.id),
+    getAssignments(supabase, currentRoom.id),
+    getGamePlayerStates(supabase, currentRoom.id),
+    getCurrentActions(supabase, currentRoom.id),
+    getPendingActions(supabase, currentRoom.id),
+    getFinalOutcome(supabase, currentRoom.id),
+    getPlayerResults(supabase, currentRoom.id),
+    getNightConversationMessages(supabase, currentRoom.id),
   ]);
   const currentPlayer =
     players.find((player) => player.account_id === account.id && player.status === "joined") ??
     null;
-  const isHost = currentPlayer !== null && room.host_account_id === account.id;
+  const isHost = currentPlayer !== null && currentRoom.host_account_id === account.id;
   const assignmentByPlayer = new Map(
     assignments.map((assignment) => [assignment.player_id, assignment]),
   );
@@ -650,7 +669,7 @@ async function getRoomViewByRoom(
     displayName: player.display_name,
     id: player.public_player_id,
     isCurrent: currentPlayer?.id === player.id,
-    isHost: player.account_id === room.host_account_id,
+    isHost: player.account_id === currentRoom.host_account_id,
     status: player.status,
   }));
   const currentAssignment =
@@ -660,13 +679,13 @@ async function getRoomViewByRoom(
       ? currentAssignment.role_id
       : null;
   const [events, realtimeSubscriptions, visiblePrivateEvents] = await Promise.all([
-    getPublicEvents(supabase, room.id, players),
+    getPublicEvents(supabase, currentRoom.id, players),
     currentPlayer === null
       ? Promise.resolve<RealtimeSubscription[]>([])
-      : getRealtimeSubscriptions(supabase, account, room),
+      : getRealtimeSubscriptions(supabase, account, currentRoom),
     currentPlayer === null
       ? Promise.resolve<PrivateGameEvent[]>([])
-      : getVisiblePrivateEvents(supabase, room.id, players, currentPlayer, currentRoleId),
+      : getVisiblePrivateEvents(supabase, currentRoom.id, players, currentPlayer, currentRoleId),
   ]);
   const publicGame: PublicGameView | null =
     state === null
@@ -702,19 +721,19 @@ async function getRoomViewByRoom(
         };
 
   return {
-    code: room.public_room_code,
+    code: currentRoom.public_room_code,
     currentPlayerId: currentPlayer?.public_player_id ?? null,
     game: publicGame,
     hostPlayerId:
-      players.find((player) => player.account_id === room.host_account_id)?.public_player_id ??
-      null,
+      players.find((player) => player.account_id === currentRoom.host_account_id)
+        ?.public_player_id ?? null,
     isHost,
-    lobbyExpiresAt: room.lobby_expires_at,
+    lobbyExpiresAt: currentRoom.lobby_expires_at,
     players: publicPlayers,
     realtime:
       currentPlayer === null
         ? null
-        : { subscriptions: realtimeSubscriptions, topic: room.realtime_topic },
+        : { subscriptions: realtimeSubscriptions, topic: currentRoom.realtime_topic },
     rolePrivate: toRolePrivateView(
       players,
       assignments,
@@ -724,7 +743,8 @@ async function getRoomViewByRoom(
       state,
     ),
     self,
-    status: room.status,
+    status: currentRoom.status,
+    targetPlayerCount: currentRoom.target_player_count,
   };
 }
 
@@ -1187,10 +1207,28 @@ async function getRoomByCodeOrThrow(
 ): Promise<RoomRecord> {
   const { data, error } = await supabase
     .from("rooms")
-    .select("id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at")
+    .select(
+      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count",
+    )
     .eq("public_room_code", roomCode)
     .order("created_at", { ascending: false })
     .limit(1)
+    .maybeSingle<RoomRecord>();
+
+  if (error !== null || data === null) {
+    throw new Error("Room not found.");
+  }
+
+  return data;
+}
+
+async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Promise<RoomRecord> {
+  const { data, error } = await supabase
+    .from("rooms")
+    .select(
+      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count",
+    )
+    .eq("id", roomId)
     .maybeSingle<RoomRecord>();
 
   if (error !== null || data === null) {
@@ -1831,6 +1869,7 @@ function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
     public_room_code: record.public_room_code,
     realtime_topic: record.realtime_topic,
     status: record.status,
+    target_player_count: 10,
   };
 }
 
