@@ -67,7 +67,8 @@ button {
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--brass-300);
   outline-offset: 3px;
 }
@@ -1396,7 +1397,8 @@ a {
 }
 
 .liveEntryPanel input,
-.liveActionRow select {
+.liveActionRow select,
+.liveConsultationFields select {
   background: rgba(241, 230, 202, 0.08);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-small);
@@ -1652,7 +1654,8 @@ a {
 }
 
 .livePrivateEvents,
-.liveSubmittedActions {
+.liveSubmittedActions,
+.liveConsultationList {
   border-top: 1px solid var(--line);
   display: grid;
   gap: 6px;
@@ -1663,6 +1666,68 @@ a {
 .livePrivateEvents strong,
 .liveSubmittedActions strong {
   color: var(--brass-300);
+}
+
+.liveConsultationSlot {
+  background: rgba(7, 11, 10, 0.32);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.liveConsultationSlot.submitted {
+  border-color: rgba(119, 189, 117, 0.34);
+}
+
+.liveConsultationSlot.retracted {
+  border-color: rgba(167, 71, 61, 0.42);
+}
+
+.liveConsultationHeader {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto;
+}
+
+.liveConsultationHeader strong,
+.liveConsultationHeader span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.liveConsultationHeader strong {
+  color: var(--paper-100);
+}
+
+.liveConsultationHeader em {
+  color: var(--brass-300);
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 790;
+}
+
+.liveConsultationFields {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.liveConsultationFields label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 780;
+  gap: 6px;
+}
+
+.liveConsultationActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .liveActionRow {
@@ -1813,6 +1878,7 @@ a {
 
   .liveEntryPanel,
   .liveActionRow,
+  .liveConsultationHeader,
   .liveControlStack {
     grid-template-columns: 1fr;
   }

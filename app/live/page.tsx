@@ -5,7 +5,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
 
-import type { PrivateGameEvent, PublicAction, PublicPlayer, RoomSummary } from "@/lib/shared/game";
+import type {
+  PrivateGameEvent,
+  PublicAction,
+  PublicPlayer,
+  RoomSummary,
+  WerewolfConsultationSlot,
+} from "@/lib/shared/game";
 
 type IdentityResponse = {
   token: string;
@@ -52,6 +58,9 @@ export default function LivePage() {
     () => readStorage(ROOM_CODE_STORAGE_KEY) ?? "",
   );
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [consultationDraftBySlotKey, setConsultationDraftBySlotKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState(
     "Create a room or join with a six-digit code.",
@@ -386,6 +395,80 @@ export default function LivePage() {
     });
   }
 
+  function handleConsultationValueChange(
+    slot: WerewolfConsultationSlot,
+    fieldId: string,
+    value: string,
+  ): void {
+    const slotKey = getConsultationSlotKey(slot);
+
+    setConsultationDraftBySlotKey((current) => ({
+      ...current,
+      [slotKey]: {
+        ...(current[slotKey] ?? {}),
+        [fieldId]: value,
+      },
+    }));
+  }
+
+  function handleSubmitConsultation(slot: WerewolfConsultationSlot): void {
+    void withBusy(async () => {
+      const token = await ensureIdentityToken();
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const phaseInstanceId = roomSummary?.game?.phaseInstanceId;
+      const revision = roomSummary?.game?.revision;
+
+      if (phaseInstanceId === null || phaseInstanceId === undefined || revision === undefined) {
+        throw new Error("Consultation is not open.");
+      }
+
+      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/consultation`, {
+        body: {
+          nightNumber: slot.nightNumber,
+          operation: "submit",
+          phaseInstanceId,
+          revision,
+          templateId: slot.templateId,
+          values: getConsultationDraftValues(slot, consultationDraftBySlotKey),
+        },
+        method: "POST",
+        token,
+      });
+
+      rememberRoom(summary, { resetActionTargets: false });
+      setStatusMessage(`${slot.label} shared with the werewolves.`);
+    });
+  }
+
+  function handleRetractConsultation(slot: WerewolfConsultationSlot): void {
+    void withBusy(async () => {
+      const token = await ensureIdentityToken();
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const phaseInstanceId = roomSummary?.game?.phaseInstanceId;
+      const revision = roomSummary?.game?.revision;
+
+      if (phaseInstanceId === null || phaseInstanceId === undefined || revision === undefined) {
+        throw new Error("Consultation is not open.");
+      }
+
+      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/consultation`, {
+        body: {
+          nightNumber: slot.nightNumber,
+          operation: "retract",
+          phaseInstanceId,
+          revision,
+          templateId: slot.templateId,
+          values: {},
+        },
+        method: "POST",
+        token,
+      });
+
+      rememberRoom(summary, { resetActionTargets: false });
+      setStatusMessage(`${slot.label} retracted.`);
+    });
+  }
+
   function getActionTarget(action: PublicAction): string {
     return targetByActionKey[action.key] ?? action.eligibleTargetIds[0] ?? "";
   }
@@ -525,7 +608,14 @@ export default function LivePage() {
             <p id="leave-room-hint">{leaveHint}</p>
           </div>
 
-          <SelfView summary={roomSummary} />
+          <SelfView
+            consultationDraftBySlotKey={consultationDraftBySlotKey}
+            isBusy={isBusy}
+            summary={roomSummary}
+            onConsultationValueChange={handleConsultationValueChange}
+            onRetractConsultation={handleRetractConsultation}
+            onSubmitConsultation={handleSubmitConsultation}
+          />
           <ActionList
             actions={selfActions}
             isBusy={isBusy}
@@ -618,7 +708,25 @@ function PlayerList({ players }: { readonly players: readonly PublicPlayer[] }) 
   );
 }
 
-function SelfView({ summary }: { readonly summary: RoomSummary | null }) {
+function SelfView({
+  consultationDraftBySlotKey,
+  isBusy,
+  summary,
+  onConsultationValueChange,
+  onRetractConsultation,
+  onSubmitConsultation,
+}: {
+  readonly consultationDraftBySlotKey: Record<string, Record<string, string>>;
+  readonly isBusy: boolean;
+  readonly summary: RoomSummary | null;
+  readonly onConsultationValueChange: (
+    slot: WerewolfConsultationSlot,
+    fieldId: string,
+    value: string,
+  ) => void;
+  readonly onRetractConsultation: (slot: WerewolfConsultationSlot) => void;
+  readonly onSubmitConsultation: (slot: WerewolfConsultationSlot) => void;
+}) {
   if (summary?.self === null || summary?.self === undefined) {
     return (
       <div className="liveSelfView">
@@ -643,9 +751,100 @@ function SelfView({ summary }: { readonly summary: RoomSummary | null }) {
       {summary.rolePrivate === null ? null : (
         <p>Werewolf partners: {partnerNames.join(", ") || "none"}</p>
       )}
+      {summary.rolePrivate === null ? null : (
+        <WerewolfConsultationList
+          draftBySlotKey={consultationDraftBySlotKey}
+          isBusy={isBusy}
+          slots={summary.rolePrivate.consultation}
+          onRetract={onRetractConsultation}
+          onSubmit={onSubmitConsultation}
+          onValueChange={onConsultationValueChange}
+        />
+      )}
       {summary.self.result === null ? null : <p>{formatResult(summary.self.result)}</p>}
       <PrivateEventList events={summary.self.events} />
       <SubmittedActionList actions={summary.self.submittedActions} />
+    </div>
+  );
+}
+
+function WerewolfConsultationList({
+  draftBySlotKey,
+  isBusy,
+  slots,
+  onRetract,
+  onSubmit,
+  onValueChange,
+}: {
+  readonly draftBySlotKey: Record<string, Record<string, string>>;
+  readonly isBusy: boolean;
+  readonly slots: readonly WerewolfConsultationSlot[];
+  readonly onRetract: (slot: WerewolfConsultationSlot) => void;
+  readonly onSubmit: (slot: WerewolfConsultationSlot) => void;
+  readonly onValueChange: (slot: WerewolfConsultationSlot, fieldId: string, value: string) => void;
+}) {
+  if (slots.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="liveConsultationList" aria-label="Werewolf consultation">
+      {slots.map((slot) => {
+        const slotKey = getConsultationSlotKey(slot);
+        const draftValues = getConsultationDraftValues(slot, draftBySlotKey);
+
+        return (
+          <div className={`liveConsultationSlot ${slot.status}`} key={slotKey}>
+            <div className="liveConsultationHeader">
+              <span>{slot.senderName}</span>
+              <strong>{slot.label}</strong>
+              <em>{formatConsultationStatus(slot)}</em>
+            </div>
+
+            {slot.value === null ? null : <p>{slot.value}</p>}
+
+            {slot.canSubmit ? (
+              <div className="liveConsultationFields">
+                {slot.fields.map((field) => (
+                  <label key={`${slotKey}:${field.id}`}>
+                    {field.label}
+                    <select
+                      value={draftValues[field.id] ?? ""}
+                      onChange={(event) => onValueChange(slot, field.id, event.target.value)}
+                    >
+                      {field.options.map((option) => (
+                        <option key={`${field.id}:${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+
+            {slot.canSubmit || slot.canRetract ? (
+              <div className="liveConsultationActions">
+                {slot.canSubmit ? (
+                  <button type="button" disabled={isBusy} onClick={() => onSubmit(slot)}>
+                    Share
+                  </button>
+                ) : null}
+                {slot.canRetract ? (
+                  <button
+                    className="secondaryButton"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onRetract(slot)}
+                  >
+                    Retract
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -906,6 +1105,39 @@ function requireRoomCode(roomCode: string): string {
   }
 
   return roomCode;
+}
+
+function getConsultationSlotKey(slot: WerewolfConsultationSlot): string {
+  return `${slot.nightNumber}:${slot.senderPlayerId}:${slot.templateId}`;
+}
+
+function getConsultationDraftValues(
+  slot: WerewolfConsultationSlot,
+  draftBySlotKey: Record<string, Record<string, string>>,
+): Record<string, string> {
+  const draftValues = draftBySlotKey[getConsultationSlotKey(slot)] ?? {};
+
+  return Object.fromEntries(
+    slot.fields.map((field) => [
+      field.id,
+      draftValues[field.id] ?? slot.values[field.id] ?? field.options[0]?.value ?? "",
+    ]),
+  );
+}
+
+function formatConsultationStatus(slot: WerewolfConsultationSlot): string {
+  if (slot.readOnly) {
+    return "Read only";
+  }
+
+  switch (slot.status) {
+    case "empty":
+      return slot.canSubmit ? "Open" : "Waiting";
+    case "retracted":
+      return slot.canSubmit ? "Retracted" : "Closed";
+    case "submitted":
+      return slot.canRetract ? "Shared" : "Locked";
+  }
 }
 
 function getLiveGuidance(

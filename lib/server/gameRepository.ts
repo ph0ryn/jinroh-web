@@ -20,6 +20,8 @@ import {
   type RuleSet,
   type RuleSetInput,
   type SelfPrivateView,
+  type WerewolfConsultationField,
+  type WerewolfConsultationSlot,
 } from "@/lib/shared/game";
 
 import {
@@ -96,6 +98,7 @@ type GameStateRecord = {
   phase_ends_at: string | null;
   phase_instance_id: string | null;
   revision: number;
+  resolved_role_setup: JsonObject | null;
   room_id: number;
   status: "waiting" | "assigning_roles" | "playing" | "ended";
 };
@@ -162,6 +165,22 @@ type PlayerResultRecord = {
 type GameRuleSetRecord = {
   options: Record<string, unknown>;
   role_counts: Record<string, unknown>;
+};
+
+type WerewolfConsultationSlotRecord = {
+  id: number;
+  label: string;
+  night_number: number;
+  retracted_at: string | null;
+  retraction_used: boolean;
+  sender_player_id: number;
+  status: "empty" | "submitted" | "retracted";
+  submission_count: number;
+  submitted_at: string | null;
+  template_id: string;
+  updated_at: string;
+  value: string | null;
+  values: JsonObject | null;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -366,6 +385,77 @@ export async function submitAction(
   return getRoomViewByRoom(supabase, account, room);
 }
 
+export async function submitWerewolfConsultation(
+  account: AccountRecord,
+  roomCode: string,
+  input: {
+    nightNumber: number;
+    operation: "retract" | "submit";
+    phaseInstanceId: string;
+    revision: number;
+    templateId: string;
+    values: Record<string, string>;
+  },
+): Promise<RoomSummary> {
+  const supabase = createServiceClient();
+  const room = await getRoomByCodeOrThrow(supabase, roomCode);
+  const [currentPlayer, state, assignments, players, playerStates] = await Promise.all([
+    requireJoinedPlayerForAccount(supabase, room.id, account.id),
+    getGameState(supabase, room.id),
+    getAssignments(supabase, room.id),
+    getPlayers(supabase, room.id),
+    getGamePlayerStates(supabase, room.id),
+  ]);
+  const currentAssignment = assignments.find(
+    (assignment) => assignment.player_id === currentPlayer.id,
+  );
+
+  if (
+    room.status !== "playing" ||
+    state?.status !== "playing" ||
+    state.phase !== "night" ||
+    state.phase_instance_id !== input.phaseInstanceId ||
+    state.night_number !== input.nightNumber ||
+    state.revision !== input.revision ||
+    currentAssignment?.role_id !== "werewolf"
+  ) {
+    throw new Error("Consultation is not open.");
+  }
+
+  const template = getWerewolfConsultationTemplates(state.resolved_role_setup).find(
+    (candidate) => candidate.id === input.templateId,
+  );
+
+  if (template === undefined || (template.normalNightOnly && state.night_number < 2)) {
+    throw new Error("Consultation template is not available.");
+  }
+
+  const normalizedValues =
+    input.operation === "submit"
+      ? normalizeConsultationValues(template, input.values, players, assignments, playerStates)
+      : {};
+  const transactionResult = await callRoomMutationRpc(
+    supabase,
+    "app_submit_werewolf_consultation",
+    {
+      p_account_id: account.id,
+      p_expected_revision: input.revision,
+      p_label: template.label,
+      p_night_number: input.nightNumber,
+      p_operation: input.operation,
+      p_phase_instance_id: input.phaseInstanceId,
+      p_room_code: roomCode,
+      p_template_id: input.templateId,
+      p_values: normalizedValues,
+    },
+  );
+  const updatedRoom = toRoomRecord(transactionResult);
+
+  await broadcastMutationResult(supabase, updatedRoom, transactionResult);
+
+  return getRoomViewByRoom(supabase, account, updatedRoom);
+}
+
 export async function resolveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
@@ -476,17 +566,27 @@ async function getRoomViewByRoom(
   account: AccountRecord,
   room: RoomRecord,
 ): Promise<RoomSummary> {
-  const [players, state, assignments, playerStates, actions, pendingActions, outcome, results] =
-    await Promise.all([
-      getPlayers(supabase, room.id),
-      getGameState(supabase, room.id),
-      getAssignments(supabase, room.id),
-      getGamePlayerStates(supabase, room.id),
-      getCurrentActions(supabase, room.id),
-      getPendingActions(supabase, room.id),
-      getFinalOutcome(supabase, room.id),
-      getPlayerResults(supabase, room.id),
-    ]);
+  const [
+    players,
+    state,
+    assignments,
+    playerStates,
+    actions,
+    pendingActions,
+    outcome,
+    results,
+    consultationSlots,
+  ] = await Promise.all([
+    getPlayers(supabase, room.id),
+    getGameState(supabase, room.id),
+    getAssignments(supabase, room.id),
+    getGamePlayerStates(supabase, room.id),
+    getCurrentActions(supabase, room.id),
+    getPendingActions(supabase, room.id),
+    getFinalOutcome(supabase, room.id),
+    getPlayerResults(supabase, room.id),
+    getWerewolfConsultationSlots(supabase, room.id),
+  ]);
   const currentPlayer =
     players.find((player) => player.account_id === account.id && player.status === "joined") ??
     null;
@@ -524,6 +624,7 @@ async function getRoomViewByRoom(
           phase: state.phase,
           phaseEndsAt: state.phase_ends_at,
           phaseInstanceId: state.phase_instance_id,
+          revision: state.revision,
           status: state.status,
           winnerTeam: outcome?.winner_team ?? null,
         };
@@ -562,7 +663,15 @@ async function getRoomViewByRoom(
     lobbyExpiresAt: room.lobby_expires_at,
     players: publicPlayers,
     realtime: currentPlayer === null ? null : { topic: room.realtime_topic },
-    rolePrivate: toRolePrivateView(players, assignments, currentPlayer, currentRoleId, state),
+    rolePrivate: toRolePrivateView(
+      players,
+      assignments,
+      playerStates,
+      consultationSlots,
+      currentPlayer,
+      currentRoleId,
+      state,
+    ),
     self,
     status: room.status,
   };
@@ -670,6 +779,8 @@ function toPublicActionProgress(
 function toRolePrivateView(
   players: readonly PlayerRecord[],
   assignments: readonly RoleAssignmentRecord[],
+  playerStates: readonly GamePlayerStateRecord[],
+  consultationSlots: readonly WerewolfConsultationSlotRecord[],
   currentPlayer: PlayerRecord | null,
   currentRoleId: RoleId | null,
   state: GameStateRecord | null,
@@ -690,22 +801,389 @@ function toRolePrivateView(
     .filter((playerId): playerId is string => playerId !== undefined);
 
   return {
-    consultation:
-      state?.phase === "night" || state?.phase === "day"
-        ? [
-            {
-              label: "Execution candidate",
-              readOnly: state.phase === "day",
-              status: "empty",
-              templateId: "execution_candidate",
-              value: null,
-            },
-          ]
-        : [],
+    consultation: toWerewolfConsultationView(
+      players,
+      assignments,
+      playerStates,
+      consultationSlots,
+      currentPlayer,
+      state,
+    ),
     label: "Werewolf private view",
     roleId: "werewolf",
     werewolfPartnerIds,
   };
+}
+
+function toWerewolfConsultationView(
+  players: readonly PlayerRecord[],
+  assignments: readonly RoleAssignmentRecord[],
+  playerStates: readonly GamePlayerStateRecord[],
+  consultationSlots: readonly WerewolfConsultationSlotRecord[],
+  currentPlayer: PlayerRecord,
+  state: GameStateRecord | null,
+): WerewolfConsultationSlot[] {
+  if (state === null || (state.phase !== "night" && state.phase !== "day")) {
+    return [];
+  }
+
+  const templates = getWerewolfConsultationTemplates(state.resolved_role_setup);
+  const werewolfPlayerIds = assignments
+    .filter((assignment) => assignment.role_id === "werewolf")
+    .map((assignment) => assignment.player_id);
+  const visibleNightNumber = state.night_number;
+  const readOnly = state.phase === "day";
+  const slotsBySenderAndTemplate = new Map(
+    consultationSlots
+      .filter((slot) => slot.night_number === visibleNightNumber)
+      .map((slot) => [`${slot.sender_player_id}:${slot.template_id}`, slot]),
+  );
+
+  if (readOnly) {
+    return consultationSlots
+      .filter((slot) => slot.night_number === visibleNightNumber)
+      .filter((slot) => werewolfPlayerIds.includes(slot.sender_player_id))
+      .filter((slot) => slot.status !== "empty")
+      .map((slot) => {
+        const template = templates.find((candidate) => candidate.id === slot.template_id);
+
+        return toWerewolfConsultationSlotView({
+          assignments,
+          currentPlayer,
+          playerStates,
+          players,
+          readOnly,
+          slot,
+          state,
+          template,
+        });
+      });
+  }
+
+  return werewolfPlayerIds.flatMap((senderPlayerId) =>
+    templates
+      .filter((template) => !template.normalNightOnly || visibleNightNumber >= 2)
+      .map((template) =>
+        toWerewolfConsultationSlotView({
+          assignments,
+          currentPlayer,
+          playerStates,
+          players,
+          readOnly,
+          senderPlayerId,
+          slot: slotsBySenderAndTemplate.get(`${senderPlayerId}:${template.id}`) ?? null,
+          state,
+          template,
+        }),
+      ),
+  );
+}
+
+type ConsultationTemplate = {
+  fields: ConsultationTemplateField[];
+  id: string;
+  label: string;
+  normalNightOnly: boolean;
+};
+
+type ConsultationTemplateField = {
+  candidates: unknown;
+  id: string;
+  kind: "inspection_view" | "player" | "role";
+};
+
+function toWerewolfConsultationSlotView({
+  assignments,
+  currentPlayer,
+  playerStates,
+  players,
+  readOnly,
+  senderPlayerId,
+  slot,
+  state,
+  template,
+}: {
+  assignments: readonly RoleAssignmentRecord[];
+  currentPlayer: PlayerRecord;
+  playerStates: readonly GamePlayerStateRecord[];
+  players: readonly PlayerRecord[];
+  readOnly: boolean;
+  senderPlayerId?: number;
+  slot: WerewolfConsultationSlotRecord | null;
+  state: GameStateRecord;
+  template: ConsultationTemplate | undefined;
+}): WerewolfConsultationSlot {
+  const actualSenderPlayerId = slot?.sender_player_id ?? senderPlayerId ?? currentPlayer.id;
+  const sender = players.find((player) => player.id === actualSenderPlayerId);
+  const fieldValues = parseConsultationValues(slot?.values ?? null, slot?.value ?? null);
+  const fields =
+    template?.fields.map((field) =>
+      toWerewolfConsultationField(field, players, assignments, playerStates),
+    ) ?? [];
+  const publicValues = Object.fromEntries(
+    Object.entries(fieldValues).flatMap(([fieldId, value]) => {
+      const field = template?.fields.find((candidate) => candidate.id === fieldId);
+
+      if (field?.kind === "player") {
+        const publicPlayerId = players.find(
+          (player) => String(player.id) === value,
+        )?.public_player_id;
+
+        return publicPlayerId === undefined ? [] : [[fieldId, publicPlayerId]];
+      }
+
+      return [[fieldId, value]];
+    }),
+  );
+  const canRetract =
+    !readOnly &&
+    actualSenderPlayerId === currentPlayer.id &&
+    slot?.status === "submitted" &&
+    slot.submission_count === 1 &&
+    !slot.retraction_used;
+  const canSubmit =
+    !readOnly &&
+    actualSenderPlayerId === currentPlayer.id &&
+    (slot === null ||
+      slot.status === "empty" ||
+      (slot.status === "retracted" && slot.submission_count === 1 && slot.retraction_used));
+
+  return {
+    canRetract,
+    canSubmit,
+    fields,
+    label: template?.label ?? slot?.label ?? "Werewolf note",
+    nightNumber: state.night_number,
+    readOnly,
+    senderName: sender?.display_name ?? "Werewolf",
+    senderPlayerId: sender?.public_player_id ?? "",
+    status: slot?.status ?? "empty",
+    templateId: template?.id ?? slot?.template_id ?? "unknown",
+    value: formatConsultationValue(template, fieldValues, players),
+    values: publicValues,
+  };
+}
+
+function toWerewolfConsultationField(
+  field: ConsultationTemplateField,
+  players: readonly PlayerRecord[],
+  assignments: readonly RoleAssignmentRecord[],
+  playerStates: readonly GamePlayerStateRecord[],
+): WerewolfConsultationField {
+  return {
+    id: field.id,
+    label: labelConsultationField(field),
+    options: getConsultationFieldOptions(field, players, assignments, playerStates),
+  };
+}
+
+function getConsultationFieldOptions(
+  field: ConsultationTemplateField,
+  players: readonly PlayerRecord[],
+  assignments: readonly RoleAssignmentRecord[],
+  playerStates: readonly GamePlayerStateRecord[],
+): WerewolfConsultationField["options"] {
+  if (field.kind === "inspection_view") {
+    return [
+      { label: "Human", value: "human" },
+      { label: "Werewolf", value: "werewolf" },
+    ];
+  }
+
+  if (field.kind === "role") {
+    const activeRoleIds = [...new Set(assignments.map((assignment) => assignment.role_id))]
+      .filter((roleId): roleId is RoleId => isRoleId(roleId))
+      .toSorted();
+
+    return activeRoleIds.map((roleId) => ({
+      label: getRoleName(roleId) ?? roleId,
+      value: roleId,
+    }));
+  }
+
+  const aliveByPlayerId = new Map(playerStates.map((state) => [state.player_id, state.alive]));
+  const candidates =
+    field.candidates === "sender_or_werewolf_ally"
+      ? players.filter((player) =>
+          assignments.some(
+            (assignment) =>
+              assignment.player_id === player.id &&
+              assignment.role_id === "werewolf" &&
+              aliveByPlayerId.get(player.id) === true,
+          ),
+        )
+      : players.filter((player) => aliveByPlayerId.get(player.id) === true);
+
+  return candidates.map((player) => ({
+    label: player.display_name,
+    value: player.public_player_id,
+  }));
+}
+
+function getWerewolfConsultationTemplates(
+  resolvedRoleSetup: JsonObject | null,
+): ConsultationTemplate[] {
+  const templates = resolvedRoleSetup?.["werewolfConsultationTemplates"];
+
+  if (!Array.isArray(templates)) {
+    return [];
+  }
+
+  return templates.flatMap((template): ConsultationTemplate[] => {
+    if (!isRecord(template) || typeof template["id"] !== "string") {
+      return [];
+    }
+
+    const fields = Array.isArray(template["fields"])
+      ? template["fields"].flatMap((field): ConsultationTemplateField[] => {
+          if (
+            !isRecord(field) ||
+            typeof field["id"] !== "string" ||
+            (field["kind"] !== "player" &&
+              field["kind"] !== "role" &&
+              field["kind"] !== "inspection_view")
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              candidates: field["candidates"],
+              id: field["id"],
+              kind: field["kind"],
+            },
+          ];
+        })
+      : [];
+
+    return [
+      {
+        fields,
+        id: template["id"],
+        label: labelConsultationTemplate(template["labelKey"]),
+        normalNightOnly: template["normalNightOnly"] === true,
+      },
+    ];
+  });
+}
+
+function normalizeConsultationValues(
+  template: ConsultationTemplate,
+  rawValues: Record<string, string>,
+  players: readonly PlayerRecord[],
+  assignments: readonly RoleAssignmentRecord[],
+  playerStates: readonly GamePlayerStateRecord[],
+): Record<string, string> {
+  return Object.fromEntries(
+    template.fields.map((field) => {
+      const rawValue = rawValues[field.id];
+      const options = getConsultationFieldOptions(field, players, assignments, playerStates);
+
+      if (typeof rawValue !== "string" || !options.some((option) => option.value === rawValue)) {
+        throw new Error(`Invalid consultation value for ${field.id}.`);
+      }
+
+      if (field.kind === "player") {
+        const player = players.find((candidate) => candidate.public_player_id === rawValue);
+
+        if (player === undefined) {
+          throw new Error(`Invalid consultation player for ${field.id}.`);
+        }
+
+        return [field.id, String(player.id)];
+      }
+
+      return [field.id, rawValue];
+    }),
+  ) as Record<string, string>;
+}
+
+function parseConsultationValues(
+  values: JsonObject | null,
+  legacyValue: string | null,
+): Record<string, string> {
+  if (values !== null) {
+    return Object.fromEntries(
+      Object.entries(values).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  }
+
+  if (legacyValue === null) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(legacyValue) as unknown;
+
+    if (!isRecord(parsed)) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function formatConsultationValue(
+  template: ConsultationTemplate | undefined,
+  values: Record<string, string>,
+  players: readonly PlayerRecord[],
+): string | null {
+  const parts = Object.entries(values).flatMap(([fieldId, value]): string[] => {
+    const field = template?.fields.find((candidate) => candidate.id === fieldId);
+    const label = field === undefined ? fieldId : labelConsultationField(field);
+
+    if (field?.kind === "player") {
+      const playerName = players.find((player) => String(player.id) === value)?.display_name;
+
+      return playerName === undefined ? [] : [`${label}: ${playerName}`];
+    }
+
+    if (field?.kind === "role") {
+      return isRoleId(value) ? [`${label}: ${getRoleName(value) ?? value}`] : [];
+    }
+
+    return [`${label}: ${value}`];
+  });
+
+  return parts.length === 0 ? null : parts.join(", ");
+}
+
+function labelConsultationTemplate(labelKey: unknown): string {
+  switch (labelKey) {
+    case "werewolf.consultation.attack_target":
+      return "Attack target";
+    case "werewolf.consultation.coming_out":
+      return "Coming out plan";
+    case "werewolf.consultation.seer_result_report":
+      return "Fake seer result";
+    case "werewolf.consultation.execution_target":
+      return "Execution target";
+    default:
+      return "Werewolf note";
+  }
+}
+
+function labelConsultationField(field: ConsultationTemplateField): string {
+  switch (field.id) {
+    case "actor":
+      return "Actor";
+    case "result":
+      return "Result";
+    case "role":
+      return "Role";
+    case "target":
+      return "Target";
+    default:
+      return field.id;
+  }
 }
 
 function groupSetByEventId<Value>(
@@ -1034,10 +1512,43 @@ async function getGameState(
   const { data, error } = await supabase
     .from("game_states")
     .select(
-      "id,room_id,status,phase,phase_instance_id,phase_ends_at,day_number,night_number,revision,final_outcome_id",
+      "id,room_id,status,phase,phase_instance_id,phase_ends_at,day_number,night_number,revision,final_outcome_id,resolved_role_setup",
     )
     .eq("room_id", roomId)
     .maybeSingle<GameStateRecord>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+async function getWerewolfConsultationSlots(
+  supabase: SupabaseClient,
+  roomId: number,
+): Promise<WerewolfConsultationSlotRecord[]> {
+  const { data, error } = await supabase
+    .from("werewolf_consultation_slots")
+    .select(
+      [
+        "id",
+        "night_number",
+        "sender_player_id",
+        "template_id",
+        "label",
+        "value",
+        "values",
+        "status",
+        "submission_count",
+        "retraction_used",
+        "submitted_at",
+        "retracted_at",
+        "updated_at",
+      ].join(","),
+    )
+    .eq("room_id", roomId)
+    .returns<WerewolfConsultationSlotRecord[]>();
 
   if (error !== null) {
     throw new Error(error.message);

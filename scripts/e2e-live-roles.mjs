@@ -144,6 +144,9 @@ async function runRoleCoverage(baseUrl, supabase) {
       }
     }
 
+    assertRolePrivateBoundary(firstNightSummaries);
+    assertNoFirstNightAttackConsultation(firstNightSummaries);
+
     const executionTarget = findPlayerByRole(firstNightSummaries, "villager");
     const foxTarget = findPlayerByRole(firstNightSummaries, "fox");
 
@@ -205,6 +208,14 @@ async function runRoleCoverage(baseUrl, supabase) {
     if (!inspectAction.action.eligibleTargetIds.includes(foxTarget.summary.self.playerId)) {
       throw new Error("Expected fox to be eligible for inspection on normal night.");
     }
+
+    await exerciseWerewolfConsultation(
+      players,
+      baseUrl,
+      roomCode,
+      normalNightSummaries,
+      protectedAttackTargetId,
+    );
 
     await submitActionsFromSummaries(normalNightSummaries, {
       attack: protectedAttackTargetId,
@@ -289,14 +300,7 @@ async function createPlayer(browser, baseUrl, label, displayName, errors, warnin
 async function readSummaries(players, baseUrl, roomCode) {
   return Promise.all(
     players.map(async (player) => {
-      const token = await player.page.evaluate(
-        (key) => window.localStorage.getItem(key),
-        IDENTITY_STORAGE_KEY,
-      );
-
-      if (token === null) {
-        throw new Error(`${player.label} has no identity token in localStorage.`);
-      }
+      const token = await readIdentityToken(player);
 
       const response = await fetch(`${baseUrl}/api/rooms/${roomCode}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -354,6 +358,274 @@ function findOpenAction(entries, actionKind) {
   throw new Error(`No open action found for ${actionKind}.`);
 }
 
+function findEntriesByRole(entries, roleId) {
+  return entries.filter(({ summary }) => summary.self?.roleId === roleId);
+}
+
+function assertRolePrivateBoundary(entries) {
+  for (const { player, summary } of entries) {
+    const roleId = summary.self?.roleId;
+
+    if (roleId === "werewolf") {
+      if (summary.rolePrivate?.roleId !== "werewolf") {
+        throw new Error(`${player.label} should have werewolf role private view.`);
+      }
+
+      continue;
+    }
+
+    if (summary.rolePrivate !== null) {
+      throw new Error(`${player.label} leaked role private view for ${roleId}.`);
+    }
+  }
+}
+
+function assertNoFirstNightAttackConsultation(entries) {
+  const werewolfEntries = findEntriesByRole(entries, "werewolf");
+
+  for (const { player, summary } of werewolfEntries) {
+    const slotIds = summary.rolePrivate?.consultation.map((slot) => slot.templateId) ?? [];
+
+    if (slotIds.includes("werewolf_attack_target")) {
+      throw new Error(`${player.label} saw normal-night attack consultation on first night.`);
+    }
+  }
+}
+
+async function exerciseWerewolfConsultation(
+  players,
+  baseUrl,
+  roomCode,
+  normalNightSummaries,
+  targetPlayerId,
+) {
+  assertRolePrivateBoundary(normalNightSummaries);
+
+  const werewolfEntries = findEntriesByRole(normalNightSummaries, "werewolf");
+
+  if (werewolfEntries.length < 2) {
+    throw new Error("Expected at least two werewolves for consultation coverage.");
+  }
+
+  const senderEntry = werewolfEntries[0];
+  const partnerEntry = werewolfEntries[1];
+  const attackSlot = findConsultationSlot(
+    senderEntry.summary,
+    (slot) => slot.templateId === "werewolf_attack_target" && slot.canSubmit,
+  );
+
+  await submitConsultationSlot(senderEntry, attackSlot, { target: targetPlayerId }, "Shared");
+  await refreshAll(players);
+
+  const submittedSummaries = await readSummaries(players, baseUrl, roomCode);
+  const submittedSender = findSummaryForPlayer(submittedSummaries, senderEntry.player);
+  const submittedPartner = findSummaryForPlayer(submittedSummaries, partnerEntry.player);
+  const partnerSubmittedSlot = findConsultationSlot(
+    submittedPartner.summary,
+    (slot) =>
+      slot.templateId === "werewolf_attack_target" &&
+      slot.senderPlayerId === submittedSender.summary.self.playerId,
+  );
+
+  if (
+    partnerSubmittedSlot.status !== "submitted" ||
+    partnerSubmittedSlot.values.target !== targetPlayerId
+  ) {
+    throw new Error("Werewolf consultation was not visible to the werewolf partner.");
+  }
+
+  assertNoPublicConsultationLeak(submittedSummaries);
+
+  await retractConsultationSlot(
+    submittedSender,
+    findConsultationSlot(
+      submittedSender.summary,
+      (slot) => slot.templateId === "werewolf_attack_target" && slot.canRetract,
+    ),
+  );
+  await refreshAll(players);
+
+  const retractedSummaries = await readSummaries(players, baseUrl, roomCode);
+  const retractedSender = findSummaryForPlayer(retractedSummaries, senderEntry.player);
+  const retractedPartner = findSummaryForPlayer(retractedSummaries, partnerEntry.player);
+  const partnerRetractedSlot = findConsultationSlot(
+    retractedPartner.summary,
+    (slot) =>
+      slot.templateId === "werewolf_attack_target" &&
+      slot.senderPlayerId === retractedSender.summary.self.playerId,
+  );
+
+  if (partnerRetractedSlot.status !== "retracted" || partnerRetractedSlot.canSubmit) {
+    throw new Error("Werewolf consultation retraction was not visible as read-only to partner.");
+  }
+
+  await submitConsultationSlot(
+    retractedSender,
+    findConsultationSlot(
+      retractedSender.summary,
+      (slot) => slot.templateId === "werewolf_attack_target" && slot.canSubmit,
+    ),
+    { target: targetPlayerId },
+    "Locked",
+  );
+  await refreshAll(players);
+
+  const resubmittedSummaries = await readSummaries(players, baseUrl, roomCode);
+  const resubmittedSender = findSummaryForPlayer(resubmittedSummaries, senderEntry.player);
+  const lockedSlot = findConsultationSlot(
+    resubmittedSender.summary,
+    (slot) => slot.templateId === "werewolf_attack_target" && slot.status === "submitted",
+  );
+
+  if (lockedSlot.canRetract || lockedSlot.canSubmit) {
+    throw new Error("Werewolf consultation allowed edits after resubmission.");
+  }
+
+  await expectConsultationRejected(
+    baseUrl,
+    roomCode,
+    resubmittedSender.player,
+    resubmittedSender.summary,
+    lockedSlot,
+    "retract",
+    {},
+  );
+  assertNoPublicConsultationLeak(resubmittedSummaries);
+}
+
+function findSummaryForPlayer(entries, player) {
+  const entry = entries.find((candidate) => candidate.player === player);
+
+  if (entry === undefined) {
+    throw new Error(`No summary found for ${player.label}.`);
+  }
+
+  return entry;
+}
+
+function findConsultationSlot(summary, predicate) {
+  const slot = summary.rolePrivate?.consultation.find(predicate);
+
+  if (slot === undefined) {
+    throw new Error(`No consultation slot found for ${summary.self?.roleId ?? "unknown role"}.`);
+  }
+
+  return slot;
+}
+
+async function submitConsultationSlot(entry, slot, valuesByFieldId, expectedStatus) {
+  const row = consultationSlotRow(entry, slot);
+  const count = await row.count();
+
+  if (count !== 1) {
+    throw new Error(`${entry.player.label} expected one consultation row, found ${count}.`);
+  }
+
+  for (const field of slot.fields) {
+    const value = valuesByFieldId[field.id] ?? field.options[0]?.value;
+
+    if (value === undefined) {
+      throw new Error(`No option available for consultation field ${field.id}.`);
+    }
+
+    await row.locator(`label:has-text("${field.label}") select`).selectOption(value);
+  }
+
+  await row.getByRole("button", { name: "Share" }).click();
+  await waitConsultationStatus(entry, slot.label, expectedStatus);
+}
+
+async function retractConsultationSlot(entry, slot) {
+  const row = consultationSlotRow(entry, slot);
+  const count = await row.count();
+
+  if (count !== 1) {
+    throw new Error(`${entry.player.label} expected one retract row, found ${count}.`);
+  }
+
+  await row.getByRole("button", { name: "Retract" }).click();
+  await waitConsultationStatus(entry, slot.label, "Retracted");
+}
+
+function consultationSlotRow(entry, slot) {
+  return entry.player.page
+    .locator(".liveConsultationSlot")
+    .filter({ hasText: slot.senderName })
+    .filter({ hasText: slot.label });
+}
+
+async function waitConsultationStatus(entry, slotLabel, status) {
+  try {
+    await entry.player.page.waitForFunction(
+      ({ slotLabel, status }) => {
+        return [...document.querySelectorAll(".liveConsultationSlot")].some((candidate) => {
+          return (
+            candidate.textContent.includes(slotLabel) && candidate.textContent.includes(status)
+          );
+        });
+      },
+      { slotLabel, status },
+      { timeout: 10000 },
+    );
+  } catch (error) {
+    const statusBar = await entry.player.page.locator(".liveStatusBar").innerText();
+    const slotTexts = await entry.player.page.locator(".liveConsultationSlot").allTextContents();
+
+    throw new Error(
+      `${entry.player.label} consultation did not reach ${status} for ${slotLabel}.\n${statusBar}\n${slotTexts.join("\n---\n")}`,
+      { cause: error },
+    );
+  }
+}
+
+async function expectConsultationRejected(
+  baseUrl,
+  roomCode,
+  player,
+  summary,
+  slot,
+  operation,
+  values,
+) {
+  const token = await readIdentityToken(player);
+  const response = await fetch(`${baseUrl}/api/rooms/${roomCode}/consultation`, {
+    body: JSON.stringify({
+      nightNumber: slot.nightNumber,
+      operation,
+      phaseInstanceId: summary.game?.phaseInstanceId,
+      revision: summary.game?.revision,
+      templateId: slot.templateId,
+      values,
+    }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (response.ok) {
+    throw new Error(`Expected consultation ${operation} to be rejected.`);
+  }
+}
+
+function assertNoPublicConsultationLeak(entries) {
+  for (const { player, summary } of entries) {
+    const publicKinds = summary.game?.events.map((event) => event.kind) ?? [];
+
+    if (
+      publicKinds.includes("werewolf_consultation_submitted") ||
+      publicKinds.includes("werewolf_consultation_retracted")
+    ) {
+      throw new Error(`${player.label} public log leaked werewolf consultation event.`);
+    }
+
+    if (summary.self?.roleId !== "werewolf" && summary.rolePrivate !== null) {
+      throw new Error(`${player.label} leaked werewolf consultation private view.`);
+    }
+  }
+}
+
 async function submitActionsFromSummaries(entries, targetByActionKind) {
   const submittedActionKeys = new Set();
 
@@ -379,6 +651,19 @@ async function submitActionsFromSummaries(entries, targetByActionKind) {
       submittedActionKeys.add(action.key);
     }
   }
+}
+
+async function readIdentityToken(player) {
+  const token = await player.page.evaluate(
+    (key) => window.localStorage.getItem(key),
+    IDENTITY_STORAGE_KEY,
+  );
+
+  if (token === null) {
+    throw new Error(`${player.label} has no identity token in localStorage.`);
+  }
+
+  return token;
 }
 
 async function waitSubmittedAction(player, label) {

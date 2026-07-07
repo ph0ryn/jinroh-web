@@ -60,6 +60,7 @@ export type PublicGameView = {
   nightNumber: number;
   phaseInstanceId: string | null;
   phaseEndsAt: string | null;
+  revision: number;
   winnerTeam: Team | null;
   actionProgress: PublicActionProgress | null;
   events: PublicGameEvent[];
@@ -121,11 +122,29 @@ export type RolePrivateView = {
 } | null;
 
 export type WerewolfConsultationSlot = {
+  canRetract: boolean;
+  canSubmit: boolean;
+  fields: WerewolfConsultationField[];
   templateId: string;
   label: string;
-  value: string | null;
-  status: "empty" | "submitted" | "retracted" | "resubmitted";
+  nightNumber: number;
   readOnly: boolean;
+  senderName: string;
+  senderPlayerId: string;
+  status: "empty" | "submitted" | "retracted";
+  value: string | null;
+  values: Record<string, string>;
+};
+
+export type WerewolfConsultationField = {
+  id: string;
+  label: string;
+  options: WerewolfConsultationOption[];
+};
+
+export type WerewolfConsultationOption = {
+  label: string;
+  value: string;
 };
 
 export type PublicAction = {
