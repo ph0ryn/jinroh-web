@@ -741,6 +741,7 @@ export default function LivePage() {
             actions={selfActions}
             isBusy={isBusy}
             players={roomSummary?.players ?? []}
+            summary={roomSummary}
             targetByActionKey={targetByActionKey}
             onTargetChange={(actionKey, playerId) =>
               setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
@@ -1197,6 +1198,7 @@ function ActionList({
   actions,
   isBusy,
   players,
+  summary,
   targetByActionKey,
   onTargetChange,
   onSubmitAction,
@@ -1204,15 +1206,18 @@ function ActionList({
   readonly actions: readonly PublicAction[];
   readonly isBusy: boolean;
   readonly players: readonly PublicPlayer[];
+  readonly summary: RoomSummary | null;
   readonly targetByActionKey: Record<string, string>;
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
   readonly onSubmitAction: (action: PublicAction) => void;
 }) {
   if (actions.length === 0) {
+    const emptyCopy = getEmptyActionCopy(summary);
+
     return (
       <div className="liveEmptyState compact">
-        <strong>No private actions</strong>
-        <p>Refresh after a phase change or wait for your action window.</p>
+        <strong>{emptyCopy.title}</strong>
+        <p>{emptyCopy.body}</p>
       </div>
     );
   }
@@ -1268,6 +1273,41 @@ function ActionList({
       })}
     </div>
   );
+}
+
+function getEmptyActionCopy(summary: RoomSummary | null): { body: string; title: string } {
+  if (summary === null) {
+    return {
+      body: "Join a room to load role-specific prompts.",
+      title: "No private actions",
+    };
+  }
+
+  if (summary.status === "disbanded") {
+    return {
+      body: "This room is closed. Create or join a new room to continue.",
+      title: "Room closed",
+    };
+  }
+
+  if (summary.game?.status === "ended") {
+    return {
+      body: "Private actions are closed. Review your result and the public log.",
+      title: "Game complete",
+    };
+  }
+
+  if (summary.status === "lobby") {
+    return {
+      body: "Private actions appear here after the host starts the game.",
+      title: "Waiting for start",
+    };
+  }
+
+  return {
+    body: "This phase has no private action for you, or your action is already closed.",
+    title: "No private actions",
+  };
 }
 
 function EventLog({ summary }: { readonly summary: RoomSummary | null }) {
