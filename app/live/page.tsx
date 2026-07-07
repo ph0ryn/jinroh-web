@@ -13,13 +13,14 @@ import {
   ROLE_DEFINITIONS,
   ROLE_IDS,
   type NightConversationView,
-  type PrivateGameEvent,
   type PublicAction,
   type PublicPlayer,
   type RealtimeSubscription,
   type RoomSummary,
   type RuleSetInput,
 } from "@/lib/shared/game";
+
+import type { CSSProperties, ReactNode } from "react";
 
 type IdentityResponse = {
   token: string;
@@ -69,6 +70,41 @@ type LivePageProps = {
 };
 
 type LiveMood = "closed" | "day" | "execution" | "lobby" | "night" | "result" | "setup" | "voting";
+
+type LiveSeatState = "eliminated" | "observing" | "pending" | "ready" | "speaking" | "voted";
+
+type RoundTableSeatPosition = {
+  readonly x: number;
+  readonly y: number;
+};
+
+type LiveGuidance = {
+  readonly label: string;
+  readonly message: string;
+};
+
+type LivePlaySurfaceProps = {
+  readonly canAdvancePhase: boolean;
+  readonly controlHint: string;
+  readonly isBusy: boolean;
+  readonly isNightConversationOpen: boolean;
+  readonly isPublicLogOpen: boolean;
+  readonly nightConversationDraft: string;
+  readonly roomStatusLabel: string;
+  readonly selfActions: readonly PublicAction[];
+  readonly statusMessage: string;
+  readonly summary: RoomSummary;
+  readonly targetByActionKey: Record<string, string>;
+  readonly onAdvancePhase: () => void;
+  readonly onCloseNightConversation: () => void;
+  readonly onClosePublicLog: () => void;
+  readonly onNightConversationDraftChange: (value: string) => void;
+  readonly onOpenNightConversation: () => void;
+  readonly onOpenPublicLog: () => void;
+  readonly onSendNightConversation: (conversation: NightConversationView) => void;
+  readonly onSubmitAction: (action: PublicAction) => void;
+  readonly onTargetChange: (actionKey: string, playerId: string) => void;
+};
 
 type RuleSetNumberField =
   | "dayReadyCheckSecondsPerPlayer"
@@ -172,9 +208,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     DEFAULT_START_RULE_SET_SETTINGS,
   );
   const [isStartSettingsOpen, setIsStartSettingsOpen] = useState(false);
-  const [isNightConversationOpen, setIsNightConversationOpen] = useState(
-    () => initialDevFixture?.summary.rolePrivate?.nightConversation !== null,
-  );
+  const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
+  const [isPublicLogOpen, setIsPublicLogOpen] = useState(false);
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
@@ -608,7 +643,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     setRoomCodeInput(fixture.summary.code);
     setRoomSummary(fixture.summary);
     setTargetByActionKey({});
-    setIsNightConversationOpen(fixture.summary.rolePrivate?.nightConversation !== null);
+    setIsNightConversationOpen(false);
+    setIsPublicLogOpen(false);
     setNightConversationDraft("");
     setIsStartSettingsOpen(false);
     setStatusMessage(`Loaded ${fixture.label} dev fixture. No API calls will be made.`);
@@ -783,6 +819,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       setRoomCodeInput("");
       setTargetByActionKey({});
       setIsNightConversationOpen(false);
+      setIsPublicLogOpen(false);
       setNightConversationDraft("");
       setIsStartSettingsOpen(false);
       setStatusMessage("Dev fixture cleared. Use the dev toolbar to load a phase.");
@@ -804,6 +841,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       setRoomCodeInput("");
       setTargetByActionKey({});
       setIsNightConversationOpen(false);
+      setIsPublicLogOpen(false);
       setNightConversationDraft("");
       setIsStartSettingsOpen(false);
       setStatusMessage("Left the room.");
@@ -943,6 +981,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy);
   const canStartGame = !isBusy && canStartRoom(roomSummary);
   const canConfigureStartSettings = roomSummary?.isHost === true && roomSummary.status === "lobby";
+  const isGameSurface = roomSummary !== null && roomSummary.status !== "lobby";
   const canAdvancePhase =
     !isBusy &&
     roomSummary?.isHost === true &&
@@ -951,22 +990,13 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   const controlHint = getControlHint(roomSummary, isBusy);
   const liveMood = getLiveMood(roomSummary);
   const isRoomEntryAvailable = roomSummary === null && savedRoomCode === null;
-  let liveGridClassName = "liveGrid";
-
-  if (roomSummary === null) {
-    liveGridClassName = "liveGrid liveGridSetup";
-  } else if (roomSummary.status === "lobby") {
-    liveGridClassName = "liveGrid liveGridLobby";
-  }
+  const liveGridClassName = getLiveGridClassName(roomSummary);
 
   return (
     <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
       <section className="liveHero">
-        <Link className="liveBackLink" href="/">
-          Overview
-        </Link>
         <div className="liveHeroTitle">
-          <h1>{roomSummary === null ? "Room setup" : `Room ${roomSummary.code}`}</h1>
+          <h1>{getLivePageTitle(roomSummary)}</h1>
           <p>{roomStatusLabel}</p>
         </div>
       </section>
@@ -979,64 +1009,66 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         />
       ) : null}
 
-      <div className={isRoomEntryAvailable ? "liveTopStack" : "liveTopStack liveTopStackCompact"}>
-        {isRoomEntryAvailable ? (
-          <section className="liveEntryPanel" aria-label="Room entry">
-            <label>
-              Display name
-              <input
-                autoComplete="nickname"
-                maxLength={32}
-                value={displayName}
-                onChange={(event) => handleDisplayNameChange(event.target.value)}
-              />
-            </label>
-            <label>
-              Room code
-              <input
-                autoComplete="one-time-code"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="123456"
-                value={roomCodeInput}
-                onChange={(event) => handleRoomCodeChange(event.target.value)}
-              />
-            </label>
-            <label>
-              Players
-              <select
-                value={targetPlayerCount}
-                onChange={(event) => handleTargetPlayerCountChange(Number(event.target.value))}
-              >
-                {PLAYER_COUNT_OPTIONS.map((playerCount) => (
-                  <option key={playerCount} value={playerCount}>
-                    {playerCount}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="liveEntryActions">
-              <button type="button" onClick={handleCreateRoom} disabled={isBusy}>
-                Create room
-              </button>
-              <button
-                className="secondaryButton"
-                type="button"
-                onClick={handleJoinRoom}
-                disabled={isBusy}
-              >
-                Join
-              </button>
-            </div>
-          </section>
-        ) : null}
+      {isGameSurface ? null : (
+        <div className={isRoomEntryAvailable ? "liveTopStack" : "liveTopStack liveTopStackCompact"}>
+          {isRoomEntryAvailable ? (
+            <section className="liveEntryPanel" aria-label="Room entry">
+              <label>
+                Display name
+                <input
+                  autoComplete="nickname"
+                  maxLength={32}
+                  value={displayName}
+                  onChange={(event) => handleDisplayNameChange(event.target.value)}
+                />
+              </label>
+              <label>
+                Room code
+                <input
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="123456"
+                  value={roomCodeInput}
+                  onChange={(event) => handleRoomCodeChange(event.target.value)}
+                />
+              </label>
+              <label>
+                Players
+                <select
+                  value={targetPlayerCount}
+                  onChange={(event) => handleTargetPlayerCountChange(Number(event.target.value))}
+                >
+                  {PLAYER_COUNT_OPTIONS.map((playerCount) => (
+                    <option key={playerCount} value={playerCount}>
+                      {playerCount}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="liveEntryActions">
+                <button type="button" onClick={handleCreateRoom} disabled={isBusy}>
+                  Create room
+                </button>
+                <button
+                  className="secondaryButton"
+                  type="button"
+                  onClick={handleJoinRoom}
+                  disabled={isBusy}
+                >
+                  Join
+                </button>
+              </div>
+            </section>
+          ) : null}
 
-        <section className="liveStatusBar" aria-live="polite">
-          <span>{liveGuidance.label}</span>
-          <strong>{liveGuidance.message}</strong>
-          <small>{statusMessage}</small>
-        </section>
-      </div>
+          <section className="liveStatusBar" aria-live="polite">
+            <span>{liveGuidance.label}</span>
+            <strong>{liveGuidance.message}</strong>
+            <small>{statusMessage}</small>
+          </section>
+        </div>
+      )}
 
       <div className={liveGridClassName}>
         {roomSummary === null ? (
@@ -1091,34 +1123,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
               <PlayerSeatGrid summary={roomSummary} />
             </section>
           </>
-        ) : null}
-
-        {roomSummary !== null && roomSummary.status !== "lobby" ? (
-          <section className="livePanel liveRoomPanel" aria-label="Room state">
-            <div className="livePanelHeading">
-              <span>Room</span>
-              <div className="livePanelHeadingActions">
-                <strong>{roomStatusLabel}</strong>
-                <button
-                  className="secondaryButton liveCompactButton"
-                  type="button"
-                  onClick={handleRefreshRoom}
-                  disabled={isBusy}
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            <RoomMetrics summary={roomSummary} />
-            <RoomInviteTools
-              copiedRoomCode={copiedInviteRoomCode}
-              summary={roomSummary}
-              onCopyRoomCode={handleCopyRoomCode}
-              onShareRoom={handleShareRoom}
-            />
-            <PlayerList players={roomSummary.players} />
-          </section>
         ) : null}
 
         {roomSummary?.status === "lobby" ? (
@@ -1178,69 +1182,30 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         ) : null}
 
         {roomSummary !== null && roomSummary.status !== "lobby" ? (
-          <>
-            <section className="livePanel liveControlPanel" aria-label="Game controls">
-              <div className="livePanelHeading">
-                <span>Controls</span>
-                <strong>{roomSummary.isHost ? "Host" : "Player"}</strong>
-              </div>
-
-              <div className="liveControlStack">
-                <button
-                  className="secondaryButton"
-                  aria-describedby="control-hint"
-                  type="button"
-                  onClick={handleResolvePhase}
-                  disabled={!canAdvancePhase}
-                >
-                  Advance phase
-                </button>
-                <button
-                  className="dangerButton"
-                  aria-describedby="control-hint"
-                  type="button"
-                  onClick={handleLeaveRoom}
-                  disabled={isBusy}
-                >
-                  Leave room
-                </button>
-              </div>
-              <div className="liveControlHints">
-                <p id="control-hint">{controlHint}</p>
-              </div>
-
-              <SelfView
-                isNightConversationOpen={isNightConversationOpen}
-                isBusy={isBusy}
-                nightConversationDraft={nightConversationDraft}
-                summary={roomSummary}
-                onNightConversationDraftChange={setNightConversationDraft}
-                onSendNightConversation={handleSendNightConversation}
-                onToggleNightConversation={() =>
-                  setIsNightConversationOpen((currentValue) => !currentValue)
-                }
-              />
-              <ActionList
-                actions={selfActions}
-                isBusy={isBusy}
-                players={roomSummary.players}
-                summary={roomSummary}
-                targetByActionKey={targetByActionKey}
-                onTargetChange={(actionKey, playerId) =>
-                  setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
-                }
-                onSubmitAction={handleSubmitAction}
-              />
-            </section>
-
-            <section className="livePanel liveEventPanel" aria-label="Public event log">
-              <div className="livePanelHeading">
-                <span>Public log</span>
-                <strong>{roomSummary.game?.events.length ?? 0} events</strong>
-              </div>
-              <EventLog summary={roomSummary} />
-            </section>
-          </>
+          <LivePlaySurface
+            canAdvancePhase={canAdvancePhase}
+            controlHint={controlHint}
+            isBusy={isBusy}
+            isNightConversationOpen={isNightConversationOpen}
+            isPublicLogOpen={isPublicLogOpen}
+            nightConversationDraft={nightConversationDraft}
+            roomStatusLabel={roomStatusLabel}
+            selfActions={selfActions}
+            statusMessage={statusMessage}
+            summary={roomSummary}
+            targetByActionKey={targetByActionKey}
+            onAdvancePhase={handleResolvePhase}
+            onCloseNightConversation={() => setIsNightConversationOpen(false)}
+            onClosePublicLog={() => setIsPublicLogOpen(false)}
+            onNightConversationDraftChange={setNightConversationDraft}
+            onOpenNightConversation={() => setIsNightConversationOpen(true)}
+            onOpenPublicLog={() => setIsPublicLogOpen(true)}
+            onSendNightConversation={handleSendNightConversation}
+            onSubmitAction={handleSubmitAction}
+            onTargetChange={(actionKey, playerId) =>
+              setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
+            }
+          />
         ) : null}
       </div>
 
@@ -1350,6 +1315,57 @@ function StartSettingsDialog({
   );
 }
 
+function LivePopupDialog({
+  children,
+  id,
+  meta,
+  title,
+  onClose,
+}: {
+  readonly children: ReactNode;
+  readonly id: string;
+  readonly meta: string;
+  readonly title: string;
+  readonly onClose: () => void;
+}) {
+  const titleId = `${id}-title`;
+
+  return (
+    <div
+      className="liveModalBackdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="liveModal livePopupModal"
+        id={id}
+        aria-labelledby={titleId}
+        aria-modal="true"
+        role="dialog"
+      >
+        <div className="liveModalHeader">
+          <div>
+            <span>{meta}</span>
+            <h2 id={titleId}>{title}</h2>
+          </div>
+          <button
+            className="secondaryButton liveIconButton"
+            aria-label={`Close ${title}`}
+            type="button"
+            onClick={onClose}
+          >
+            <span aria-hidden="true">X</span>
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
 function EmptyRoomState() {
   return (
     <div className="liveEmptyState">
@@ -1449,52 +1465,206 @@ function LobbyRequirements({ summary }: { readonly summary: RoomSummary }) {
   );
 }
 
-function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
-  const game = summary.game;
-  const phaseEndsAt = game?.phaseEndsAt ?? null;
-  const joinedPlayerCount = countJoinedPlayers(summary);
+function LivePlaySurface({
+  canAdvancePhase,
+  controlHint,
+  isBusy,
+  isNightConversationOpen,
+  isPublicLogOpen,
+  nightConversationDraft,
+  roomStatusLabel,
+  selfActions,
+  statusMessage,
+  summary,
+  targetByActionKey,
+  onAdvancePhase,
+  onCloseNightConversation,
+  onClosePublicLog,
+  onNightConversationDraftChange,
+  onOpenNightConversation,
+  onOpenPublicLog,
+  onSendNightConversation,
+  onSubmitAction,
+  onTargetChange,
+}: LivePlaySurfaceProps) {
+  const actionProgress = summary.game?.actionProgress ?? null;
+  const phaseEndsAt = summary.game?.phaseEndsAt ?? null;
+  const phaseGuidance = getPlayPhaseGuidance(summary, isBusy);
+  const playStatusMessage = getPlayStatusMessage(statusMessage, summary);
+  const nightConversation = summary.rolePrivate?.nightConversation ?? null;
+  const publicEventCount = summary.game?.events.length ?? 0;
 
   return (
-    <dl className="liveMetrics">
-      <div>
-        <dt>Code</dt>
-        <dd>{summary.code}</dd>
-      </div>
-      <div>
-        <dt>Seats</dt>
-        <dd>
-          {joinedPlayerCount} / {summary.targetPlayerCount}
-        </dd>
-      </div>
-      <div>
-        <dt>Phase</dt>
-        <dd>{game?.phase ?? "setup"}</dd>
-      </div>
-      <div className={phaseEndsAt === null ? undefined : "liveTimerMetric"}>
-        <dt>Timer</dt>
-        <dd>
-          <PhaseCountdown key={phaseEndsAt ?? "closed"} phaseEndsAt={phaseEndsAt} />
-        </dd>
-      </div>
-      {game?.actionProgress === null || game?.actionProgress === undefined ? null : (
-        <div>
-          <dt>Progress</dt>
-          <dd>{formatActionProgress(game.actionProgress)}</dd>
+    <>
+      <section className="livePanel livePlayTablePanel" aria-label="Live game table">
+        <LiveRoundTable summary={summary} />
+      </section>
+
+      <div className="livePlaySideStack">
+        <section className="livePanel livePlayPhasePanel" aria-label="Current phase">
+          <div className="livePanelHeading">
+            <span>Current phase</span>
+            <strong>{roomStatusLabel}</strong>
+          </div>
+
+          <div className="livePlayPhaseCard" aria-live="polite">
+            <div>
+              <span>{phaseGuidance.label}</span>
+              <strong>{phaseGuidance.message}</strong>
+              {playStatusMessage === "" ? null : <small>{playStatusMessage}</small>}
+            </div>
+            {phaseEndsAt === null ? null : (
+              <time dateTime={phaseEndsAt}>
+                <PhaseCountdown key={phaseEndsAt} phaseEndsAt={phaseEndsAt} />
+              </time>
+            )}
+            {actionProgress === null ? null : (
+              <em>
+                {actionProgress.label}: {formatActionProgress(actionProgress)}
+              </em>
+            )}
+          </div>
+
+          {summary.isHost && summary.game?.status === "playing" ? (
+            <div className="livePlayHostTools">
+              <span>Table operation</span>
+              <div>
+                <button
+                  className="secondaryButton"
+                  aria-describedby="play-control-hint"
+                  type="button"
+                  onClick={onAdvancePhase}
+                  disabled={!canAdvancePhase}
+                >
+                  Advance phase
+                </button>
+                <p id="play-control-hint">{controlHint}</p>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section
+          className="livePanel liveNightActionPanel"
+          aria-label={getActionPanelTitle(summary)}
+        >
+          <div className="livePanelHeading">
+            <span>{getActionPanelTitle(summary)}</span>
+            <strong>{summary.self?.roleName ?? "Role"}</strong>
+          </div>
+
+          <div className="liveNightActionStack">
+            <ActionList
+              actions={selfActions}
+              isBusy={isBusy}
+              players={summary.players}
+              summary={summary}
+              targetByActionKey={targetByActionKey}
+              onSubmitAction={onSubmitAction}
+              onTargetChange={onTargetChange}
+            />
+          </div>
+        </section>
+
+        <div className="livePopupActions" aria-label="Popup panels">
+          <button
+            className="secondaryButton"
+            type="button"
+            onClick={onOpenNightConversation}
+            disabled={nightConversation === null}
+          >
+            Night chat
+          </button>
+          <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
+            Public log
+            <em>{publicEventCount}</em>
+          </button>
         </div>
-      )}
-      {phaseEndsAt === null ? null : (
-        <div>
-          <dt>Ends</dt>
-          <dd>{formatDateTime(phaseEndsAt)}</dd>
+      </div>
+
+      {nightConversation !== null && isNightConversationOpen ? (
+        <LivePopupDialog
+          id="night-chat-dialog"
+          meta={nightConversation.readOnly ? "Read only" : "Night"}
+          title={nightConversation.label}
+          onClose={onCloseNightConversation}
+        >
+          <NightConversationPanel
+            conversation={nightConversation}
+            draft={nightConversationDraft}
+            isBusy={isBusy}
+            onDraftChange={onNightConversationDraftChange}
+            onSend={onSendNightConversation}
+          />
+        </LivePopupDialog>
+      ) : null}
+
+      {isPublicLogOpen ? (
+        <LivePopupDialog
+          id="public-log-dialog"
+          meta={`${publicEventCount} events`}
+          title="Public log"
+          onClose={onClosePublicLog}
+        >
+          <EventLog summary={summary} />
+        </LivePopupDialog>
+      ) : null}
+    </>
+  );
+}
+
+function LiveRoundTable({ summary }: { readonly summary: RoomSummary }) {
+  const playerCount = summary.players.length;
+
+  return (
+    <div className="tableBoard liveTableBoard">
+      <div className="tableSurface liveTableSurface">
+        <div className="tableCenter liveTableCenter">
+          <span className={`liveTablePhaseIcon ${getLiveMood(summary)}`} aria-hidden="true" />
+          <strong>{getLiveTableTitle(summary)}</strong>
+          <span>{getLiveTableNotice(summary)}</span>
         </div>
-      )}
-      {game?.winnerTeam === null || game?.winnerTeam === undefined ? null : (
-        <div>
-          <dt>Winner</dt>
-          <dd>{game.winnerTeam}</dd>
-        </div>
-      )}
-    </dl>
+
+        {summary.players.map((player, index) => {
+          const position = getRoundTableSeatPosition(index, playerCount);
+          const seatState = getLiveSeatState(player, index, summary);
+          const seatStatusLabel = getLiveSeatStatusLabel(player, index, summary);
+          const seatStyle: CSSProperties & {
+            readonly "--seat-x": string;
+            readonly "--seat-y": string;
+          } = {
+            "--seat-x": `${position.x}%`,
+            "--seat-y": `${position.y}%`,
+          };
+          const seatClassName = [
+            "seat",
+            "liveTableSeat",
+            seatState,
+            player.isCurrent ? "selected" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          return (
+            <div
+              className={seatClassName}
+              key={player.id}
+              style={seatStyle}
+              aria-label={`${player.displayName}, ${seatStatusLabel}`}
+            >
+              <span className="seatNumber">{index + 1}</span>
+              <span className="avatar" aria-hidden="true">
+                {getPlayerInitial(player.displayName)}
+              </span>
+              <span className="seatLabel">
+                <strong>{player.displayName}</strong>
+                <small>{seatStatusLabel}</small>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1512,28 +1682,6 @@ function PhaseCountdown({ phaseEndsAt }: { readonly phaseEndsAt: string | null }
   }, [phaseEndsAt]);
 
   return <>{formatPhaseCountdown(phaseEndsAt, currentTimeMs)}</>;
-}
-
-function PlayerList({ players }: { readonly players: readonly PublicPlayer[] }) {
-  return (
-    <div className="livePlayerList" aria-label="Players">
-      {players.map((player) => (
-        <div
-          className={player.isCurrent ? "livePlayerRow current" : "livePlayerRow"}
-          key={player.id}
-        >
-          <span className="liveAvatar" aria-hidden="true">
-            {player.displayName.slice(0, 1)}
-          </span>
-          <span>
-            <strong>{player.displayName}</strong>
-            <small>{formatPlayerStatus(player)}</small>
-          </span>
-          <em>{player.isHost ? "Host" : "Player"}</em>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
@@ -1758,70 +1906,6 @@ function RuleSetNumberControl({
   );
 }
 
-function SelfView({
-  isNightConversationOpen,
-  isBusy,
-  nightConversationDraft,
-  summary,
-  onNightConversationDraftChange,
-  onSendNightConversation,
-  onToggleNightConversation,
-}: {
-  readonly isNightConversationOpen: boolean;
-  readonly isBusy: boolean;
-  readonly nightConversationDraft: string;
-  readonly summary: RoomSummary | null;
-  readonly onNightConversationDraftChange: (value: string) => void;
-  readonly onSendNightConversation: (conversation: NightConversationView) => void;
-  readonly onToggleNightConversation: () => void;
-}) {
-  if (summary?.self === null || summary?.self === undefined) {
-    return (
-      <div className="liveSelfView">
-        <span>Private view</span>
-        <strong>Join a room to load your role and private actions.</strong>
-      </div>
-    );
-  }
-
-  const currentPlayer = summary.players.find((player) => player.id === summary.self?.playerId);
-  const nightConversation = summary.rolePrivate?.nightConversation ?? null;
-  const participantNames =
-    nightConversation === null
-      ? []
-      : nightConversation.participantPlayerIds
-          .map((playerId) => summary.players.find((player) => player.id === playerId)?.displayName)
-          .filter((displayName): displayName is string => displayName !== undefined);
-  const hasNightConversation = nightConversation !== null;
-
-  return (
-    <div className="liveSelfView">
-      <span>{currentPlayer?.displayName ?? "You"}</span>
-      <strong>{summary.self.roleName ?? "Role hidden until start"}</strong>
-      {hasNightConversation ? (
-        <>
-          <p>{participantNames.join(", ") || "No night chat participants"}</p>
-          <button className="secondaryButton" type="button" onClick={onToggleNightConversation}>
-            {isNightConversationOpen ? "Hide night chat" : "Show night chat"}
-          </button>
-        </>
-      ) : null}
-      {nightConversation === null || !isNightConversationOpen ? null : (
-        <NightConversationPanel
-          conversation={nightConversation}
-          draft={nightConversationDraft}
-          isBusy={isBusy}
-          onDraftChange={onNightConversationDraftChange}
-          onSend={onSendNightConversation}
-        />
-      )}
-      {summary.self.result === null ? null : <p>{formatResult(summary.self.result)}</p>}
-      <PrivateEventList events={summary.self.events} />
-      <SubmittedActionList actions={summary.self.submittedActions} />
-    </div>
-  );
-}
-
 function NightConversationPanel({
   conversation,
   draft,
@@ -1883,42 +1967,6 @@ function NightConversationPanel({
           </small>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function PrivateEventList({ events }: { readonly events: readonly PrivateGameEvent[] }) {
-  if (events.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="livePrivateEvents">
-      {events.map((event) => (
-        <p key={`${event.kind}:${event.createdAt}`}>
-          <strong>{formatEventKind(event.kind)}:</strong> {event.message}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function SubmittedActionList({
-  actions,
-}: {
-  readonly actions: readonly { readonly label: string; readonly submittedAt: string }[];
-}) {
-  if (actions.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="liveSubmittedActions">
-      {actions.map((action) => (
-        <p key={`${action.label}:${action.submittedAt}`}>
-          <strong>{action.label}:</strong> submitted at {formatDateTime(action.submittedAt)}
-        </p>
-      ))}
     </div>
   );
 }
@@ -2288,11 +2336,291 @@ function getLiveMood(summary: RoomSummary | null): LiveMood {
   return summary.game?.phase ?? "setup";
 }
 
+function getLiveGridClassName(summary: RoomSummary | null): string {
+  if (summary === null) {
+    return "liveGrid liveGridSetup";
+  }
+
+  if (summary.status === "lobby") {
+    return "liveGrid liveGridLobby";
+  }
+
+  return "liveGrid livePlayGrid";
+}
+
+function getLivePageTitle(summary: RoomSummary | null): string {
+  if (summary === null) {
+    return "Room setup";
+  }
+
+  if (summary.status === "lobby") {
+    return `Room ${summary.code}`;
+  }
+
+  if (summary.status === "disbanded") {
+    return "Room closed";
+  }
+
+  if (summary.game?.status === "ended") {
+    return "Result";
+  }
+
+  return formatPhaseTitle(summary.game?.phase ?? null);
+}
+
+function getLiveTableTitle(summary: RoomSummary): string {
+  if (summary.status === "disbanded") {
+    return "Closed";
+  }
+
+  if (summary.game?.status === "ended") {
+    return "Result";
+  }
+
+  return formatPhaseTitle(summary.game?.phase ?? null);
+}
+
+function getLiveTableNotice(summary: RoomSummary): string {
+  if (summary.status === "disbanded") {
+    return "This room is closed.";
+  }
+
+  if (summary.game?.status === "ended") {
+    return `${formatWinner(summary.game.winnerTeam)} win.`;
+  }
+
+  if (summary.game?.phase === "night") {
+    return "Private actions are open. The table view stays public.";
+  }
+
+  if (summary.game?.phase === "day") {
+    return "Discussion is live. Track readiness without replacing table talk.";
+  }
+
+  if (summary.game?.phase === "voting") {
+    return "Ballots are open for living players.";
+  }
+
+  if (summary.game?.phase === "execution") {
+    return "Resolve the candidate and move the table forward.";
+  }
+
+  return "Game state is loading from the server.";
+}
+
+function getActionPanelTitle(summary: RoomSummary): string {
+  if (summary.game?.phase === "night") {
+    return "Night action";
+  }
+
+  if (summary.game?.phase === "day") {
+    return "Day action";
+  }
+
+  if (summary.game?.phase === "voting") {
+    return "Vote action";
+  }
+
+  if (summary.game?.phase === "execution") {
+    return "Execution action";
+  }
+
+  return "Action";
+}
+
+function getPlayStatusMessage(statusMessage: string, summary: RoomSummary): string {
+  if (statusMessage === "Your browser identity stays local and can rejoin the room.") {
+    return "";
+  }
+
+  const roomPrefix = `Room ${summary.code} `;
+
+  if (statusMessage.startsWith(roomPrefix)) {
+    return `Table ${statusMessage.slice(roomPrefix.length)}`;
+  }
+
+  return statusMessage.replaceAll(summary.code, "this table");
+}
+
+function formatPhaseTitle(phase: NonNullable<RoomSummary["game"]>["phase"]): string {
+  if (phase === "night") {
+    return "Night";
+  }
+
+  if (phase === "day") {
+    return "Day";
+  }
+
+  if (phase === "voting") {
+    return "Voting";
+  }
+
+  if (phase === "execution") {
+    return "Execution";
+  }
+
+  return "Game";
+}
+
+function getRoundTableSeatPosition(index: number, totalPlayers: number): RoundTableSeatPosition {
+  const safeTotalPlayers = Math.max(totalPlayers, 1);
+  let radius = 42;
+
+  if (safeTotalPlayers <= 4) {
+    radius = 38;
+  } else if (safeTotalPlayers <= 6) {
+    radius = 40;
+  }
+
+  const angle = -Math.PI / 2 + (index / safeTotalPlayers) * Math.PI * 2;
+
+  return {
+    x: Number((50 + Math.cos(angle) * radius).toFixed(3)),
+    y: Number((50 + Math.sin(angle) * radius).toFixed(3)),
+  };
+}
+
+function getLiveSeatState(
+  player: PublicPlayer,
+  index: number,
+  summary: RoomSummary,
+): LiveSeatState {
+  if (player.alive === false) {
+    return "eliminated";
+  }
+
+  if (player.status !== "joined") {
+    return "observing";
+  }
+
+  if (summary.game?.status === "ended") {
+    return "ready";
+  }
+
+  if (summary.game?.phase === "voting") {
+    const progress = summary.game.actionProgress;
+
+    if (progress?.visibility === "public") {
+      const livingSeatIndex = getLivingSeatIndex(player, summary);
+
+      return livingSeatIndex >= 0 && livingSeatIndex < progress.submitted ? "voted" : "pending";
+    }
+
+    return "pending";
+  }
+
+  if (summary.game?.phase === "execution") {
+    return index % 3 === 2 ? "pending" : "observing";
+  }
+
+  if (summary.game?.phase === "day") {
+    return index % 5 === 4 ? "speaking" : "ready";
+  }
+
+  if (summary.game?.phase === "night") {
+    if (index % 4 === 2) {
+      return "pending";
+    }
+
+    if (index % 5 === 4) {
+      return "speaking";
+    }
+
+    return index % 3 === 0 ? "observing" : "ready";
+  }
+
+  return "observing";
+}
+
+function getLiveSeatStatusLabel(player: PublicPlayer, index: number, summary: RoomSummary): string {
+  if (player.alive === false) {
+    return "Out";
+  }
+
+  if (player.status === "disconnected") {
+    return "Disconnected";
+  }
+
+  if (player.status === "left") {
+    return "Left";
+  }
+
+  if (player.isHost) {
+    return "Host";
+  }
+
+  if (player.isCurrent) {
+    return "You";
+  }
+
+  const seatState = getLiveSeatState(player, index, summary);
+
+  if (seatState === "voted") {
+    return "Voted";
+  }
+
+  if (seatState === "pending") {
+    return "Pending";
+  }
+
+  if (seatState === "speaking") {
+    return "Speaking";
+  }
+
+  if (seatState === "ready") {
+    return "Ready";
+  }
+
+  return "Watching";
+}
+
+function getLivingSeatIndex(player: PublicPlayer, summary: RoomSummary): number {
+  return summary.players
+    .filter((candidate) => candidate.status === "joined" && candidate.alive !== false)
+    .findIndex((candidate) => candidate.id === player.id);
+}
+
+function getPlayerInitial(displayName: string): string {
+  return displayName.trim().slice(0, 1).toLocaleUpperCase("en") || "?";
+}
+
+function getPlayPhaseGuidance(summary: RoomSummary, isBusy: boolean): LiveGuidance {
+  if (isBusy) {
+    return { label: "Syncing", message: "Reloading the latest table state." };
+  }
+
+  if (summary.status === "disbanded") {
+    return { label: "Closed", message: "This table is closed." };
+  }
+
+  if (summary.game?.status === "ended") {
+    return { label: "Result", message: `${formatWinner(summary.game.winnerTeam)} won.` };
+  }
+
+  if (summary.game?.phase === "night") {
+    return { label: "Night", message: "Private actions are open. The public table stays quiet." };
+  }
+
+  if (summary.game?.phase === "day") {
+    return { label: "Day", message: "Discussion is live. The app tracks table readiness only." };
+  }
+
+  if (summary.game?.phase === "voting") {
+    return { label: "Voting", message: "Ballots are open for living players." };
+  }
+
+  if (summary.game?.phase === "execution") {
+    return { label: "Execution", message: "Resolve the table outcome for this phase." };
+  }
+
+  return { label: "Game", message: "Loading the current table phase." };
+}
+
 function getLiveGuidance(
   summary: RoomSummary | null,
   actionCount: number,
   isBusy: boolean,
-): { label: string; message: string } {
+): LiveGuidance {
   if (isBusy) {
     return { label: "Syncing", message: "Updating the room from the server." };
   }
@@ -2414,7 +2742,7 @@ function getControlHint(summary: RoomSummary | null, isBusy: boolean): string {
     return "This room is closed.";
   }
 
-  return "Review the result or leave this room.";
+  return "Review the result from this table.";
 }
 
 function canStartRoom(summary: RoomSummary | null): boolean {
@@ -2526,17 +2854,6 @@ function formatPhaseCountdown(phaseEndsAt: string | null, currentTimeMs: number)
   const seconds = remainingSeconds % 60;
 
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function formatPlayerStatus(player: PublicPlayer): string {
-  const aliveLabel = player.alive === null || player.alive ? "Alive" : "Out";
-  const currentLabel = player.isCurrent ? "you" : player.status;
-
-  return `${aliveLabel} / ${currentLabel}`;
-}
-
-function formatResult(result: "lose" | "win"): string {
-  return result === "win" ? "You won this game." : "You lost this game.";
 }
 
 function formatEventKind(kind: string): string {

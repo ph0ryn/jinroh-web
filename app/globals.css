@@ -1490,7 +1490,7 @@ a {
   align-items: center;
   display: grid;
   gap: 18px;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 58px;
 }
 
@@ -1521,7 +1521,6 @@ a {
   text-transform: uppercase;
 }
 
-.liveBackLink,
 .liveDevToolbar,
 .liveEntryPanel,
 .liveStatusBar,
@@ -1537,17 +1536,6 @@ a {
     background 260ms ease,
     border-color 260ms ease,
     box-shadow 260ms ease;
-}
-
-.liveBackLink {
-  align-items: center;
-  color: var(--paper-200);
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-weight: 760;
-  justify-self: start;
-  min-height: 42px;
-  padding: 0 14px;
 }
 
 .liveDevToolbar {
@@ -1759,6 +1747,264 @@ a {
   width: min(100%, 1320px);
 }
 
+.livePlayGrid {
+  align-items: stretch;
+  grid-template-columns: minmax(520px, 1fr) minmax(320px, 400px);
+  height: 100%;
+  min-height: 0;
+  width: min(100%, 1320px);
+}
+
+.livePanel.livePlayTablePanel {
+  align-content: stretch;
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+}
+
+.livePlaySideStack {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  grid-template-rows: auto auto auto;
+  min-height: 0;
+}
+
+.livePlayTablePanel .liveTableBoard {
+  height: 100%;
+  min-height: 0;
+  padding: clamp(18px, 3vw, 34px);
+}
+
+.liveTableSurface {
+  height: 100%;
+  max-width: 700px;
+  max-height: 700px;
+  width: auto;
+}
+
+.liveTableCenter {
+  gap: 10px;
+  inset: 31%;
+}
+
+.liveTableCenter strong {
+  font-size: 1.28rem;
+}
+
+.liveTableCenter > span:last-child {
+  max-width: 220px;
+}
+
+.liveTablePhaseIcon {
+  color: var(--live-accent);
+  display: inline-block;
+  height: 42px;
+  position: relative;
+  width: 42px;
+}
+
+.liveTablePhaseIcon::before,
+.liveTablePhaseIcon::after {
+  content: "";
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.liveTablePhaseIcon::before {
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  height: 30px;
+  width: 30px;
+}
+
+.liveTablePhaseIcon.night::before {
+  background: transparent;
+  border: 0;
+  box-shadow: -9px 5px 0 0 currentColor;
+  height: 26px;
+  transform: translate(-28%, -60%) rotate(-18deg);
+  width: 26px;
+}
+
+.liveTablePhaseIcon.day::before {
+  background: currentColor;
+  box-shadow:
+    0 -17px 0 -11px currentColor,
+    0 17px 0 -11px currentColor,
+    -17px 0 0 -11px currentColor,
+    17px 0 0 -11px currentColor;
+  height: 22px;
+  width: 22px;
+}
+
+.liveTablePhaseIcon.voting::before {
+  border-radius: 4px;
+  height: 26px;
+  transform: translate(-50%, -50%) rotate(-7deg);
+  width: 30px;
+}
+
+.liveTablePhaseIcon.voting::after {
+  background: currentColor;
+  border-radius: 999px;
+  height: 3px;
+  transform: translate(-50%, -50%) rotate(-7deg);
+  width: 16px;
+}
+
+.liveTablePhaseIcon.execution::before {
+  border: 0;
+  border-left: 3px solid currentColor;
+  border-radius: 0;
+  height: 31px;
+  width: 3px;
+}
+
+.liveTablePhaseIcon.execution::after {
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 18%, 100% 78%, 0 60%);
+  height: 18px;
+  transform: translate(-10%, -86%);
+  width: 22px;
+}
+
+.liveTablePhaseIcon.result::before {
+  border-radius: 50%;
+}
+
+.liveTablePhaseIcon.result::after {
+  border-bottom: 3px solid currentColor;
+  border-left: 3px solid currentColor;
+  height: 8px;
+  transform: translate(-50%, -55%) rotate(-45deg);
+  width: 16px;
+}
+
+.liveTableSeat {
+  min-height: 92px;
+  width: 98px;
+}
+
+.liveTableSeat.observing .seatLabel small {
+  color: var(--live-muted);
+}
+
+.livePlayPhaseCard,
+.livePlayHostTools {
+  background: var(--live-soft-surface);
+  border: 1px solid var(--live-panel-border);
+  border-radius: var(--radius-small);
+}
+
+.livePlayPhaseCard {
+  align-items: center;
+  display: grid;
+  gap: 10px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.livePlayPhaseCard div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.livePlayPhaseCard span {
+  color: var(--live-accent);
+  font-size: 0.78rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.livePlayPhaseCard strong {
+  color: var(--paper-100);
+  line-height: 1.32;
+}
+
+.livePlayPhaseCard small {
+  color: var(--live-muted);
+  line-height: 1.35;
+}
+
+.livePlayPhaseCard time {
+  color: var(--live-accent);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.livePlayPhaseCard em {
+  color: var(--paper-200);
+  font-size: 0.82rem;
+  font-style: normal;
+  grid-column: 1 / -1;
+}
+
+.livePlayHostTools {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.livePlayHostTools > span {
+  color: var(--live-muted);
+  font-size: 0.76rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.livePlayHostTools div {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.livePlayHostTools p {
+  color: var(--live-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.liveNightActionStack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.livePopupActions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.livePopupActions button {
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.livePopupActions em {
+  align-items: center;
+  background: rgba(var(--live-accent-rgb), 0.14);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.34);
+  border-radius: 999px;
+  color: var(--live-accent);
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 850;
+  height: 22px;
+  justify-content: center;
+  min-width: 24px;
+  padding-inline: 7px;
+}
+
 .livePanel {
   align-content: start;
   display: grid;
@@ -1782,8 +2028,7 @@ a {
   justify-content: flex-end;
 }
 
-.livePanelHeading span,
-.liveSelfView span {
+.livePanelHeading span {
   color: var(--live-muted);
   font-size: 0.8rem;
   font-weight: 820;
@@ -2013,7 +2258,6 @@ a {
 .livePlayerRow em,
 .liveSeatCard small,
 .liveSeatCard em,
-.liveSelfView p,
 .liveActionRow span,
 .liveEventList time,
 .liveEventList p,
@@ -2106,6 +2350,27 @@ a {
   scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
   scrollbar-width: thin;
   width: min(100%, 760px);
+}
+
+.livePopupModal {
+  width: min(100%, 680px);
+}
+
+.livePopupModal .liveNightChatPanel {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.livePopupModal .liveEventList,
+.livePopupModal .liveNightChatMessages {
+  max-height: min(58svh, 480px);
+}
+
+.livePopupModal .liveEventList {
+  overflow: auto;
+  scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
+  scrollbar-width: thin;
 }
 
 .liveModalHeader {
@@ -2245,7 +2510,6 @@ a {
   font-weight: 850;
 }
 
-.liveSelfView,
 .liveActionRow,
 .liveEmptyState {
   background: var(--live-soft-surface);
@@ -2254,38 +2518,14 @@ a {
   padding: 12px;
 }
 
-.liveSelfView {
-  display: grid;
-  gap: 5px;
-}
-
-.liveSelfView strong {
-  color: var(--paper-100);
-}
-
-.liveSelfView p {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.livePrivateEvents,
-.liveSubmittedActions,
 .liveNightChatPanel {
   border-top: 1px solid var(--live-panel-border);
+  color: var(--paper-200);
   display: grid;
   gap: 10px;
   margin-top: 6px;
-  padding-top: 8px;
-}
-
-.livePrivateEvents strong,
-.liveSubmittedActions strong {
-  color: var(--live-accent);
-}
-
-.liveNightChatPanel {
-  color: var(--paper-200);
   min-width: 0;
+  padding-top: 8px;
 }
 
 .liveNightChatHeader {
@@ -2377,10 +2617,10 @@ a {
 }
 
 .liveActionRow {
-  align-items: center;
+  align-items: end;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .liveActionRow.submitted {
@@ -2390,14 +2630,22 @@ a {
 .liveActionRow div {
   display: grid;
   gap: 3px;
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
-.liveActionRow strong,
+.liveActionRow strong {
+  overflow-wrap: anywhere;
+}
+
 .liveActionRow span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.liveActionRow select {
+  min-width: 0;
 }
 
 .liveActionState {
@@ -2558,6 +2806,27 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .livePlayGrid {
+    height: auto;
+    min-height: 0;
+    width: min(100%, 900px);
+  }
+
+  .livePlaySideStack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+
+  .livePlayTablePanel .liveTableBoard {
+    height: auto;
+    min-height: clamp(430px, 68vw, 660px);
+  }
+
+  .livePlayTablePanel .liveTableSurface {
+    height: auto;
+    width: min(100%, 700px);
+  }
+
   .liveEntryPanel {
     grid-template-columns: minmax(0, 1fr) minmax(160px, 0.6fr);
   }
@@ -2588,19 +2857,53 @@ a {
     text-align: left;
   }
 
-  .liveBackLink {
-    text-align: left;
-  }
-
   .liveEntryPanel,
   .liveActionRow,
   .liveDevToolbar,
   .liveInviteTools,
   .liveLobbyActions,
   .liveNightChatComposer,
+  .livePlaySideStack,
   .liveRuleSetGrid,
   .liveControlStack {
     grid-template-columns: 1fr;
+  }
+
+  .livePlayTablePanel .liveTableBoard {
+    min-height: clamp(360px, calc(100svw - 26px), 500px);
+    padding: 8px;
+  }
+
+  .liveTableSurface {
+    width: min(100%, calc(100svw - 52px));
+  }
+
+  .liveTableCenter {
+    inset: 30%;
+  }
+
+  .liveTableSeat {
+    min-height: 78px;
+    padding: 6px;
+    width: 78px;
+  }
+
+  .liveTableSeat .avatar {
+    height: 30px;
+    width: 30px;
+  }
+
+  .liveTableSeat .seatLabel {
+    font-size: 0.84rem;
+  }
+
+  .livePlayPhaseCard,
+  .livePlayHostTools div {
+    grid-template-columns: 1fr;
+  }
+
+  .livePlayPhaseCard time {
+    font-size: 1.18rem;
   }
 
   .liveTimingGrid {
@@ -2627,5 +2930,11 @@ a {
 
   .liveEventDetails {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .liveTableCenter > span:last-child {
+    display: none;
   }
 }
