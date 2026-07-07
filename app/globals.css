@@ -1522,6 +1522,7 @@ a {
 }
 
 .liveBackLink,
+.liveDevToolbar,
 .liveEntryPanel,
 .liveStatusBar,
 .livePanel {
@@ -1547,6 +1548,46 @@ a {
   justify-self: start;
   min-height: 42px;
   padding: 0 14px;
+}
+
+.liveDevToolbar {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.liveDevToolbar span {
+  color: var(--live-accent);
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.liveDevToolbar strong {
+  color: var(--paper-100);
+  display: block;
+  font-size: 0.95rem;
+}
+
+.liveDevToolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
+
+.liveDevToolbarActions button,
+.liveDevToolbarActions a {
+  min-height: 36px;
+  padding-inline: 12px;
+}
+
+.liveDevToolbarActions button.active {
+  background: rgba(var(--live-accent-rgb), 0.24);
+  border-color: rgba(var(--live-accent-rgb), 0.66);
 }
 
 .liveTopStack {
@@ -2553,6 +2594,7 @@ a {
 
   .liveEntryPanel,
   .liveActionRow,
+  .liveDevToolbar,
   .liveInviteTools,
   .liveLobbyActions,
   .liveNightChatComposer,
@@ -2573,6 +2615,10 @@ a {
 
   .liveStatusBar small {
     grid-column: 1;
+  }
+
+  .liveDevToolbarActions {
+    justify-content: start;
   }
 
   .liveMetrics {

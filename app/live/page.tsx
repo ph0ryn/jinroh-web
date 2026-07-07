@@ -57,6 +57,17 @@ type RealtimeSubscriptionSnapshot = Pick<RealtimeSubscription, "scope" | "topic"
 
 type StartRuleSetSettings = Omit<RuleSetInput, "roleCounts">;
 
+type DevLiveFixture = {
+  readonly id: string;
+  readonly label: string;
+  readonly summary: RoomSummary;
+};
+
+type LivePageProps = {
+  readonly devFixtures?: readonly DevLiveFixture[];
+  readonly devInitialFixtureId?: string;
+};
+
 type LiveMood = "closed" | "day" | "execution" | "lobby" | "night" | "result" | "setup" | "voting";
 
 type RuleSetNumberField =
@@ -136,18 +147,34 @@ const EMPTY_ROOM_STEPS = [
   },
 ] as const;
 
-export default function LivePage() {
-  const [identityToken, setIdentityToken] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState("Sora");
-  const [roomCodeInput, setRoomCodeInput] = useState("");
+export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
+  const isDevMode = devFixtures.length > 0;
+  const initialDevFixture = getDevFixture(devFixtures, devInitialFixtureId);
+  const [identityToken, setIdentityToken] = useState<string | null>(() =>
+    isDevMode ? "dev-token" : null,
+  );
+  const [displayName, setDisplayName] = useState(
+    () =>
+      initialDevFixture?.summary.players.find((player) => player.isCurrent)?.displayName ?? "Sora",
+  );
+  const [roomCodeInput, setRoomCodeInput] = useState(() => initialDevFixture?.summary.code ?? "");
   const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
-  const [savedRoomCode, setSavedRoomCode] = useState<string | null>(null);
-  const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [savedRoomCode, setSavedRoomCode] = useState<string | null>(
+    () => initialDevFixture?.summary.code ?? null,
+  );
+  const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(
+    () => initialDevFixture?.summary ?? null,
+  );
+  const [activeDevFixtureId, setActiveDevFixtureId] = useState<string | null>(
+    () => initialDevFixture?.id ?? null,
+  );
   const [startRuleSetSettings, setStartRuleSetSettings] = useState<StartRuleSetSettings>(
     DEFAULT_START_RULE_SET_SETTINGS,
   );
   const [isStartSettingsOpen, setIsStartSettingsOpen] = useState(false);
-  const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
+  const [isNightConversationOpen, setIsNightConversationOpen] = useState(
+    () => initialDevFixture?.summary.rolePrivate?.nightConversation !== null,
+  );
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
@@ -159,6 +186,10 @@ export default function LivePage() {
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     const timerId = window.setTimeout(() => {
       const savedIdentityToken = readStorage(IDENTITY_STORAGE_KEY);
       const savedDisplayName = readStorage(DISPLAY_NAME_STORAGE_KEY);
@@ -179,7 +210,7 @@ export default function LivePage() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [isDevMode]);
 
   useEffect(() => {
     const preloadedImages: HTMLImageElement[] = [];
@@ -276,15 +307,23 @@ export default function LivePage() {
   );
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     if (identityToken === null && savedRoomCode !== null) {
       removeStorage(ROOM_CODE_STORAGE_KEY);
       setSavedRoomCode(null);
       setRoomCodeInput("");
       setStatusMessage("Saved room expired. Create or join a room.");
     }
-  }, [identityToken, savedRoomCode]);
+  }, [identityToken, isDevMode, savedRoomCode]);
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     if (identityToken === null || roomSummary !== null || savedRoomCode === null) {
       return;
     }
@@ -324,7 +363,7 @@ export default function LivePage() {
     return () => {
       isCancelled = true;
     };
-  }, [identityToken, rememberRoom, roomSummary, savedRoomCode]);
+  }, [identityToken, isDevMode, rememberRoom, roomSummary, savedRoomCode]);
 
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
@@ -336,6 +375,10 @@ export default function LivePage() {
     roomSummary.game?.status === "playing";
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     if (identityToken === null || activeRoomCode === null) {
       return;
     }
@@ -368,9 +411,13 @@ export default function LivePage() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeRoomCode, identityToken, rememberRoom]);
+  }, [activeRoomCode, identityToken, isDevMode, rememberRoom]);
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     if (
       identityToken === null ||
       activeRoomCode === null ||
@@ -407,9 +454,13 @@ export default function LivePage() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeRoomCode, identityToken, rememberRoom, roomSummary?.currentPlayerId]);
+  }, [activeRoomCode, identityToken, isDevMode, rememberRoom, roomSummary?.currentPlayerId]);
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     if (
       identityToken === null ||
       activeRoomCode === null ||
@@ -478,9 +529,13 @@ export default function LivePage() {
         void realtimeClient.removeChannel(channel);
       }
     };
-  }, [activeRealtimeSubscriptionKey, activeRoomCode, identityToken, rememberRoom]);
+  }, [activeRealtimeSubscriptionKey, activeRoomCode, identityToken, isDevMode, rememberRoom]);
 
   useEffect(() => {
+    if (isDevMode) {
+      return;
+    }
+
     if (identityToken === null || activeRoomCode === null || activePhaseEndsAt === null) {
       return;
     }
@@ -521,6 +576,7 @@ export default function LivePage() {
     activePhaseInstanceId,
     activeRoomCode,
     identityToken,
+    isDevMode,
     isHostInPlayingRoom,
     rememberRoom,
   ]);
@@ -546,7 +602,29 @@ export default function LivePage() {
     }
   }
 
+  function handleDevFixtureChange(fixture: DevLiveFixture): void {
+    setActiveDevFixtureId(fixture.id);
+    setSavedRoomCode(fixture.summary.code);
+    setRoomCodeInput(fixture.summary.code);
+    setRoomSummary(fixture.summary);
+    setTargetByActionKey({});
+    setIsNightConversationOpen(fixture.summary.rolePrivate?.nightConversation !== null);
+    setNightConversationDraft("");
+    setIsStartSettingsOpen(false);
+    setStatusMessage(`Loaded ${fixture.label} dev fixture. No API calls will be made.`);
+  }
+
   function handleCreateRoom(): void {
+    if (isDevMode) {
+      const fixture = getDevFixture(devFixtures, "night") ?? devFixtures[0];
+
+      if (fixture !== undefined) {
+        handleDevFixtureChange(fixture);
+      }
+
+      return;
+    }
+
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
         setStatusMessage("Leave the current room before creating another room.");
@@ -567,6 +645,16 @@ export default function LivePage() {
   }
 
   function handleJoinRoom(): void {
+    if (isDevMode) {
+      const fixture = getDevFixture(devFixtures, activeDevFixtureId) ?? devFixtures[0];
+
+      if (fixture !== undefined) {
+        handleDevFixtureChange(fixture);
+      }
+
+      return;
+    }
+
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
         setStatusMessage("Leave the current room before joining another room.");
@@ -588,6 +676,17 @@ export default function LivePage() {
   }
 
   function handleRefreshRoom(): void {
+    if (isDevMode) {
+      const fixture = getDevFixture(devFixtures, activeDevFixtureId) ?? devFixtures[0];
+
+      if (fixture !== undefined) {
+        handleDevFixtureChange(fixture);
+        setStatusMessage(`Dev fixture reset to ${fixture.label}.`);
+      }
+
+      return;
+    }
+
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
@@ -623,6 +722,16 @@ export default function LivePage() {
   }
 
   function handleStartGame(): void {
+    if (isDevMode) {
+      const fixture = getDevFixture(devFixtures, "night") ?? devFixtures[0];
+
+      if (fixture !== undefined) {
+        handleDevFixtureChange(fixture);
+      }
+
+      return;
+    }
+
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
@@ -638,6 +747,16 @@ export default function LivePage() {
   }
 
   function handleResolvePhase(): void {
+    if (isDevMode) {
+      const nextFixture = getNextDevFixture(devFixtures, activeDevFixtureId);
+
+      if (nextFixture !== null) {
+        handleDevFixtureChange(nextFixture);
+      }
+
+      return;
+    }
+
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
@@ -658,6 +777,18 @@ export default function LivePage() {
   }
 
   function handleLeaveRoom(): void {
+    if (isDevMode) {
+      setSavedRoomCode(null);
+      setRoomSummary(null);
+      setRoomCodeInput("");
+      setTargetByActionKey({});
+      setIsNightConversationOpen(false);
+      setNightConversationDraft("");
+      setIsStartSettingsOpen(false);
+      setStatusMessage("Dev fixture cleared. Use the dev toolbar to load a phase.");
+      return;
+    }
+
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
@@ -680,6 +811,12 @@ export default function LivePage() {
   }
 
   function handleSubmitAction(action: PublicAction): void {
+    if (isDevMode) {
+      setRoomSummary((currentSummary) => markDevActionSubmitted(currentSummary, action));
+      setStatusMessage(`${action.label} submitted in the local dev fixture.`);
+      return;
+    }
+
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
@@ -707,6 +844,15 @@ export default function LivePage() {
   }
 
   function handleSendNightConversation(conversation: NightConversationView): void {
+    if (isDevMode) {
+      setRoomSummary((currentSummary) =>
+        appendDevNightConversationMessage(currentSummary, conversation, nightConversationDraft),
+      );
+      setNightConversationDraft("");
+      setStatusMessage(`${conversation.label} message added to the dev fixture.`);
+      return;
+    }
+
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
@@ -824,6 +970,14 @@ export default function LivePage() {
           <p>{roomStatusLabel}</p>
         </div>
       </section>
+
+      {isDevMode ? (
+        <DevLiveToolbar
+          activeFixtureId={activeDevFixtureId}
+          fixtures={devFixtures}
+          onSelectFixture={handleDevFixtureChange}
+        />
+      ) : null}
 
       <div className={isRoomEntryAvailable ? "liveTopStack" : "liveTopStack liveTopStackCompact"}>
         {isRoomEntryAvailable ? (
@@ -1100,6 +1254,41 @@ export default function LivePage() {
         />
       ) : null}
     </main>
+  );
+}
+
+function DevLiveToolbar({
+  activeFixtureId,
+  fixtures,
+  onSelectFixture,
+}: {
+  readonly activeFixtureId: string | null;
+  readonly fixtures: readonly DevLiveFixture[];
+  readonly onSelectFixture: (fixture: DevLiveFixture) => void;
+}) {
+  return (
+    <section className="liveDevToolbar" aria-label="Development live fixtures">
+      <div>
+        <span>Dev live</span>
+        <strong>Local fixtures only</strong>
+      </div>
+      <div className="liveDevToolbarActions">
+        {fixtures.map((fixture) => (
+          <button
+            aria-pressed={fixture.id === activeFixtureId}
+            className={fixture.id === activeFixtureId ? "active" : undefined}
+            key={fixture.id}
+            type="button"
+            onClick={() => onSelectFixture(fixture)}
+          >
+            {fixture.label}
+          </button>
+        ))}
+        <Link className="secondaryButton" href="/live">
+          Real live
+        </Link>
+      </div>
+    </section>
   );
 }
 
@@ -2367,4 +2556,123 @@ function formatDateTime(value: string | null): string {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function getDevFixture(
+  fixtures: readonly DevLiveFixture[],
+  fixtureId: string | null | undefined,
+): DevLiveFixture | null {
+  return fixtures.find((fixture) => fixture.id === fixtureId) ?? fixtures[0] ?? null;
+}
+
+function getNextDevFixture(
+  fixtures: readonly DevLiveFixture[],
+  fixtureId: string | null,
+): DevLiveFixture | null {
+  if (fixtures.length === 0) {
+    return null;
+  }
+
+  const currentIndex = fixtures.findIndex((fixture) => fixture.id === fixtureId);
+  const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % fixtures.length;
+
+  return fixtures[nextIndex] ?? null;
+}
+
+function markDevActionSubmitted(
+  summary: RoomSummary | null,
+  action: PublicAction,
+): RoomSummary | null {
+  if (summary?.self === null || summary?.self === undefined) {
+    return summary;
+  }
+
+  const submittedAt = new Date().toISOString();
+
+  return {
+    ...summary,
+    game:
+      summary.game === null
+        ? null
+        : {
+            ...summary.game,
+            actionProgress: incrementDevActionProgress(summary.game.actionProgress),
+            revision: summary.game.revision + 1,
+          },
+    self: {
+      ...summary.self,
+      actions: summary.self.actions.map((currentAction) =>
+        currentAction.key === action.key
+          ? {
+              ...currentAction,
+              status: "submitted",
+            }
+          : currentAction,
+      ),
+      submittedActions: [
+        {
+          kind: action.kind,
+          label: action.label,
+          submittedAt,
+        },
+        ...summary.self.submittedActions,
+      ],
+    },
+  };
+}
+
+function incrementDevActionProgress(
+  progress: NonNullable<RoomSummary["game"]>["actionProgress"],
+): NonNullable<RoomSummary["game"]>["actionProgress"] {
+  if (progress === null || progress.visibility === "hidden") {
+    return progress;
+  }
+
+  return {
+    ...progress,
+    submitted: Math.min(progress.required, progress.submitted + 1),
+  };
+}
+
+function appendDevNightConversationMessage(
+  summary: RoomSummary | null,
+  conversation: NightConversationView,
+  draft: string,
+): RoomSummary | null {
+  const trimmedDraft = draft.trim();
+  const rolePrivate = summary?.rolePrivate;
+
+  if (
+    summary === null ||
+    rolePrivate === null ||
+    rolePrivate === undefined ||
+    rolePrivate.nightConversation === null ||
+    trimmedDraft.length === 0
+  ) {
+    return summary;
+  }
+
+  const createdAt = new Date().toISOString();
+  const currentPlayer = summary.players.find((player) => player.id === summary.currentPlayerId);
+  const nextConversation: NightConversationView = {
+    ...conversation,
+    messages: [
+      ...conversation.messages,
+      {
+        body: trimmedDraft,
+        createdAt,
+        id: `dev-night-message-${createdAt}`,
+        senderName: currentPlayer?.displayName ?? "You",
+        senderPlayerId: summary.currentPlayerId ?? "dev-player",
+      },
+    ],
+  };
+
+  return {
+    ...summary,
+    rolePrivate: {
+      ...rolePrivate,
+      nightConversation: nextConversation,
+    },
+  };
 }
