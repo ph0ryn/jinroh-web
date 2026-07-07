@@ -76,6 +76,13 @@ const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
+const LIVE_MOOD_BACKGROUND_SOURCES = [
+  "/images/jinroh-lobby.jpg",
+  "/images/jinroh-day.jpg",
+  "/images/jinroh-voting.jpg",
+  "/images/jinroh-night.jpg",
+  "/images/jinroh-result.jpg",
+] as const;
 
 const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
   dayMode: DEFAULT_RULE_SET.dayMode,
@@ -158,6 +165,24 @@ export default function LivePage() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
+  }, []);
+
+  useEffect(() => {
+    const preloadedImages: HTMLImageElement[] = [];
+    const timerId = window.setTimeout(() => {
+      for (const source of LIVE_MOOD_BACKGROUND_SOURCES) {
+        const image = new window.Image();
+
+        image.decoding = "async";
+        image.src = source;
+        preloadedImages.push(image);
+      }
+    }, 600);
+
+    return () => {
+      window.clearTimeout(timerId);
+      preloadedImages.length = 0;
+    };
   }, []);
 
   async function withBusy(work: () => Promise<void>): Promise<void> {
@@ -787,6 +812,7 @@ function EmptyRoomState() {
 
 function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
   const game = summary.game;
+  const phaseEndsAt = game?.phaseEndsAt ?? null;
 
   return (
     <dl className="liveMetrics">
@@ -810,9 +836,15 @@ function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
         <dt>Progress</dt>
         <dd>{formatActionProgress(game?.actionProgress ?? null)}</dd>
       </div>
+      <div className={phaseEndsAt === null ? undefined : "liveTimerMetric"}>
+        <dt>Timer</dt>
+        <dd>
+          <PhaseCountdown key={phaseEndsAt ?? "closed"} phaseEndsAt={phaseEndsAt} />
+        </dd>
+      </div>
       <div>
         <dt>Ends</dt>
-        <dd>{formatDateTime(game?.phaseEndsAt ?? null)}</dd>
+        <dd>{formatDateTime(phaseEndsAt)}</dd>
       </div>
       <div>
         <dt>Winner</dt>
@@ -820,6 +852,22 @@ function RoomMetrics({ summary }: { readonly summary: RoomSummary }) {
       </div>
     </dl>
   );
+}
+
+function PhaseCountdown({ phaseEndsAt }: { readonly phaseEndsAt: string | null }) {
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (phaseEndsAt === null) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => setCurrentTimeMs(Date.now()), 1_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [phaseEndsAt]);
+
+  return <>{formatPhaseCountdown(phaseEndsAt, currentTimeMs)}</>;
 }
 
 function PlayerList({ players }: { readonly players: readonly PublicPlayer[] }) {
@@ -1740,6 +1788,29 @@ function formatActionProgress(
   }
 
   return `${progress.submitted}/${progress.required}`;
+}
+
+function formatPhaseCountdown(phaseEndsAt: string | null, currentTimeMs: number): string {
+  if (phaseEndsAt === null) {
+    return "closed";
+  }
+
+  const phaseEndsAtMs = Date.parse(phaseEndsAt);
+
+  if (!Number.isFinite(phaseEndsAtMs)) {
+    return "unknown";
+  }
+
+  const remainingSeconds = Math.max(Math.ceil((phaseEndsAtMs - currentTimeMs) / 1_000), 0);
+
+  if (remainingSeconds <= 0) {
+    return "due now";
+  }
+
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function formatPlayerStatus(player: PublicPlayer): string {

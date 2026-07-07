@@ -466,6 +466,7 @@ Phase 1 には主に Home / Lobby / Game board / Result の画面がある。
 - 自分宛て private event
 - 対象 role group だけが見られる role private view
 - 投票、処刑、結果表示
+- ロビー、昼、投票、処刑、夜、結果の状態に合わせた背景、明るさ、雰囲気
 
 Night conversation は role private view の一部である。
 対象 Role を持つ Player だけが開ける。

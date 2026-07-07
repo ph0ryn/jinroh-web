@@ -1720,6 +1720,17 @@ a {
   overflow-wrap: anywhere;
 }
 
+.liveMetrics .liveTimerMetric {
+  background: rgba(var(--live-accent-rgb), 0.105);
+  border-color: rgba(var(--live-accent-rgb), 0.48);
+  box-shadow: inset 3px 0 0 rgba(var(--live-accent-rgb), 0.62);
+}
+
+.liveTimerMetric dd {
+  color: var(--live-accent);
+  font-variant-numeric: tabular-nums;
+}
+
 .livePlayerList,
 .liveActionList,
 .liveEventList,

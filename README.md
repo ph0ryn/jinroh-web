@@ -33,6 +33,8 @@ and Supabase:
   controls, action status, activity, and role legend.
 - First night, night actions, day progress, voting, execution, result, and
   role-private night conversation.
+- Phase-aware generated tabletop backgrounds for lobby, day, voting,
+  execution, night, and result states.
 - Mobile layout with stacked content, scrollable state rail, and bottom phase
   tabs.
 

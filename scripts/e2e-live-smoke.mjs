@@ -127,6 +127,7 @@ async function runLiveSmoke(baseUrl) {
     await waitPhase(host.page, "night");
     await waitMood(host.page, "night");
     await assertMoodVisual(host.page, "night");
+    await assertPhaseTimerOpen(host.page);
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "night");
     await waitPhase(player3.page, "night");
@@ -136,6 +137,7 @@ async function runLiveSmoke(baseUrl) {
     await waitPhase(host.page, "day");
     await waitMood(host.page, "day");
     await assertMoodVisual(host.page, "day");
+    await assertPhaseTimerOpen(host.page);
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "day");
     await waitPhase(player3.page, "day");
@@ -148,6 +150,7 @@ async function runLiveSmoke(baseUrl) {
       await waitPhase(host.page, "voting");
       await waitMood(host.page, "voting");
       await assertMoodVisual(host.page, "voting");
+      await assertPhaseTimerOpen(host.page);
       await refreshAll([player2, player3]);
       await waitPhase(player2.page, "voting");
       await waitPhase(player3.page, "voting");
@@ -158,6 +161,7 @@ async function runLiveSmoke(baseUrl) {
     await waitPhase(host.page, "execution");
     await waitMood(host.page, "execution");
     await assertMoodVisual(host.page, "execution");
+    await assertPhaseTimerOpen(host.page);
     await host.page.waitForTimeout(EXECUTION_TIMEOUT_WAIT_MS);
     const resolutionPath = await resolveAfterTimeout(host);
     await waitMood(host.page, "result");
@@ -365,6 +369,14 @@ async function waitPhase(page, phase) {
   await waitMetric(page, "Phase", phase);
 }
 
+async function assertPhaseTimerOpen(page) {
+  const timer = await readMetric(page, "Timer");
+
+  if (timer === null || timer === "closed" || timer === "unknown") {
+    throw new Error(`Expected active phase timer, got ${timer ?? "null"}.`);
+  }
+}
+
 async function waitMood(page, mood) {
   await page.waitForFunction(
     (expectedMood) =>
@@ -455,6 +467,7 @@ async function resolveOrderedSpeechDay(players, host) {
     if (hostPhase === "voting") {
       await waitMood(host.page, "voting");
       await assertMoodVisual(host.page, "voting");
+      await assertPhaseTimerOpen(host.page);
       await waitPhase(players[1].page, "voting");
       await waitPhase(players[2].page, "voting");
 
