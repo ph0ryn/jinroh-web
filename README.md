@@ -160,6 +160,7 @@ pnpm exec tsc --noEmit --incremental false --pretty false
 pnpm run build
 pnpm run test:e2e
 pnpm run test:e2e:roles
+pnpm run test:e2e:security
 E2E_RULESET=ordered_speech E2E_PORT=3015 node scripts/e2e-live-smoke.mjs
 ```
 
@@ -173,6 +174,10 @@ result, including the execution timeout path.
 default role set, role-private night actions, night conversation visibility,
 non-member rejection, and read-only chat after night. To test an already
 running deployment, pass `E2E_BASE_URL=https://...` to the E2E command.
+
+`test:e2e:security` uses the HTTP APIs directly to verify scoped realtime
+subscriptions, stale action revision rejection, and private night conversation
+message boundaries.
 
 ## Architecture
 

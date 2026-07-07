@@ -14,7 +14,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:e2e": "node scripts/e2e-live-smoke.mjs",
-    "test:e2e:roles": "node scripts/e2e-live-roles.mjs"
+    "test:e2e:roles": "node scripts/e2e-live-roles.mjs",
+    "test:e2e:security": "node scripts/e2e-live-security.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "catalog:",
