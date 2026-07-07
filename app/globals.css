@@ -1933,6 +1933,53 @@ a {
   max-width: 360px;
 }
 
+.liveEmptySteps {
+  display: grid;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  text-align: left;
+  width: min(100%, 370px);
+}
+
+.liveEmptySteps li {
+  align-items: start;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px 0 0;
+}
+
+.liveEmptySteps li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.liveEmptySteps span {
+  align-items: center;
+  background: rgba(178, 145, 83, 0.12);
+  border: 1px solid rgba(178, 145, 83, 0.36);
+  border-radius: 50%;
+  color: var(--brass-300);
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 850;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.liveEmptySteps strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.liveEmptySteps p {
+  margin: 2px 0 0;
+  max-width: none;
+}
+
 @media (max-width: 1120px) {
   .liveGrid {
     grid-template-columns: 1fr;

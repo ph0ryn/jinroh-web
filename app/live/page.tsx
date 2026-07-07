@@ -101,6 +101,21 @@ const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
   votingSeconds: { max: 300, min: 1 },
 };
 
+const EMPTY_ROOM_STEPS = [
+  {
+    description: "Start a lobby from this browser and keep host controls here.",
+    label: "Create",
+  },
+  {
+    description: "Share the six-digit code with players on separate browsers.",
+    label: "Invite",
+  },
+  {
+    description: "Start the game when the table is ready and private views are assigned.",
+    label: "Run",
+  },
+] as const;
+
 export default function LivePage() {
   const [identityToken, setIdentityToken] = useState(() => readStorage(IDENTITY_STORAGE_KEY));
   const [displayName, setDisplayName] = useState(
@@ -117,7 +132,7 @@ export default function LivePage() {
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState(
-    "Create a room or join with a six-digit code.",
+    "Your browser identity stays local and can rejoin the room.",
   );
   const [isBusy, setIsBusy] = useState(false);
 
@@ -607,8 +622,10 @@ export default function LivePage() {
         <label>
           Room code
           <input
+            autoComplete="one-time-code"
             inputMode="numeric"
-            maxLength={6}
+            pattern="[0-9]*"
+            placeholder="123456"
             value={roomCodeInput}
             onChange={(event) => handleRoomCodeChange(event.target.value)}
           />
@@ -749,6 +766,17 @@ function EmptyRoomState() {
     <div className="liveEmptyState">
       <strong>No room loaded</strong>
       <p>Create a room, or paste a six-digit code and join from a separate browser session.</p>
+      <ol className="liveEmptySteps" aria-label="Setup flow">
+        {EMPTY_ROOM_STEPS.map((step, index) => (
+          <li key={step.label}>
+            <span>{index + 1}</span>
+            <div>
+              <strong>{step.label}</strong>
+              <p>{step.description}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
