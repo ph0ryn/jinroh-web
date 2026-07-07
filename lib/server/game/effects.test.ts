@@ -100,7 +100,7 @@ function createRoleContext(assignments: readonly (readonly [PlayerId, RoleId])[]
   const resolvedRoleSetup: ResolvedRoleSetup = {
     activeRoleIds,
     contributions: [],
-    werewolfConsultationTemplates: [],
+    nightConversationGroups: [],
     winnerJudgements: [],
   };
   const state: ReadonlyGameState = {
@@ -116,7 +116,7 @@ function createRoleContext(assignments: readonly (readonly [PlayerId, RoleId])[]
     roleByPlayerId,
     ruleOptions: DEFAULT_RULE_OPTIONS,
     status: GameStatus.Playing,
-    werewolfConsultations: [],
+    nightConversationMessages: [],
   };
 
   return {

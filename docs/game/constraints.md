@@ -17,7 +17,7 @@
 
 - 新しい役職の処理ロジック
 - Role hook の実装
-- 人狼相談 template の任意ロジック
+- 夜会話 group の任意ロジック
 - 終了判定の実装
 - PlayerResult 判定の実装
 
@@ -61,18 +61,17 @@
 - current action は該当 timing の解決後に GameState から削除する
 - pending action は提出済みで未解決の action だけを表す
 - pending action は該当 timing の解決後に GameState から削除する
-- 人狼相談は free text ではなく template と選択値だけで扱う
-- 人狼相談は game action ではなく、進行や判定に影響しない
+- 夜会話は game action ではなく、進行や判定に影響しない
+- 夜会話 message は append-only として扱う
+- 夜会話 message は1件100文字以内にする
 - resolved role setup はゲーム開始時に採用中 Role と core rule から作る
 - winner judgement は resolved role setup の一部として固定する
-- 人狼相談 template は resolved role setup の一部として固定する
-- 採用されていない Role の人狼相談 template は表示しない
-- 人狼相談は実際に WerewolfRole を持つ Player だけに見せる
-- 人狼相談は Night 中に送信、撤回、再送信できる
-- 前夜の人狼相談は、次の Day 中に読み取り専用で参照できる
-- 前夜の人狼相談は、Voting 以降は private view から消す
-- 人狼相談の撤回は1回だけ許可する
-- 人狼相談の再送信は撤回後に1回だけ許可する
+- 夜会話 group は resolved role setup の一部として固定する
+- 採用されていない Role の夜会話 group は表示しない
+- 夜会話は group に含まれる Role を持つ Player だけに見せる
+- v1 の Werewolf night conversation は実際に WerewolfRole を持つ Player だけに見せる
+- 夜会話は Night 中だけ送信できる
+- Night 以外では夜会話を読み取り専用で参照できる
 - 秘密情報を公開 room state や realtime message に入れない
 - browser に送る game state は必ず view として切り出す
 - RuleSet はゲーム開始後に固定する
@@ -81,7 +80,6 @@
 - final outcome はゲーム終了時に一度だけ state に固定する
 - `Team.Fox` は v1 では妖狐1人の独自陣営として扱う
 - 妖狐1人制約は FoxRole の `maxCount = 1` で表す
-- 人狼相談 slot は template kind ではなく template id で一意にする
 
 ## Test Scenarios
 
@@ -129,27 +127,20 @@
 - Execution の遺言が早期終了されたら、60秒を待たずに処刑 effect 解決へ進む
 - Normal night は180秒固定で、全 action が揃っても短縮しない
 - First night では襲撃 action が出ない
-- First night では襲撃相談 template が出ない
-- Normal night では襲撃相談 template が出る
-- Day 中は前夜の人狼相談を読み取り専用で参照できる
-- Day 中の人狼相談参照では、送信、撤回、再送信ができない
-- Voting 以降は前夜の人狼相談が private view から消える
+- First night でも Werewolf night conversation は表示できる
+- Night 中は group member が夜会話 message を送信できる
+- Night 以外では夜会話を読み取り専用で参照できる
 - 初日白判定確定占いは、占い結果 `human` になる生存 Player からランダムに選ばれる
 - 初日白判定確定占いの対象候補から占い師本人は除外される
 - 初日白判定確定占いが有効なのに白判定候補が存在しない RuleSet は開始できない
 - 初日白判定確定占いの対象は public view に出ない
 - Day の自由会話内容はアプリの責任外として扱う
-- 人狼 Role の Player だけが人狼相談を閲覧できる
-- 狂人、村人、public view、public realtime payload には人狼相談が出ない
-- 採用中 Role の人狼相談 template だけが表示される
-- 同じ template kind の相談 template が複数あっても、template id ごとに slot が分かれる
-- CO相談は actor と role の2項目だけで送信できる
-- CO相談の role 候補は採用中 Role から作られる
-- SeerRole 採用時だけ、占い結果報告相談が表示される
-- 人狼相談は送信、撤回、再送信の順序制約を守る
-- 人狼相談は再送信後に再撤回できない
-- 人狼相談は再送信後に再再送信できない
-- 人狼相談はゲーム進行や判定に影響しない
+- 人狼 Role の Player だけが Werewolf night conversation を閲覧できる
+- 狂人、村人、public view、public realtime payload には夜会話が出ない
+- 採用中 Role の夜会話 group だけが表示される
+- 夜会話 message は sender、本文、timestamp を持つ
+- 夜会話 message は1件100文字以内に制限される
+- 夜会話はゲーム進行や判定に影響しない
 - 終了判定は各 Player の結果を直接決めない
 - winner judgement はゲーム終了後に winner Team を1つだけ決める
 - 妖狐のような高 priority winner judgement は、成立した場合に他 Team の勝利を上書きできる

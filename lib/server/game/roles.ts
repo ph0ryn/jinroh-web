@@ -24,11 +24,6 @@ import {
   SubmitPolicy,
   Team,
   VoteResultVisibility,
-  WerewolfConsultationFieldKind,
-  WerewolfConsultationPlayerCandidates,
-  WerewolfConsultationRoleCandidates,
-  WerewolfConsultationTemplateKind,
-  WerewolfConsultationTemplateSource,
 } from "./types";
 
 import type {
@@ -39,6 +34,7 @@ import type {
   ReadonlyGameState,
   RoleActionDefinition,
   RoleId,
+  RoleNightConversationDefinition,
   RoleSetupContribution,
   WinnerJudgementContribution,
 } from "./types";
@@ -91,6 +87,7 @@ export abstract class Role {
   readonly incompatibleRoleIds: readonly RoleId[] = [];
   readonly maxCount: number | null = null;
   readonly minCount: number = 0;
+  readonly nightConversation: RoleNightConversationDefinition | null = null;
   readonly required: boolean = false;
 
   countAs(context: PlayerRoleContext): CountGroup {
@@ -189,6 +186,10 @@ export class WerewolfRole extends Role {
   override readonly id: RoleId = WEREWOLF_ROLE_ID;
   override readonly minCount = 1;
   override readonly name = "Werewolf";
+  override readonly nightConversation = {
+    groupId: "werewolf",
+    labelKey: "nightConversation.werewolf",
+  };
   override readonly required = true;
   override readonly team = Team.Werewolf;
 
@@ -220,31 +221,6 @@ export class WerewolfRole extends Role {
         scope: ActionScope.RoleGroup,
         submitPolicy: SubmitPolicy.FirstSubmitWins,
         target: RoleTargetKind.SinglePlayer,
-      },
-    ];
-  }
-
-  override getSetupContributions(context: RoleContext): readonly RoleSetupContribution[] {
-    void context;
-
-    return [
-      {
-        kind: RoleSetupContributionKind.WerewolfConsultationTemplate,
-        template: {
-          fields: [
-            {
-              candidates: WerewolfConsultationPlayerCandidates.AlivePlayers,
-              id: "target",
-              kind: WerewolfConsultationFieldKind.Player,
-            },
-          ],
-          id: "werewolf_attack_target",
-          kind: WerewolfConsultationTemplateKind.AttackTarget,
-          labelKey: "werewolf.consultation.attack_target",
-          normalNightOnly: true,
-          source: WerewolfConsultationTemplateSource.Role,
-          sourceRoleId: this.id,
-        },
       },
     ];
   }
@@ -311,41 +287,6 @@ export class SeerRole extends Role {
         scope: ActionScope.Player,
         submitPolicy: SubmitPolicy.FirstSubmitWins,
         target: RoleTargetKind.SinglePlayer,
-      },
-    ];
-  }
-
-  override getSetupContributions(context: RoleContext): readonly RoleSetupContribution[] {
-    void context;
-
-    return [
-      {
-        kind: RoleSetupContributionKind.WerewolfConsultationTemplate,
-        template: {
-          fields: [
-            {
-              candidates: WerewolfConsultationPlayerCandidates.SenderOrWerewolfAlly,
-              id: "actor",
-              kind: WerewolfConsultationFieldKind.Player,
-            },
-            {
-              candidates: WerewolfConsultationPlayerCandidates.AlivePlayers,
-              id: "target",
-              kind: WerewolfConsultationFieldKind.Player,
-            },
-            {
-              candidates: [InspectionView.Human, InspectionView.Werewolf],
-              id: "result",
-              kind: WerewolfConsultationFieldKind.InspectionView,
-            },
-          ],
-          id: "seer_result_report",
-          kind: WerewolfConsultationTemplateKind.SeerResultReport,
-          labelKey: "werewolf.consultation.seer_result_report",
-          normalNightOnly: false,
-          source: WerewolfConsultationTemplateSource.Role,
-          sourceRoleId: this.id,
-        },
       },
     ];
   }
@@ -505,47 +446,6 @@ export function getCoreSetupContributions(): readonly RoleSetupContribution[] {
         winnerTeam: Team.Village,
       },
       kind: RoleSetupContributionKind.WinnerJudgement,
-    },
-    {
-      kind: RoleSetupContributionKind.WerewolfConsultationTemplate,
-      template: {
-        fields: [
-          {
-            candidates: WerewolfConsultationPlayerCandidates.AlivePlayers,
-            id: "target",
-            kind: WerewolfConsultationFieldKind.Player,
-          },
-        ],
-        id: "core_execution_target",
-        kind: WerewolfConsultationTemplateKind.ExecutionTarget,
-        labelKey: "werewolf.consultation.execution_target",
-        normalNightOnly: false,
-        source: WerewolfConsultationTemplateSource.Core,
-        sourceRoleId: null,
-      },
-    },
-    {
-      kind: RoleSetupContributionKind.WerewolfConsultationTemplate,
-      template: {
-        fields: [
-          {
-            candidates: WerewolfConsultationPlayerCandidates.SenderOrWerewolfAlly,
-            id: "actor",
-            kind: WerewolfConsultationFieldKind.Player,
-          },
-          {
-            candidates: WerewolfConsultationRoleCandidates.ActiveRoles,
-            id: "role",
-            kind: WerewolfConsultationFieldKind.Role,
-          },
-        ],
-        id: "core_coming_out",
-        kind: WerewolfConsultationTemplateKind.ComingOut,
-        labelKey: "werewolf.consultation.coming_out",
-        normalNightOnly: false,
-        source: WerewolfConsultationTemplateSource.Core,
-        sourceRoleId: null,
-      },
     },
   ];
 }
@@ -731,7 +631,7 @@ function createInspectionCandidateContext(roleId: RoleId): InspectionContext {
       resolvedRoleSetup: {
         activeRoleIds: [roleId],
         contributions: [],
-        werewolfConsultationTemplates: [],
+        nightConversationGroups: [],
         winnerJudgements: [],
       },
       roleByPlayerId: new Map([["candidate", roleId]]),
@@ -750,7 +650,7 @@ function createInspectionCandidateContext(roleId: RoleId): InspectionContext {
         votingSeconds: 30,
       },
       status: GameStatus.Playing,
-      werewolfConsultations: [],
+      nightConversationMessages: [],
     },
     targetId: "candidate",
     viewerId: "seer",

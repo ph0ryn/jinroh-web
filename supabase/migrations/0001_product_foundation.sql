@@ -215,26 +215,6 @@ create table if not exists public.game_event_visible_roles (
 create index if not exists game_event_visible_roles_role_idx
   on public.game_event_visible_roles(role_id, game_event_id);
 
-create table if not exists public.werewolf_consultation_slots (
-  id bigint generated always as identity primary key,
-  room_id bigint not null references public.rooms(id),
-  night_number integer not null,
-  sender_player_id bigint not null references public.players(id),
-  template_id text not null,
-  label text not null,
-  value text,
-  status text not null default 'empty',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint werewolf_consultation_slots_status_check check (
-    status in ('empty', 'submitted', 'retracted', 'resubmitted')
-  ),
-  unique (room_id, night_number, sender_player_id, template_id)
-);
-
-create index if not exists werewolf_consultation_slots_room_night_idx
-  on public.werewolf_consultation_slots(room_id, night_number);
-
 create table if not exists public.day_speech_slots (
   id bigint generated always as identity primary key,
   room_id bigint not null references public.rooms(id),
@@ -311,7 +291,6 @@ alter table public.pending_actions enable row level security;
 alter table public.game_events enable row level security;
 alter table public.game_event_visible_players enable row level security;
 alter table public.game_event_visible_roles enable row level security;
-alter table public.werewolf_consultation_slots enable row level security;
 alter table public.day_speech_slots enable row level security;
 alter table public.final_outcomes enable row level security;
 alter table public.player_results enable row level security;
@@ -346,9 +325,4 @@ create trigger game_states_touch_updated_at
 drop trigger if exists game_player_states_touch_updated_at on public.game_player_states;
 create trigger game_player_states_touch_updated_at
   before update on public.game_player_states
-  for each row execute function public.touch_updated_at();
-
-drop trigger if exists consultation_touch_updated_at on public.werewolf_consultation_slots;
-create trigger consultation_touch_updated_at
-  before update on public.werewolf_consultation_slots
   for each row execute function public.touch_updated_at();

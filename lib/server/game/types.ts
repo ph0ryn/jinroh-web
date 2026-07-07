@@ -138,8 +138,6 @@ export enum GameEventKind {
   PlayerDied = "player_died",
   PhaseChanged = "phase_changed",
   VoteResolved = "vote_resolved",
-  WerewolfConsultationSubmitted = "werewolf_consultation_submitted",
-  WerewolfConsultationRetracted = "werewolf_consultation_retracted",
   GameEnded = "game_ended",
 }
 
@@ -149,41 +147,7 @@ export enum GameEventVisibility {
   Internal = "internal",
 }
 
-export enum WerewolfConsultationTemplateKind {
-  AttackTarget = "attack_target",
-  ExecutionTarget = "execution_target",
-  ComingOut = "coming_out",
-  SeerResultReport = "seer_result_report",
-}
-
-export enum WerewolfConsultationTemplateSource {
-  Core = "core",
-  Role = "role",
-}
-
-export enum WerewolfConsultationFieldKind {
-  Player = "player",
-  Role = "role",
-  InspectionView = "inspection_view",
-}
-
-export enum WerewolfConsultationPlayerCandidates {
-  AlivePlayers = "alive_players",
-  SenderOrWerewolfAlly = "sender_or_werewolf_ally",
-}
-
-export enum WerewolfConsultationRoleCandidates {
-  ActiveRoles = "active_roles",
-}
-
-export enum WerewolfConsultationStatus {
-  Empty = "empty",
-  Submitted = "submitted",
-  Retracted = "retracted",
-}
-
 export enum RoleSetupContributionKind {
-  WerewolfConsultationTemplate = "werewolf_consultation_template",
   WinnerJudgement = "winner_judgement",
 }
 
@@ -247,31 +211,13 @@ export type RuleOptions = {
 
 export type RoleCounts = Readonly<Record<RoleId, number>>;
 
-export type WerewolfConsultationField =
-  | {
-      candidates: WerewolfConsultationPlayerCandidates;
-      id: string;
-      kind: WerewolfConsultationFieldKind.Player;
-    }
-  | {
-      candidates: WerewolfConsultationRoleCandidates;
-      id: string;
-      kind: WerewolfConsultationFieldKind.Role;
-    }
-  | {
-      candidates: readonly InspectionView[];
-      id: string;
-      kind: WerewolfConsultationFieldKind.InspectionView;
-    };
-
-export type WerewolfConsultationTemplate = {
-  fields: readonly WerewolfConsultationField[];
-  id: string;
-  kind: WerewolfConsultationTemplateKind;
+export type RoleNightConversationDefinition = {
+  groupId: string;
   labelKey: string;
-  normalNightOnly: boolean;
-  source: WerewolfConsultationTemplateSource;
-  sourceRoleId: RoleId | null;
+};
+
+export type NightConversationGroup = RoleNightConversationDefinition & {
+  roleIds: readonly RoleId[];
 };
 
 export type WinnerJudgementContribution = {
@@ -281,34 +227,25 @@ export type WinnerJudgementContribution = {
   winnerTeam: Team;
 };
 
-export type RoleSetupContribution =
-  | {
-      kind: RoleSetupContributionKind.WerewolfConsultationTemplate;
-      template: WerewolfConsultationTemplate;
-    }
-  | {
-      judgement: WinnerJudgementContribution;
-      kind: RoleSetupContributionKind.WinnerJudgement;
-    };
+export type RoleSetupContribution = {
+  judgement: WinnerJudgementContribution;
+  kind: RoleSetupContributionKind.WinnerJudgement;
+};
 
 export type ResolvedRoleSetup = {
   activeRoleIds: readonly RoleId[];
   contributions: readonly RoleSetupContribution[];
-  werewolfConsultationTemplates: readonly WerewolfConsultationTemplate[];
+  nightConversationGroups: readonly NightConversationGroup[];
   winnerJudgements: readonly WinnerJudgementContribution[];
 };
 
-export type WerewolfConsultationSlotState = {
+export type NightConversationMessageState = {
+  body: string;
+  conversationGroupId: string;
+  createdAt: string;
+  id: string;
   nightNumber: number;
-  retractedAt: string | null;
-  retractionUsed: boolean;
   senderPlayerId: PlayerId;
-  slotKey: string;
-  status: WerewolfConsultationStatus;
-  submissionCount: 0 | 1 | 2;
-  submittedAt: string | null;
-  templateId: string;
-  values: Readonly<Record<string, string>>;
 };
 
 export type GameEffectBase<K extends GameEffectKind> = {
@@ -381,5 +318,5 @@ export type ReadonlyGameState = {
   roleByPlayerId: ReadonlyMap<PlayerId, RoleId>;
   ruleOptions: RuleOptions;
   status: GameStatus;
-  werewolfConsultations: readonly WerewolfConsultationSlotState[];
+  nightConversationMessages: readonly NightConversationMessageState[];
 };

@@ -145,7 +145,7 @@ async function runRoleCoverage(baseUrl, supabase) {
     }
 
     assertRolePrivateBoundary(firstNightSummaries);
-    assertNoFirstNightAttackConsultation(firstNightSummaries);
+    assertNightConversationAvailable(firstNightSummaries);
 
     const executionTarget = findPlayerByRole(firstNightSummaries, "villager");
     const foxTarget = findPlayerByRole(firstNightSummaries, "fox");
@@ -209,12 +209,11 @@ async function runRoleCoverage(baseUrl, supabase) {
       throw new Error("Expected fox to be eligible for inspection on normal night.");
     }
 
-    await exerciseWerewolfConsultation(
+    const nightConversationBody = await exerciseNightConversation(
       players,
       baseUrl,
       roomCode,
       normalNightSummaries,
-      protectedAttackTargetId,
     );
 
     await submitActionsFromSummaries(normalNightSummaries, {
@@ -229,6 +228,8 @@ async function runRoleCoverage(baseUrl, supabase) {
     await waitAllPhases(players, "day");
 
     const resolvedSummaries = await readSummaries(players, baseUrl, roomCode);
+    assertNightConversationReadOnly(resolvedSummaries, nightConversationBody);
+
     const seer = roleOwners.get("seer")[0];
     const seerSummary = resolvedSummaries.find((entry) => entry.player === seer)?.summary;
     const hostSummary = resolvedSummaries.find((entry) => entry.player === host)?.summary;
@@ -380,117 +381,105 @@ function assertRolePrivateBoundary(entries) {
   }
 }
 
-function assertNoFirstNightAttackConsultation(entries) {
+function assertNightConversationAvailable(entries) {
   const werewolfEntries = findEntriesByRole(entries, "werewolf");
 
-  for (const { player, summary } of werewolfEntries) {
-    const slotIds = summary.rolePrivate?.consultation.map((slot) => slot.templateId) ?? [];
+  if (werewolfEntries.length === 0) {
+    throw new Error("Expected at least one werewolf night conversation participant.");
+  }
 
-    if (slotIds.includes("werewolf_attack_target")) {
-      throw new Error(`${player.label} saw normal-night attack consultation on first night.`);
+  for (const { player, summary } of werewolfEntries) {
+    const conversation = summary.rolePrivate?.nightConversation;
+
+    if (conversation === undefined || conversation === null) {
+      throw new Error(`${player.label} should have night conversation view.`);
+    }
+
+    if (conversation.groupId !== "werewolf") {
+      throw new Error(`${player.label} saw unexpected night conversation group.`);
+    }
+
+    if (conversation.readOnly || !conversation.canSend) {
+      throw new Error(`${player.label} night conversation should be writable during night.`);
     }
   }
+
+  assertNoPublicNightConversationLeak(entries);
 }
 
-async function exerciseWerewolfConsultation(
-  players,
-  baseUrl,
-  roomCode,
-  normalNightSummaries,
-  targetPlayerId,
-) {
+async function exerciseNightConversation(players, baseUrl, roomCode, normalNightSummaries) {
   assertRolePrivateBoundary(normalNightSummaries);
 
   const werewolfEntries = findEntriesByRole(normalNightSummaries, "werewolf");
 
   if (werewolfEntries.length < 2) {
-    throw new Error("Expected at least two werewolves for consultation coverage.");
+    throw new Error("Expected at least two werewolves for night conversation coverage.");
   }
 
   const senderEntry = werewolfEntries[0];
   const partnerEntry = werewolfEntries[1];
-  const attackSlot = findConsultationSlot(
-    senderEntry.summary,
-    (slot) => slot.templateId === "werewolf_attack_target" && slot.canSubmit,
-  );
+  const conversation = senderEntry.summary.rolePrivate?.nightConversation;
 
-  await submitConsultationSlot(senderEntry, attackSlot, { target: targetPlayerId }, "Shared");
+  if (conversation === undefined || conversation === null || !conversation.canSend) {
+    throw new Error(`${senderEntry.player.label} should be able to send night conversation.`);
+  }
+
+  const body = "wait for guard claim";
+
+  await sendNightConversationViaUi(senderEntry, body);
   await refreshAll(players);
 
   const submittedSummaries = await readSummaries(players, baseUrl, roomCode);
   const submittedSender = findSummaryForPlayer(submittedSummaries, senderEntry.player);
   const submittedPartner = findSummaryForPlayer(submittedSummaries, partnerEntry.player);
-  const partnerSubmittedSlot = findConsultationSlot(
+
+  assertNightConversationMessage(
+    submittedSender.summary,
+    body,
+    submittedSender.summary.self?.playerId,
+  );
+  assertNightConversationMessage(
     submittedPartner.summary,
-    (slot) =>
-      slot.templateId === "werewolf_attack_target" &&
-      slot.senderPlayerId === submittedSender.summary.self.playerId,
+    body,
+    submittedSender.summary.self?.playerId,
   );
 
-  if (
-    partnerSubmittedSlot.status !== "submitted" ||
-    partnerSubmittedSlot.values.target !== targetPlayerId
-  ) {
-    throw new Error("Werewolf consultation was not visible to the werewolf partner.");
+  assertNoPublicNightConversationLeak(submittedSummaries);
+
+  const madmanEntry =
+    findEntriesByRole(submittedSummaries, "madman")[0] ??
+    submittedSummaries.find(({ summary }) => summary.self?.roleId !== "werewolf");
+
+  if (madmanEntry === undefined) {
+    throw new Error("Expected non-werewolf player for night conversation rejection coverage.");
   }
 
-  assertNoPublicConsultationLeak(submittedSummaries);
-
-  await retractConsultationSlot(
-    submittedSender,
-    findConsultationSlot(
-      submittedSender.summary,
-      (slot) => slot.templateId === "werewolf_attack_target" && slot.canRetract,
-    ),
-  );
-  await refreshAll(players);
-
-  const retractedSummaries = await readSummaries(players, baseUrl, roomCode);
-  const retractedSender = findSummaryForPlayer(retractedSummaries, senderEntry.player);
-  const retractedPartner = findSummaryForPlayer(retractedSummaries, partnerEntry.player);
-  const partnerRetractedSlot = findConsultationSlot(
-    retractedPartner.summary,
-    (slot) =>
-      slot.templateId === "werewolf_attack_target" &&
-      slot.senderPlayerId === retractedSender.summary.self.playerId,
-  );
-
-  if (partnerRetractedSlot.status !== "retracted" || partnerRetractedSlot.canSubmit) {
-    throw new Error("Werewolf consultation retraction was not visible as read-only to partner.");
-  }
-
-  await submitConsultationSlot(
-    retractedSender,
-    findConsultationSlot(
-      retractedSender.summary,
-      (slot) => slot.templateId === "werewolf_attack_target" && slot.canSubmit,
-    ),
-    { target: targetPlayerId },
-    "Locked",
-  );
-  await refreshAll(players);
-
-  const resubmittedSummaries = await readSummaries(players, baseUrl, roomCode);
-  const resubmittedSender = findSummaryForPlayer(resubmittedSummaries, senderEntry.player);
-  const lockedSlot = findConsultationSlot(
-    resubmittedSender.summary,
-    (slot) => slot.templateId === "werewolf_attack_target" && slot.status === "submitted",
-  );
-
-  if (lockedSlot.canRetract || lockedSlot.canSubmit) {
-    throw new Error("Werewolf consultation allowed edits after resubmission.");
-  }
-
-  await expectConsultationRejected(
+  await expectNightConversationRejected(
     baseUrl,
     roomCode,
-    resubmittedSender.player,
-    resubmittedSender.summary,
-    lockedSlot,
-    "retract",
-    {},
+    madmanEntry.player,
+    madmanEntry.summary,
+    conversation,
+    "madman should fail",
   );
-  assertNoPublicConsultationLeak(resubmittedSummaries);
+
+  return body;
+}
+
+async function sendNightConversationViaUi(entry, body) {
+  if ((await entry.player.page.locator(".liveNightChatPanel").count()) === 0) {
+    await entry.player.page.getByRole("button", { name: "Show night chat" }).click();
+  }
+
+  const input = entry.player.page.locator(".liveNightChatComposer input");
+
+  await input.fill(body);
+  await entry.player.page.getByRole("button", { name: "Send" }).click();
+  await entry.player.page.waitForFunction(
+    (body) => document.querySelector(".liveNightChatMessages")?.textContent.includes(body),
+    body,
+    { timeout: 10000 },
+  );
 }
 
 function findSummaryForPlayer(entries, player) {
@@ -503,99 +492,38 @@ function findSummaryForPlayer(entries, player) {
   return entry;
 }
 
-function findConsultationSlot(summary, predicate) {
-  const slot = summary.rolePrivate?.consultation.find(predicate);
+function assertNightConversationMessage(summary, body, senderPlayerId) {
+  const messages = summary.rolePrivate?.nightConversation?.messages ?? [];
+  const message = messages.find((candidate) => candidate.body === body);
 
-  if (slot === undefined) {
-    throw new Error(`No consultation slot found for ${summary.self?.roleId ?? "unknown role"}.`);
+  if (message === undefined) {
+    throw new Error(`Night conversation message was not visible to ${summary.self?.roleId}.`);
   }
 
-  return slot;
-}
-
-async function submitConsultationSlot(entry, slot, valuesByFieldId, expectedStatus) {
-  const row = consultationSlotRow(entry, slot);
-  const count = await row.count();
-
-  if (count !== 1) {
-    throw new Error(`${entry.player.label} expected one consultation row, found ${count}.`);
+  if (senderPlayerId !== undefined && message.senderPlayerId !== senderPlayerId) {
+    throw new Error("Night conversation sender public player ID did not match.");
   }
 
-  for (const field of slot.fields) {
-    const value = valuesByFieldId[field.id] ?? field.options[0]?.value;
-
-    if (value === undefined) {
-      throw new Error(`No option available for consultation field ${field.id}.`);
-    }
-
-    await row.locator(`label:has-text("${field.label}") select`).selectOption(value);
-  }
-
-  await row.getByRole("button", { name: "Share" }).click();
-  await waitConsultationStatus(entry, slot.label, expectedStatus);
-}
-
-async function retractConsultationSlot(entry, slot) {
-  const row = consultationSlotRow(entry, slot);
-  const count = await row.count();
-
-  if (count !== 1) {
-    throw new Error(`${entry.player.label} expected one retract row, found ${count}.`);
-  }
-
-  await row.getByRole("button", { name: "Retract" }).click();
-  await waitConsultationStatus(entry, slot.label, "Retracted");
-}
-
-function consultationSlotRow(entry, slot) {
-  return entry.player.page
-    .locator(".liveConsultationSlot")
-    .filter({ hasText: slot.senderName })
-    .filter({ hasText: slot.label });
-}
-
-async function waitConsultationStatus(entry, slotLabel, status) {
-  try {
-    await entry.player.page.waitForFunction(
-      ({ slotLabel, status }) => {
-        return [...document.querySelectorAll(".liveConsultationSlot")].some((candidate) => {
-          return (
-            candidate.textContent.includes(slotLabel) && candidate.textContent.includes(status)
-          );
-        });
-      },
-      { slotLabel, status },
-      { timeout: 10000 },
-    );
-  } catch (error) {
-    const statusBar = await entry.player.page.locator(".liveStatusBar").innerText();
-    const slotTexts = await entry.player.page.locator(".liveConsultationSlot").allTextContents();
-
-    throw new Error(
-      `${entry.player.label} consultation did not reach ${status} for ${slotLabel}.\n${statusBar}\n${slotTexts.join("\n---\n")}`,
-      { cause: error },
-    );
+  if (message.senderName.length === 0 || message.createdAt.length === 0) {
+    throw new Error("Night conversation message did not include sender and timestamp.");
   }
 }
 
-async function expectConsultationRejected(
+async function expectNightConversationRejected(
   baseUrl,
   roomCode,
   player,
   summary,
-  slot,
-  operation,
-  values,
+  conversation,
+  body,
 ) {
   const token = await readIdentityToken(player);
-  const response = await fetch(`${baseUrl}/api/rooms/${roomCode}/consultation`, {
+  const response = await fetch(`${baseUrl}/api/rooms/${roomCode}/night-conversation`, {
     body: JSON.stringify({
-      nightNumber: slot.nightNumber,
-      operation,
+      body,
+      conversationGroupId: conversation.groupId,
+      nightNumber: conversation.nightNumber,
       phaseInstanceId: summary.game?.phaseInstanceId,
-      revision: summary.game?.revision,
-      templateId: slot.templateId,
-      values,
     }),
     headers: {
       Authorization: `Bearer ${token}`,
@@ -605,24 +533,45 @@ async function expectConsultationRejected(
   });
 
   if (response.ok) {
-    throw new Error(`Expected consultation ${operation} to be rejected.`);
+    throw new Error("Expected night conversation message to be rejected.");
   }
 }
 
-function assertNoPublicConsultationLeak(entries) {
+function assertNoPublicNightConversationLeak(entries) {
   for (const { player, summary } of entries) {
-    const publicKinds = summary.game?.events.map((event) => event.kind) ?? [];
+    const publicGameJson = JSON.stringify(summary.game ?? {});
 
-    if (
-      publicKinds.includes("werewolf_consultation_submitted") ||
-      publicKinds.includes("werewolf_consultation_retracted")
-    ) {
-      throw new Error(`${player.label} public log leaked werewolf consultation event.`);
+    if (publicGameJson.includes("wait for guard claim")) {
+      throw new Error(`${player.label} public view leaked night conversation body.`);
     }
 
     if (summary.self?.roleId !== "werewolf" && summary.rolePrivate !== null) {
-      throw new Error(`${player.label} leaked werewolf consultation private view.`);
+      throw new Error(`${player.label} leaked night conversation private view.`);
     }
+  }
+}
+
+function assertNightConversationReadOnly(entries, body) {
+  for (const { player, summary } of entries) {
+    const conversation = summary.rolePrivate?.nightConversation ?? null;
+
+    if (summary.self?.roleId !== "werewolf") {
+      if (conversation !== null) {
+        throw new Error(`${player.label} leaked read-only night conversation.`);
+      }
+
+      continue;
+    }
+
+    if (conversation === null) {
+      throw new Error(`${player.label} should retain night conversation after night.`);
+    }
+
+    if (!conversation.readOnly || conversation.canSend) {
+      throw new Error(`${player.label} night conversation should be read-only outside night.`);
+    }
+
+    assertNightConversationMessage(summary, body, undefined);
   }
 }
 

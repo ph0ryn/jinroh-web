@@ -117,34 +117,26 @@ export type PrivateGameEvent = {
 export type RolePrivateView = {
   roleId: RoleId;
   label: string;
-  werewolfPartnerIds: string[];
-  consultation: WerewolfConsultationSlot[];
+  nightConversation: NightConversationView | null;
 } | null;
 
-export type WerewolfConsultationSlot = {
-  canRetract: boolean;
-  canSubmit: boolean;
-  fields: WerewolfConsultationField[];
-  templateId: string;
+export type NightConversationView = {
+  canSend: boolean;
+  groupId: string;
   label: string;
+  maxMessageLength: number;
+  messages: NightConversationMessage[];
   nightNumber: number;
+  participantPlayerIds: string[];
   readOnly: boolean;
+};
+
+export type NightConversationMessage = {
+  body: string;
+  createdAt: string;
+  id: string;
   senderName: string;
   senderPlayerId: string;
-  status: "empty" | "submitted" | "retracted";
-  value: string | null;
-  values: Record<string, string>;
-};
-
-export type WerewolfConsultationField = {
-  id: string;
-  label: string;
-  options: WerewolfConsultationOption[];
-};
-
-export type WerewolfConsultationOption = {
-  label: string;
-  value: string;
 };
 
 export type PublicAction = {

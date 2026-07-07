@@ -5,13 +5,11 @@ import type {
   CurrentAction,
   GameEvent,
   GameStatus,
+  NightConversationMessageState,
   PlayerId,
   ReadonlyGameState,
   RoleId,
-  WerewolfConsultationSlotState,
 } from "./types";
-
-const WEREWOLF_ROLE_ID = "werewolf";
 
 export type GameViewPlayer = {
   alive: boolean;
@@ -46,16 +44,16 @@ export type SelfPrivateGameView = {
   roleId: RoleId | null;
 };
 
-export type WerewolfPrivateGameView = {
-  consultationSlots: readonly RolePrivateConsultationSlot[];
+export type NightConversationPrivateGameView = {
   events: readonly GameEvent[];
-  partnerPlayerIds: readonly PlayerId[];
-  roleId: typeof WEREWOLF_ROLE_ID;
-};
-
-export type RolePrivateConsultationSlot = WerewolfConsultationSlotState & {
+  groupId: string;
+  labelKey: string;
+  messages: readonly RolePrivateNightConversationMessage[];
+  participantPlayerIds: readonly PlayerId[];
   readOnly: boolean;
 };
+
+export type RolePrivateNightConversationMessage = NightConversationMessageState;
 
 export function buildPublicGameView(input: InternalGameViewInput): PublicGameView {
   return {
@@ -98,25 +96,34 @@ export function buildSelfPrivateGameView(
   };
 }
 
-export function buildWerewolfPrivateGameView(
+export function buildNightConversationPrivateGameView(
   input: InternalGameViewInput,
   viewerPlayerId: PlayerId,
-): WerewolfPrivateGameView | null {
+): NightConversationPrivateGameView | null {
   const viewerRoleId = input.state.roleByPlayerId.get(viewerPlayerId);
+  const group =
+    viewerRoleId === undefined
+      ? undefined
+      : input.state.resolvedRoleSetup.nightConversationGroups.find((candidate) =>
+          candidate.roleIds.includes(viewerRoleId),
+        );
 
-  if (viewerRoleId !== WEREWOLF_ROLE_ID) {
+  if (viewerRoleId === undefined || group === undefined) {
     return null;
   }
 
-  const partnerPlayerIds = [...input.state.roleByPlayerId.entries()]
-    .filter(([, roleId]) => roleId === WEREWOLF_ROLE_ID)
+  const participantPlayerIds = [...input.state.roleByPlayerId.entries()]
+    .filter(([, roleId]) => group.roleIds.includes(roleId))
     .map(([playerId]) => playerId);
+  const readOnly = input.state.phase !== GamePhase.Night;
 
   return {
-    consultationSlots: getVisibleWerewolfConsultationSlots(input.state),
-    events: input.state.events.filter((event) => event.visibleToRoleIds.includes(WEREWOLF_ROLE_ID)),
-    partnerPlayerIds,
-    roleId: WEREWOLF_ROLE_ID,
+    events: input.state.events.filter((event) => event.visibleToRoleIds.includes(viewerRoleId)),
+    groupId: group.groupId,
+    labelKey: group.labelKey,
+    messages: getVisibleNightConversationMessages(input.state, group.groupId),
+    participantPlayerIds,
+    readOnly,
   };
 }
 
@@ -153,20 +160,16 @@ function isEventVisibleToPlayer(
   );
 }
 
-function getVisibleWerewolfConsultationSlots(
+function getVisibleNightConversationMessages(
   state: ReadonlyGameState,
-): readonly RolePrivateConsultationSlot[] {
-  if (state.phase === GamePhase.Night) {
-    return state.werewolfConsultations
-      .filter((slot) => slot.nightNumber === state.nightNumber)
-      .map((slot) => ({ ...slot, readOnly: false }));
+  groupId: string,
+): readonly NightConversationMessageState[] {
+  if (state.phase === null || state.nightNumber < 1) {
+    return [];
   }
 
-  if (state.phase === GamePhase.Day && state.nightNumber > 1) {
-    return state.werewolfConsultations
-      .filter((slot) => slot.nightNumber === state.nightNumber - 1)
-      .map((slot) => ({ ...slot, readOnly: true }));
-  }
-
-  return [];
+  return state.nightConversationMessages.filter(
+    (message) =>
+      message.conversationGroupId === groupId && message.nightNumber === state.nightNumber,
+  );
 }

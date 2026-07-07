@@ -215,8 +215,8 @@ First night は、Role assignment 後、最初の Day に入る前の `night` ph
 人狼の襲撃 action は出さない。
 その他の night action も、初日夜では Player 操作として受け付けない。
 
-人狼相談は action ではないため、初日夜でも表示対象になり得る。
-ただし、襲撃相談 template は初日夜に表示しない。
+夜会話は action ではないため、初日夜でも表示対象になり得る。
+Werewolf night conversation は、実際に WerewolfRole を持つ Player だけに表示する。
 
 基本ルール。
 
@@ -254,7 +254,7 @@ Night の基本ルール。
 
 - phase 開始時に終了予定時刻を決める
 - Role ごとの night current action を作る
-- 人狼 Role の Player には人狼相談を表示できる
+- 夜会話 group の対象 Player には night conversation を表示できる
 - 受理済み pending action は current action ごとに固定する
 - すべての night action が揃っても phase は短縮しない
 - 180秒経過後に受理済み pending action を解決する
@@ -277,7 +277,7 @@ Day は、会議のための phase。
 対面、外部 voice chat、その他の通信手段で会話する前提。
 アプリは Day の進行、現在の発言者、残り時間、Voting への移行だけを管理する。
 
-人狼同士の相談は Night の structured consultation として扱う。
+人狼同士の夜会話は、Night 中に送信できる role-private chat として扱う。
 Day の自由会話内容は引き続きアプリの責任外にする。
 
 Day の会議方式は `RuleSet` の option で選ぶ。

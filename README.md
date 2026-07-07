@@ -16,7 +16,7 @@ voting, execution, and locked final results.
 - Keep the database as the source of truth and use realtime only as a reload
   signal.
 - Never expose Account IDs, raw account tokens, role assignments, night targets,
-  vote details in progress, or werewolf consultation content to the wrong
+  vote details in progress, or role-private night conversation content to the wrong
   browser view.
 - Visualize a complete game path with Werewolf, Villager, Madman, Seer, Guard,
   and Fox roles while backend implementation follows the current product spec.

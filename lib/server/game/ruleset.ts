@@ -10,12 +10,12 @@ import {
   GuardConsecutiveTargetPolicy,
   InitialInspectionPolicy,
   ROLE_IDS,
-  RoleSetupContributionKind,
   VoteResultVisibility,
 } from "./types";
 
 import type { RoleContext } from "./roles";
 import type {
+  NightConversationGroup,
   ReadonlyGameState,
   ResolvedRoleSetup,
   RoleCounts,
@@ -226,17 +226,33 @@ export function resolveRoleSetup(ruleSet: RuleSet): ResolvedRoleSetup {
   return {
     activeRoleIds,
     contributions,
-    werewolfConsultationTemplates: contributions.flatMap((contribution) => {
-      return contribution.kind === RoleSetupContributionKind.WerewolfConsultationTemplate
-        ? [contribution.template]
-        : [];
-    }),
-    winnerJudgements: contributions.flatMap((contribution) => {
-      return contribution.kind === RoleSetupContributionKind.WinnerJudgement
-        ? [contribution.judgement]
-        : [];
-    }),
+    nightConversationGroups: resolveNightConversationGroups(activeRoleIds),
+    winnerJudgements: contributions.map((contribution) => contribution.judgement),
   };
+}
+
+function resolveNightConversationGroups(
+  activeRoleIds: readonly RoleId[],
+): NightConversationGroup[] {
+  const groupsById = new Map<string, NightConversationGroup>();
+
+  for (const roleId of activeRoleIds) {
+    const nightConversation = roleRegistry.get(roleId).nightConversation;
+
+    if (nightConversation === null) {
+      continue;
+    }
+
+    const existingGroup = groupsById.get(nightConversation.groupId);
+
+    groupsById.set(nightConversation.groupId, {
+      groupId: nightConversation.groupId,
+      labelKey: nightConversation.labelKey,
+      roleIds: [...(existingGroup?.roleIds ?? []), roleId],
+    });
+  }
+
+  return [...groupsById.values()];
 }
 
 function normalizeRoleCounts(
@@ -320,13 +336,13 @@ export function createEmptyGameStateForRuleSet(
     resolvedRoleSetup: {
       activeRoleIds,
       contributions: [],
-      werewolfConsultationTemplates: [],
+      nightConversationGroups: [],
       winnerJudgements: [],
     },
     roleByPlayerId: new Map(),
     ruleOptions: ruleSet.options,
     status: GameStatus.Waiting,
-    werewolfConsultations: [],
+    nightConversationMessages: [],
   };
 }
 

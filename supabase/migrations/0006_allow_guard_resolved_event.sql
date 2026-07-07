@@ -11,8 +11,6 @@ alter table public.game_events
       'player_died',
       'phase_changed',
       'vote_resolved',
-      'werewolf_consultation_submitted',
-      'werewolf_consultation_retracted',
       'game_ended',
       'initial_inspection',
       'inspection_result',

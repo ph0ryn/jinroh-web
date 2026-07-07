@@ -1398,7 +1398,7 @@ a {
 
 .liveEntryPanel input,
 .liveActionRow select,
-.liveConsultationFields select {
+.liveNightChatComposer input {
   background: rgba(241, 230, 202, 0.08);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-small);
@@ -1655,10 +1655,10 @@ a {
 
 .livePrivateEvents,
 .liveSubmittedActions,
-.liveConsultationList {
+.liveNightChatPanel {
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 6px;
+  gap: 10px;
   margin-top: 6px;
   padding-top: 8px;
 }
@@ -1668,55 +1668,74 @@ a {
   color: var(--brass-300);
 }
 
-.liveConsultationSlot {
-  background: rgba(7, 11, 10, 0.32);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-small);
-  display: grid;
-  gap: 8px;
-  padding: 10px;
+.liveNightChatPanel {
+  color: var(--paper-200);
 }
 
-.liveConsultationSlot.submitted {
-  border-color: rgba(119, 189, 117, 0.34);
-}
-
-.liveConsultationSlot.retracted {
-  border-color: rgba(167, 71, 61, 0.42);
-}
-
-.liveConsultationHeader {
+.liveNightChatHeader {
   align-items: center;
-  display: grid;
-  gap: 6px;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
 }
 
-.liveConsultationHeader strong,
-.liveConsultationHeader span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.liveConsultationHeader strong {
+.liveNightChatHeader strong {
   color: var(--paper-100);
 }
 
-.liveConsultationHeader em {
+.liveNightChatHeader em {
   color: var(--brass-300);
   font-size: 0.76rem;
   font-style: normal;
   font-weight: 790;
 }
 
-.liveConsultationFields {
+.liveNightChatMessages {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.liveConsultationFields label {
+.liveNightChatMessages li {
+  background: rgba(7, 11, 10, 0.32);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.liveNightChatMessages li div {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.liveNightChatMessages strong {
+  color: var(--paper-100);
+}
+
+.liveNightChatMessages time {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.liveNightChatPanel p,
+.liveNightChatMessages p {
+  margin: 0;
+}
+
+.liveNightChatComposer {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.liveNightChatComposer label {
   color: var(--muted);
   display: grid;
   font-size: 0.78rem;
@@ -1724,10 +1743,10 @@ a {
   gap: 6px;
 }
 
-.liveConsultationActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.liveNightChatComposer small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  justify-self: end;
 }
 
 .liveActionRow {
@@ -1878,7 +1897,7 @@ a {
 
   .liveEntryPanel,
   .liveActionRow,
-  .liveConsultationHeader,
+  .liveNightChatComposer,
   .liveControlStack {
     grid-template-columns: 1fr;
   }

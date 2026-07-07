@@ -1,27 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_RULE_OPTIONS } from "./ruleset";
+import { GameEventKind, GameEventVisibility, GamePhase, GameStatus } from "./types";
 import {
-  GameEventKind,
-  GameEventVisibility,
-  GamePhase,
-  GameStatus,
-  WerewolfConsultationStatus,
-} from "./types";
-import {
+  buildNightConversationPrivateGameView,
   buildPublicGameView,
   buildRealtimeNotificationPayload,
   buildSelfPrivateGameView,
-  buildWerewolfPrivateGameView,
 } from "./views";
 
 import type {
   GameEvent,
+  NightConversationMessageState,
   PlayerId,
   ReadonlyGameState,
   ResolvedRoleSetup,
   RoleId,
-  WerewolfConsultationSlotState,
 } from "./types";
 
 describe("secret game views", () => {
@@ -49,15 +43,16 @@ describe("secret game views", () => {
     expect(selfJson).not.toContain("internalAudit");
   });
 
-  it("limits werewolf consultation to actual WerewolfRole players, not madman team members", () => {
+  it("limits night conversation to configured role groups, not same-team roles", () => {
     const input = createViewInput();
-    const madmanView = buildWerewolfPrivateGameView(input, "madman");
-    const werewolfView = buildWerewolfPrivateGameView(input, "wolf");
+    const madmanView = buildNightConversationPrivateGameView(input, "madman");
+    const werewolfView = buildNightConversationPrivateGameView(input, "wolf");
 
     expect(madmanView).toBeNull();
-    expect(werewolfView?.partnerPlayerIds).toEqual(["wolf"]);
-    expect(werewolfView?.consultationSlots).toHaveLength(1);
-    expect(JSON.stringify(werewolfView)).toContain("attackTargetId");
+    expect(werewolfView?.groupId).toBe("werewolf");
+    expect(werewolfView?.participantPlayerIds).toEqual(["wolf"]);
+    expect(werewolfView?.messages).toHaveLength(1);
+    expect(JSON.stringify(werewolfView)).toContain("wait for the guard claim");
   });
 
   it("builds realtime invalidation payloads without secret state", () => {
@@ -93,7 +88,13 @@ function createViewInput() {
   const resolvedRoleSetup: ResolvedRoleSetup = {
     activeRoleIds: ["werewolf", "madman", "seer", "villager"],
     contributions: [],
-    werewolfConsultationTemplates: [],
+    nightConversationGroups: [
+      {
+        groupId: "werewolf",
+        labelKey: "nightConversation.werewolf",
+        roleIds: ["werewolf"],
+      },
+    ],
     winnerJudgements: [],
   };
   const events: readonly GameEvent[] = [
@@ -111,12 +112,12 @@ function createViewInput() {
     },
     {
       actorPlayerId: "wolf",
-      id: "werewolf-private-event",
-      kind: GameEventKind.WerewolfConsultationSubmitted,
-      payload: { attackTargetId: "villager" },
+      id: "night-conversation-private-event",
+      kind: GameEventKind.ActionResolved,
+      payload: { nightConversationChanged: true },
       phase: GamePhase.Night,
       phaseInstanceId: "night-2",
-      targetPlayerIds: ["villager"],
+      targetPlayerIds: [],
       visibility: GameEventVisibility.Private,
       visibleToPlayerIds: [],
       visibleToRoleIds: ["werewolf"],
@@ -146,20 +147,14 @@ function createViewInput() {
       visibleToRoleIds: [],
     },
   ];
-  const werewolfConsultations: readonly WerewolfConsultationSlotState[] = [
+  const nightConversationMessages: readonly NightConversationMessageState[] = [
     {
+      body: "wait for the guard claim",
+      conversationGroupId: "werewolf",
+      createdAt: "2026-01-01T00:00:00Z",
+      id: "message-1",
       nightNumber: 2,
-      retractedAt: null,
-      retractionUsed: false,
       senderPlayerId: "wolf",
-      slotKey: "2:wolf:werewolf_attack_target",
-      status: WerewolfConsultationStatus.Submitted,
-      submissionCount: 1,
-      submittedAt: "2026-01-01T00:00:00Z",
-      templateId: "werewolf_attack_target",
-      values: {
-        attackTargetId: "villager",
-      },
     },
   ];
   const state: ReadonlyGameState = {
@@ -175,7 +170,7 @@ function createViewInput() {
     roleByPlayerId,
     ruleOptions: DEFAULT_RULE_OPTIONS,
     status: GameStatus.Playing,
-    werewolfConsultations,
+    nightConversationMessages,
   };
 
   return {

@@ -148,8 +148,6 @@ export enum GameEventKind {
   EffectApplied = "effect_applied",
   PlayerDied = "player_died",
   PhaseChanged = "phase_changed",
-  WerewolfConsultationSubmitted = "werewolf_consultation_submitted",
-  WerewolfConsultationRetracted = "werewolf_consultation_retracted",
   GameEnded = "game_ended",
 }
 
@@ -169,41 +167,7 @@ export enum VoteResultVisibility {
   VoterToTarget = "voter_to_target",
 }
 
-export enum WerewolfConsultationTemplateKind {
-  AttackTarget = "attack_target",
-  ExecutionTarget = "execution_target",
-  ComingOut = "coming_out",
-  SeerResultReport = "seer_result_report",
-}
-
-export enum WerewolfConsultationTemplateSource {
-  Core = "core",
-  Role = "role",
-}
-
-export enum WerewolfConsultationFieldKind {
-  Player = "player",
-  Role = "role",
-  InspectionView = "inspection_view",
-}
-
-export enum WerewolfConsultationPlayerCandidates {
-  AlivePlayers = "alive_players",
-  SenderOrWerewolfAlly = "sender_or_werewolf_ally",
-}
-
-export enum WerewolfConsultationRoleCandidates {
-  ActiveRoles = "active_roles",
-}
-
-export enum WerewolfConsultationStatus {
-  Empty = "empty",
-  Submitted = "submitted",
-  Retracted = "retracted",
-}
-
 export enum RoleSetupContributionKind {
-  WerewolfConsultationTemplate = "werewolf_consultation_template",
   WinnerJudgement = "winner_judgement",
 }
 
@@ -272,44 +236,22 @@ export type VoteResolution =
       maxVoteCount: number;
     });
 
-export type WerewolfConsultationField =
-  | {
-      id: string;
-      kind: WerewolfConsultationFieldKind.Player;
-      candidates: WerewolfConsultationPlayerCandidates;
-    }
-  | {
-      id: string;
-      kind: WerewolfConsultationFieldKind.Role;
-      candidates: WerewolfConsultationRoleCandidates;
-    }
-  | {
-      id: string;
-      kind: WerewolfConsultationFieldKind.InspectionView;
-      candidates: readonly InspectionView[];
-    };
-
-export type WerewolfConsultationTemplate = {
-  id: string;
-  kind: WerewolfConsultationTemplateKind;
-  source: WerewolfConsultationTemplateSource;
-  sourceRoleId: RoleId | null;
+export type RoleNightConversationDefinition = {
+  groupId: string;
   labelKey: string;
-  fields: readonly WerewolfConsultationField[];
-  normalNightOnly: boolean;
 };
 
-export type WerewolfConsultationSlotState = {
-  slotKey: string;
+export type NightConversationGroup = RoleNightConversationDefinition & {
+  roleIds: readonly RoleId[];
+};
+
+export type NightConversationMessageState = {
+  id: string;
   nightNumber: number;
+  conversationGroupId: string;
   senderPlayerId: PlayerId;
-  templateId: string;
-  status: WerewolfConsultationStatus;
-  values: Readonly<Record<string, string>>;
-  submissionCount: 0 | 1 | 2;
-  retractionUsed: boolean;
-  submittedAt: string | null;
-  retractedAt: string | null;
+  body: string;
+  createdAt: string;
 };
 
 export type WinnerJudgementContribution = {
@@ -319,20 +261,15 @@ export type WinnerJudgementContribution = {
   priority: number;
 };
 
-export type RoleSetupContribution =
-  | {
-      kind: RoleSetupContributionKind.WerewolfConsultationTemplate;
-      template: WerewolfConsultationTemplate;
-    }
-  | {
-      kind: RoleSetupContributionKind.WinnerJudgement;
-      judgement: WinnerJudgementContribution;
-    };
+export type RoleSetupContribution = {
+  kind: RoleSetupContributionKind.WinnerJudgement;
+  judgement: WinnerJudgementContribution;
+};
 
 export type ResolvedRoleSetup = {
   activeRoleIds: readonly RoleId[];
   contributions: readonly RoleSetupContribution[];
-  werewolfConsultationTemplates: readonly WerewolfConsultationTemplate[];
+  nightConversationGroups: readonly NightConversationGroup[];
   winnerJudgements: readonly WinnerJudgementContribution[];
 };
 
@@ -457,7 +394,7 @@ export type ReadonlyGameState = {
   dayState: DayState | null;
   executionState: ExecutionState | null;
   resolvedRoleSetup: ResolvedRoleSetup;
-  werewolfConsultations: readonly WerewolfConsultationSlotState[];
+  nightConversationMessages: readonly NightConversationMessageState[];
   alivePlayerIds: readonly PlayerId[];
   roleByPlayerId: ReadonlyMap<PlayerId, RoleId>;
   currentActions: readonly CurrentAction[];

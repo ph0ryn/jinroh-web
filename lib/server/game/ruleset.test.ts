@@ -35,12 +35,13 @@ describe("validateRuleSet", () => {
       "seer",
       "guard",
     ]);
-    expect(
-      result.resolvedRoleSetup.werewolfConsultationTemplates.map((template) => template.id),
-    ).toContain("seer_result_report");
-    expect(
-      result.resolvedRoleSetup.werewolfConsultationTemplates.map((template) => template.id),
-    ).toContain("werewolf_attack_target");
+    expect(result.resolvedRoleSetup.nightConversationGroups).toEqual([
+      {
+        groupId: "werewolf",
+        labelKey: "nightConversation.werewolf",
+        roleIds: ["werewolf"],
+      },
+    ]);
   });
 
   it("rejects a setup without the required werewolf role", () => {

@@ -156,8 +156,6 @@ begin
           'player_died',
           'phase_changed',
           'vote_resolved',
-          'werewolf_consultation_submitted',
-          'werewolf_consultation_retracted',
           'game_ended',
           'initial_inspection',
           'inspection_result',
@@ -286,7 +284,6 @@ alter table public.pending_actions force row level security;
 alter table public.game_events force row level security;
 alter table public.game_event_visible_players force row level security;
 alter table public.game_event_visible_roles force row level security;
-alter table public.werewolf_consultation_slots force row level security;
 alter table public.day_speech_slots force row level security;
 alter table public.final_outcomes force row level security;
 alter table public.player_results force row level security;

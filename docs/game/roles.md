@@ -30,7 +30,7 @@
 - 襲撃されたときに何が起きるか
 - 処刑されたときに何が起きるか
 - どの phase でどの action が可能か
-- 人狼相談にどの template を追加するか
+- 夜会話 group に参加するか
 - 勝者判定にどの priority の judgement を追加するか
 - 人狼 Role としてゲーム終了条件を満たすか
 - ゲーム終了後に Player の結果をどう判定するか
@@ -126,6 +126,10 @@ export class WerewolfRole extends Role {
   readonly description = "夜に襲撃し、人狼数が非人狼数以上になると勝利する。";
   readonly required = true;
   readonly minCount = 1;
+  override readonly nightConversation = {
+    groupId: "werewolf",
+    labelKey: "nightConversation.werewolf",
+  };
 
   countAs(_context: PlayerRoleContext): CountGroup {
     return CountGroup.Werewolf;
@@ -155,29 +159,6 @@ export class WerewolfRole extends Role {
         roleGroupPolicy: RoleGroupActionPolicy.FirstSubmitWins,
         submitPolicy: SubmitPolicy.FirstSubmitWins,
         resolveTiming: ResolveTiming.PhaseEnd,
-      },
-    ];
-  }
-
-  getSetupContributions(_context: RoleContext): readonly RoleSetupContribution[] {
-    return [
-      {
-        kind: RoleSetupContributionKind.WerewolfConsultationTemplate,
-        template: {
-          id: "werewolf_attack_target",
-          kind: WerewolfConsultationTemplateKind.AttackTarget,
-          source: WerewolfConsultationTemplateSource.Role,
-          sourceRoleId: this.id,
-          labelKey: "werewolf.consultation.attack_target",
-          normalNightOnly: true,
-          fields: [
-            {
-              id: "target",
-              kind: WerewolfConsultationFieldKind.Player,
-              candidates: WerewolfConsultationPlayerCandidates.AlivePlayers,
-            },
-          ],
-        },
       },
     ];
   }
@@ -306,12 +287,14 @@ game start
 setup contribution は、そのゲーム中に変わらない。
 途中で Role 構成や contribution を追加、削除、再計算しない。
 
-現時点で具体的に扱う setup contribution は、人狼相談 template と winner judgement。
+現時点で具体的に扱う setup contribution は winner judgement。
 将来、開始時に固定できる Role 由来の影響が増えた場合も、同じ入口に追加する。
+
+夜会話 group は Role の静的 property から解決し、
+`resolvedRoleSetup.nightConversationGroups` に固定する。
 
 setup contribution に向いているもの。
 
-- 採用 Role に応じて増える固定 UI 選択肢
 - 採用 Role に応じて有効になる固定 resolver
 - 採用 Role に応じて有効になる固定 winner judgement
 - 採用 Role に応じて必要になる固定 private view group
@@ -334,7 +317,7 @@ setup contribution にしないもの。
 - 基本陣営は人狼
 - 占いでは人狼として見える
 - 夜に襲撃 action を持つ
-- normal night に襲撃相談 template を提供する
+- Werewolf night conversation group に参加する
 - 終了判定上、人狼数として数えられる
 - 生存人狼数が生存非人狼数以上なら終了候補を返す
 - 人狼側勝利なら PlayerResult は win

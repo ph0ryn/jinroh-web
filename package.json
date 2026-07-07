@@ -36,6 +36,7 @@
     "oxlint-tsgolint": "catalog:",
     "playwright": "catalog:",
     "sort-package-json": "catalog:",
+    "supabase": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:"
