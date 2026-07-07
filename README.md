@@ -29,14 +29,13 @@ The current app shell is a live product surface backed by Next.js API routes
 and Supabase:
 
 - Home and lobby entry for anonymous room creation and code-based joining.
-- Desktop game board with state rail, phase timeline, player seats, host
-  controls, action status, activity, and role legend.
+- Desktop live table with room metrics, invite tools, player list, host
+  controls, private actions, and a public event log.
 - First night, night actions, day progress, voting, execution, result, and
   role-private night conversation.
 - Phase-aware generated tabletop backgrounds for lobby, day, voting,
   execution, night, and result states.
-- Mobile layout with stacked content, scrollable state rail, and bottom phase
-  tabs.
+- Mobile layout with stacked room, control, private view, and public log panels.
 
 Use `docs/spec.md` as the primary product boundary and `docs/game/*.md` for
 game-system details.
@@ -148,7 +147,7 @@ Open `http://localhost:3000/live`.
 Basic play flow:
 
 - Enter a display name and create a room.
-- Share the six-digit room code with other players.
+- Copy or share the six-digit room code with other players.
 - Other browsers or profiles join with the code.
 - The host starts the game once 3 to 10 players are joined.
 - Players use their visible action controls through first night, day, voting,

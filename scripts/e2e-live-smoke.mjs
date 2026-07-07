@@ -114,6 +114,9 @@ async function runLiveSmoke(baseUrl) {
       throw new Error(`Expected six-digit room code, got ${roomCode ?? "null"}.`);
     }
 
+    await assertInviteTools(host.page, roomCode);
+    await assertCopyRoomCode(host.page, roomCode);
+
     for (const player of [player2, player3]) {
       await player.page.getByLabel("Room code").fill(roomCode);
       await player.page.getByRole("button", { name: "Join" }).click();
@@ -131,6 +134,7 @@ async function runLiveSmoke(baseUrl) {
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "night");
     await waitPhase(player3.page, "night");
+    const nightConversationPlayer = await assertNightConversationUi(players);
 
     await submitAll(players);
     await advance(host);
@@ -206,6 +210,7 @@ async function runLiveSmoke(baseUrl) {
     return {
       evidence,
       ok: true,
+      nightConversationPlayer,
       resolutionPath,
       roomCode,
       screenshots: { desktop: desktopScreenshot, mobile: mobileScreenshot },
@@ -219,6 +224,9 @@ async function runLiveSmoke(baseUrl) {
 
 async function createPlayer(browser, baseUrl, label, displayName, errors, warnings) {
   const context = await browser.newContext({ viewport: { height: 720, width: 1280 } });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(baseUrl).origin,
+  });
   const page = await context.newPage();
 
   page.on("console", (message) => {
@@ -344,6 +352,34 @@ async function readMetric(page, label) {
   }, label);
 }
 
+async function assertInviteTools(page, roomCode) {
+  const invite = page.getByLabel("Room invite tools");
+
+  await invite.waitFor({ timeout: 10000 });
+
+  const text = await invite.innerText();
+
+  if (!text.includes(roomCode) || !text.includes("Copy code") || !text.includes("Share invite")) {
+    throw new Error(`Room invite tools missing expected copy: ${text}`);
+  }
+}
+
+async function assertCopyRoomCode(page, roomCode) {
+  await page.getByRole("button", { name: "Copy code" }).click();
+  await page.waitForFunction(
+    (expectedRoomCode) =>
+      document.body.textContent.includes(`Room code ${expectedRoomCode} copied.`),
+    roomCode,
+    { timeout: 5000 },
+  );
+
+  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+
+  if (clipboardText !== roomCode) {
+    throw new Error(`Expected clipboard room code ${roomCode}, got ${clipboardText}.`);
+  }
+}
+
 async function waitMetric(page, label, expected) {
   await page.waitForFunction(
     ({ expected, label }) => {
@@ -374,6 +410,65 @@ async function assertPhaseTimerOpen(page) {
 
   if (timer === null || timer === "closed" || timer === "unknown") {
     throw new Error(`Expected active phase timer, got ${timer ?? "null"}.`);
+  }
+}
+
+async function assertNightConversationUi(players) {
+  for (const player of players) {
+    const toggle = player.page.getByRole("button", { name: "Show night chat" });
+
+    if ((await toggle.count()) === 0 || !(await toggle.first().isVisible())) {
+      continue;
+    }
+
+    await toggle.first().click();
+    await player.page.getByLabel("Night conversation").waitFor({ timeout: 10000 });
+
+    const messageBody = "LongNightSignal-abcdefghijklmnopqrstuvwxyz-0123456789-repeat-check";
+    await player.page.getByLabel("Message").fill(messageBody);
+    await player.page.getByRole("button", { name: "Send" }).click();
+    await player.page.getByText(messageBody).waitFor({ timeout: 10000 });
+    await assertNightChatVisual(player.page);
+
+    return player.label;
+  }
+
+  throw new Error("No player could open night conversation UI.");
+}
+
+async function assertNightChatVisual(page) {
+  const contract = await page.evaluate(() => {
+    const panel = document.querySelector(".liveNightChatPanel");
+    const list = document.querySelector(".liveNightChatMessages");
+    const message = document.querySelector(".liveNightChatMessages p");
+    const row = document.querySelector(".liveNightChatMessages li div");
+
+    if (panel === null || list === null || message === null || row === null) {
+      return null;
+    }
+
+    const listStyles = getComputedStyle(list);
+    const messageStyles = getComputedStyle(message);
+    const rowStyles = getComputedStyle(row);
+
+    return {
+      maxHeight: listStyles.maxHeight,
+      overflowY: listStyles.overflowY,
+      rowColumns: rowStyles.gridTemplateColumns,
+      wordWrap: messageStyles.overflowWrap,
+    };
+  });
+
+  if (contract === null) {
+    throw new Error("Night chat visual contract missing message list.");
+  }
+
+  if (
+    contract.maxHeight === "none" ||
+    contract.overflowY !== "auto" ||
+    contract.wordWrap !== "anywhere"
+  ) {
+    throw new Error(`Night chat visual contract is weak: ${JSON.stringify(contract)}`);
   }
 }
 

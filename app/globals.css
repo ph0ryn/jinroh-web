@@ -1731,6 +1731,52 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+.liveInviteTools {
+  align-items: start;
+  background: rgba(var(--live-accent-rgb), 0.09);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.34);
+  border-radius: var(--radius-small);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px;
+}
+
+.liveInviteTools > div {
+  min-width: 0;
+}
+
+.liveInviteTools > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: stretch;
+}
+
+.liveInviteTools button {
+  flex: 1 1 126px;
+}
+
+.liveInviteTools span,
+.liveInviteTools small {
+  color: var(--live-muted);
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.liveInviteTools strong {
+  color: var(--paper-100);
+  display: block;
+  font-size: clamp(1.4rem, 2.8vw, 1.95rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 0.98;
+  margin: 3px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .livePlayerList,
 .liveActionList,
 .liveEventList,
@@ -1943,6 +1989,7 @@ a {
 
 .liveNightChatPanel {
   color: var(--paper-200);
+  min-width: 0;
 }
 
 .liveNightChatHeader {
@@ -1968,7 +2015,11 @@ a {
   gap: 8px;
   list-style: none;
   margin: 0;
+  max-height: min(34svh, 320px);
+  overflow: auto;
   padding: 0;
+  scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
+  scrollbar-width: thin;
 }
 
 .liveNightChatMessages li {
@@ -1982,23 +2033,30 @@ a {
 
 .liveNightChatMessages li div {
   align-items: center;
-  display: flex;
+  display: grid;
   gap: 6px;
-  justify-content: space-between;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .liveNightChatMessages strong {
   color: var(--paper-100);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .liveNightChatMessages time {
   color: var(--live-muted);
   font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .liveNightChatPanel p,
 .liveNightChatMessages p {
+  line-height: 1.42;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .liveNightChatComposer {
@@ -2217,6 +2275,7 @@ a {
 
   .liveEntryPanel,
   .liveActionRow,
+  .liveInviteTools,
   .liveNightChatComposer,
   .liveRuleSetGrid,
   .liveControlStack {

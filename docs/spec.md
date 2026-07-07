@@ -445,6 +445,7 @@ Phase 1 には主に Home / Lobby / Game board / Result の画面がある。
 ロビー画面に表示するもの:
 
 - 公開 Room コード
+- Room コードの copy / share 導線
 - Room ステータス
 - ロビー有効期限
 - Player 一覧

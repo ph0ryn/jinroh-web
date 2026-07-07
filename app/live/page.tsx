@@ -76,6 +76,7 @@ const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
+const MAX_ROOM_PLAYERS = 10;
 const LIVE_MOOD_BACKGROUND_SOURCES = [
   "/images/jinroh-lobby-same-angle.jpg",
   "/images/jinroh-day-same-angle.jpg",
@@ -603,6 +604,50 @@ export default function LivePage() {
     });
   }
 
+  async function handleCopyRoomCode(roomCode: string): Promise<void> {
+    const didCopy = await writeClipboardText(roomCode);
+
+    if (didCopy) {
+      setStatusMessage(`Room code ${roomCode} copied.`);
+      return;
+    }
+
+    setRoomCodeInput(roomCode);
+    setStatusMessage(`Copy is unavailable. Use room code ${roomCode}.`);
+  }
+
+  async function handleShareRoom(roomCode: string): Promise<void> {
+    const roomUrl = getLiveRoomUrl();
+    const inviteText = `Jinroh Web room ${roomCode}\nOpen ${roomUrl} and join with this code.`;
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          text: `Join Jinroh Web room ${roomCode}.`,
+          title: "Jinroh Web",
+          url: roomUrl,
+        });
+        setStatusMessage(`Share sheet opened for room ${roomCode}.`);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setStatusMessage("Share cancelled.");
+          return;
+        }
+      }
+    }
+
+    const didCopy = await writeClipboardText(inviteText);
+
+    if (didCopy) {
+      setStatusMessage(`Invite text copied for room ${roomCode}.`);
+      return;
+    }
+
+    setRoomCodeInput(roomCode);
+    setStatusMessage(`Share is unavailable. Use room code ${roomCode}.`);
+  }
+
   function getActionTarget(action: PublicAction): string {
     return targetByActionKey[action.key] ?? action.eligibleTargetIds[0] ?? "";
   }
@@ -699,6 +744,11 @@ export default function LivePage() {
           ) : (
             <>
               <RoomMetrics summary={roomSummary} />
+              <RoomInviteTools
+                summary={roomSummary}
+                onCopyRoomCode={handleCopyRoomCode}
+                onShareRoom={handleShareRoom}
+              />
               <PlayerList players={roomSummary.players} />
             </>
           )}
@@ -806,6 +856,40 @@ function EmptyRoomState() {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function RoomInviteTools({
+  summary,
+  onCopyRoomCode,
+  onShareRoom,
+}: {
+  readonly summary: RoomSummary;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onShareRoom: (roomCode: string) => void;
+}) {
+  const openSeats = Math.max(MAX_ROOM_PLAYERS - summary.players.length, 0);
+
+  return (
+    <div className="liveInviteTools" aria-label="Room invite tools">
+      <div>
+        <span>Invite code</span>
+        <strong>{summary.code}</strong>
+        <small>{openSeats === 0 ? "Table full" : `${openSeats} seats open`}</small>
+      </div>
+      <div>
+        <button
+          className="secondaryButton"
+          type="button"
+          onClick={() => onCopyRoomCode(summary.code)}
+        >
+          Copy code
+        </button>
+        <button className="secondaryButton" type="button" onClick={() => onShareRoom(summary.code)}>
+          Share invite
+        </button>
+      </div>
     </div>
   );
 }
@@ -1427,6 +1511,19 @@ async function parseJson(response: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+async function writeClipboardText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getLiveRoomUrl(): string {
+  return `${window.location.origin}/live`;
 }
 
 function extractErrorMessage(value: unknown, status: number): string {
