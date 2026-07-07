@@ -13,6 +13,7 @@ import {
   type PrivateGameEvent,
   type PublicAction,
   type PublicPlayer,
+  type RealtimeSubscription,
   type RoomSummary,
   type RuleSetInput,
 } from "@/lib/shared/game";
@@ -48,6 +49,8 @@ type RealtimeInvalidationPayload = {
 type RealtimeBroadcastEnvelope = {
   readonly payload?: unknown;
 };
+
+type RealtimeSubscriptionSnapshot = Pick<RealtimeSubscription, "scope" | "topic">;
 
 type StartRuleSetSettings = Omit<RuleSetInput, "roleCounts">;
 
@@ -183,7 +186,7 @@ export default function LivePage() {
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
   const activePhaseInstanceId = roomSummary?.game?.phaseInstanceId ?? null;
-  const activeRealtimeTopic = roomSummary?.realtime?.topic ?? null;
+  const activeRealtimeSubscriptionKey = toRealtimeSubscriptionKey(roomSummary?.realtime ?? null);
   const isHostInPlayingRoom =
     roomSummary?.isHost === true &&
     roomSummary.status === "playing" &&
@@ -264,13 +267,23 @@ export default function LivePage() {
   }, [activeRoomCode, identityToken, rememberRoom, roomSummary?.currentPlayerId]);
 
   useEffect(() => {
-    if (identityToken === null || activeRoomCode === null || activeRealtimeTopic === null) {
+    if (
+      identityToken === null ||
+      activeRoomCode === null ||
+      activeRealtimeSubscriptionKey === "[]"
+    ) {
       return;
     }
 
     const realtimeClient = getSupabaseRealtimeClient();
 
     if (realtimeClient === null) {
+      return;
+    }
+
+    const subscriptions = parseRealtimeSubscriptionKey(activeRealtimeSubscriptionKey);
+
+    if (subscriptions.length === 0) {
       return;
     }
 
@@ -303,22 +316,26 @@ export default function LivePage() {
       }
     }
 
-    const channel = realtimeClient
-      .channel(activeRealtimeTopic, { config: { broadcast: { self: false } } })
-      .on("broadcast", { event: "room_changed" }, (message: RealtimeBroadcastEnvelope) => {
-        if (!isRealtimeInvalidationPayload(message.payload, activeRoomCode)) {
-          return;
-        }
+    const channels = subscriptions.map((subscription) =>
+      realtimeClient
+        .channel(subscription.topic, { config: { broadcast: { self: false } } })
+        .on("broadcast", { event: "room_changed" }, (message: RealtimeBroadcastEnvelope) => {
+          if (!isRealtimeInvalidationPayload(message.payload, activeRoomCode)) {
+            return;
+          }
 
-        void syncRoomFromRealtime();
-      })
-      .subscribe();
+          void syncRoomFromRealtime();
+        })
+        .subscribe(),
+    );
 
     return () => {
       isCancelled = true;
-      void realtimeClient.removeChannel(channel);
+      for (const channel of channels) {
+        void realtimeClient.removeChannel(channel);
+      }
     };
-  }, [activeRealtimeTopic, activeRoomCode, identityToken, rememberRoom]);
+  }, [activeRealtimeSubscriptionKey, activeRoomCode, identityToken, rememberRoom]);
 
   useEffect(() => {
     if (identityToken === null || activeRoomCode === null || activePhaseEndsAt === null) {
@@ -1301,6 +1318,53 @@ function toRequestFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The request failed.";
 }
 
+function toRealtimeSubscriptionKey(realtime: RoomSummary["realtime"]): string {
+  if (realtime === null) {
+    return "[]";
+  }
+
+  const subscriptions =
+    Array.isArray(realtime.subscriptions) && realtime.subscriptions.length > 0
+      ? realtime.subscriptions
+      : [{ scope: "room" as const, topic: realtime.topic }];
+
+  return JSON.stringify(
+    subscriptions
+      .map(({ scope, topic }) => ({ scope, topic }))
+      .toSorted((left, right) =>
+        `${left.scope}:${left.topic}`.localeCompare(`${right.scope}:${right.topic}`),
+      ),
+  );
+}
+
+function parseRealtimeSubscriptionKey(key: string): RealtimeSubscriptionSnapshot[] {
+  const value = parseUnknownJson(key);
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((candidate): RealtimeSubscriptionSnapshot[] => {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate["topic"] !== "string" ||
+      !isRealtimeScope(candidate["scope"])
+    ) {
+      return [];
+    }
+
+    return [{ scope: candidate["scope"], topic: candidate["topic"] }];
+  });
+}
+
+function parseUnknownJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 function isRealtimeInvalidationPayload(
   value: unknown,
   roomCode: string,
@@ -1317,6 +1381,10 @@ function isRealtimeInvalidationPayload(
       value["scope"] === "player_private" ||
       value["scope"] === "role_private")
   );
+}
+
+function isRealtimeScope(value: unknown): value is RealtimeInvalidationPayload["scope"] {
+  return value === "room" || value === "player_private" || value === "role_private";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -954,7 +954,9 @@ Scope。
 - topic は random value にする
 - public room code から topic を作らない
 - topic を知っていることを購読権限の証明にしない
-- Room 参加済み Account にだけ必要な topic を返す
+- `app_get_realtime_subscriptions` から Room 参加済み Account にだけ必要な
+  scoped topic と短命 grant を返す
+- Browser-facing view は room topic との互換値に加えて `subscriptions[]` を返す
 - role private topic は対象 Role を持つ Player だけに返す
 
 ### `realtime_grants`
@@ -1287,8 +1289,9 @@ payload に入れないもの。
 - `game_ended`
 
 秘密情報が変わった場合でも、Realtime payload には秘密情報を入れない。
-対象 Player には `private_view_changed` だけを送り、Next.js API から private view を
-読み直させる。
+対象 Player または対象 Role group の private topic には `private_view_changed` だけを
+送り、Next.js API から private view を読み直させる。夜会話 message body、sender
+reference、internal Player ID は Realtime payload に含めない。
 
 ## Constraints And Indexes
 

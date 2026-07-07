@@ -150,7 +150,17 @@ export type PublicAction = {
   closesAt: string | null;
 };
 
+export type RealtimeScope = "player_private" | "role_private" | "room";
+
+export type RealtimeSubscription = {
+  expiresAt: string;
+  grantId: string;
+  scope: RealtimeScope;
+  topic: string;
+};
+
 export type RealtimeView = {
+  subscriptions: RealtimeSubscription[];
   topic: string;
 };
 

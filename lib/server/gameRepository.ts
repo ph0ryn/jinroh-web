@@ -13,6 +13,8 @@ import {
   type PublicGameView,
   type PublicPlayer,
   type PublicSubmittedAction,
+  type RealtimeScope,
+  type RealtimeSubscription,
   type RoleId,
   type RolePrivateView,
   type RoomStatus,
@@ -178,6 +180,22 @@ type NightConversationMessageRecord = {
   id: number;
   night_number: number;
   sender_player_id: number;
+};
+
+type RealtimeSubscriptionRecord = {
+  expires_at: string;
+  grant_id: string;
+  scope: RealtimeScope;
+  topic: string;
+};
+
+type RealtimeTopicRecord = {
+  scope: RealtimeScope;
+  topic: string;
+};
+
+type BroadcastMutationOptions = {
+  privateRoleIds?: readonly RoleId[];
 };
 
 type JsonObject = Record<string, unknown>;
@@ -472,7 +490,9 @@ export async function submitNightConversationMessage(
   );
   const updatedRoom = toRoomRecord(transactionResult);
 
-  await broadcastMutationResult(supabase, updatedRoom, transactionResult);
+  await broadcastMutationResult(supabase, updatedRoom, transactionResult, {
+    privateRoleIds: group.roleIds,
+  });
 
   return getRoomViewByRoom(supabase, account, updatedRoom);
 }
@@ -623,7 +643,6 @@ async function getRoomViewByRoom(
     playerStates.map((playerState) => [playerState.player_id, playerState]),
   );
   const resultByPlayer = new Map(results.map((result) => [result.player_id, result]));
-  const events = await getPublicEvents(supabase, room.id, players);
   const publicPlayers: PublicPlayer[] = players.map((player) => ({
     alive: stateByPlayer.get(player.id)?.alive ?? null,
     displayName: player.display_name,
@@ -638,6 +657,15 @@ async function getRoomViewByRoom(
     currentAssignment !== null && isRoleId(currentAssignment.role_id)
       ? currentAssignment.role_id
       : null;
+  const [events, realtimeSubscriptions, visiblePrivateEvents] = await Promise.all([
+    getPublicEvents(supabase, room.id, players),
+    currentPlayer === null
+      ? Promise.resolve<RealtimeSubscription[]>([])
+      : getRealtimeSubscriptions(supabase, account, room),
+    currentPlayer === null
+      ? Promise.resolve<PrivateGameEvent[]>([])
+      : getVisiblePrivateEvents(supabase, room.id, players, currentPlayer, currentRoleId),
+  ]);
   const publicGame: PublicGameView | null =
     state === null
       ? null
@@ -658,13 +686,7 @@ async function getRoomViewByRoom(
       ? null
       : {
           actions: toPublicActions(actions, pendingActions, players, currentPlayer, currentRoleId),
-          events: await getVisiblePrivateEvents(
-            supabase,
-            room.id,
-            players,
-            currentPlayer,
-            currentRoleId,
-          ),
+          events: visiblePrivateEvents,
           playerId: currentPlayer.public_player_id,
           result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
           roleId: currentRoleId,
@@ -687,7 +709,10 @@ async function getRoomViewByRoom(
     isHost,
     lobbyExpiresAt: room.lobby_expires_at,
     players: publicPlayers,
-    realtime: currentPlayer === null ? null : { topic: room.realtime_topic },
+    realtime:
+      currentPlayer === null
+        ? null
+        : { subscriptions: realtimeSubscriptions, topic: room.realtime_topic },
     rolePrivate: toRolePrivateView(
       players,
       assignments,
@@ -1171,6 +1196,29 @@ async function getRoomByCodeOrThrow(
   }
 
   return data;
+}
+
+async function getRealtimeSubscriptions(
+  supabase: SupabaseClient,
+  account: AccountRecord,
+  room: RoomRecord,
+): Promise<RealtimeSubscription[]> {
+  const { data, error } = await supabase.rpc("app_get_realtime_subscriptions", {
+    p_account_id: account.id,
+    p_grant_seconds: 900,
+    p_room_code: room.public_room_code,
+  });
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as RealtimeSubscriptionRecord[]).map((subscription) => ({
+    expiresAt: subscription.expires_at,
+    grantId: subscription.grant_id,
+    scope: subscription.scope,
+    topic: subscription.topic,
+  }));
 }
 
 async function expireLobbyIfNeeded(
@@ -1888,20 +1936,110 @@ async function broadcastMutationResult(
   supabase: SupabaseClient,
   room: RoomRecord,
   result: RoomMutationResultRecord,
+  options: BroadcastMutationOptions = {},
 ): Promise<void> {
   if (result.notification_reason === null) {
     return;
   }
 
-  await broadcastRoomInvalidation(supabase, room, result.notification_reason);
+  if (result.notification_reason === "private_view_changed") {
+    try {
+      await broadcastPrivateInvalidation(supabase, room, result, options.privateRoleIds ?? []);
+    } catch {
+      // Realtime lookup/broadcast failures should not fail the authoritative mutation.
+    }
+
+    return;
+  }
+
+  await broadcastRealtimeInvalidation(supabase, {
+    reason: result.notification_reason,
+    roomCode: room.public_room_code,
+    scope: "room",
+    topic: room.realtime_topic,
+  });
 }
 
-async function broadcastRoomInvalidation(
+async function broadcastPrivateInvalidation(
   supabase: SupabaseClient,
   room: RoomRecord,
-  reason: string,
+  result: RoomMutationResultRecord,
+  privateRoleIds: readonly RoleId[],
 ): Promise<void> {
-  const channel = supabase.channel(room.realtime_topic, {
+  if (result.actor_player_id === null) {
+    return;
+  }
+
+  const topics = await getPrivateRealtimeTopicsForPlayer(
+    supabase,
+    room.id,
+    result.actor_player_id,
+    privateRoleIds,
+  );
+
+  await Promise.all(
+    topics.map((topic) =>
+      broadcastRealtimeInvalidation(supabase, {
+        reason: result.notification_reason ?? "private_view_changed",
+        roomCode: room.public_room_code,
+        scope: topic.scope,
+        topic: topic.topic,
+      }),
+    ),
+  );
+}
+
+async function getPrivateRealtimeTopicsForPlayer(
+  supabase: SupabaseClient,
+  roomId: number,
+  playerId: number,
+  privateRoleIds: readonly RoleId[],
+): Promise<RealtimeTopicRecord[]> {
+  const uniqueRoleIds = [...new Set(privateRoleIds)];
+  const playerTopicPromise = supabase
+    .from("realtime_topics")
+    .select("scope,topic")
+    .eq("room_id", roomId)
+    .eq("scope", "player_private")
+    .eq("player_id", playerId)
+    .returns<RealtimeTopicRecord[]>();
+  const roleTopicPromise =
+    uniqueRoleIds.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : supabase
+          .from("realtime_topics")
+          .select("scope,topic")
+          .eq("room_id", roomId)
+          .eq("scope", "role_private")
+          .in("role_id", uniqueRoleIds)
+          .returns<RealtimeTopicRecord[]>();
+  const [playerTopicResult, roleTopicResult] = await Promise.all([
+    playerTopicPromise,
+    roleTopicPromise,
+  ]);
+
+  if (playerTopicResult.error !== null) {
+    throw new Error(playerTopicResult.error.message);
+  }
+
+  if (roleTopicResult.error !== null) {
+    throw new Error(roleTopicResult.error.message);
+  }
+
+  return [...playerTopicResult.data, ...roleTopicResult.data];
+}
+
+async function broadcastRealtimeInvalidation(
+  supabase: SupabaseClient,
+  input: {
+    reason: string;
+    roomCode: string;
+    scope: RealtimeScope;
+    topic: string;
+  },
+): Promise<void> {
+  const { reason, roomCode, scope, topic } = input;
+  const channel = supabase.channel(topic, {
     config: {
       broadcast: { self: false },
     },
@@ -1912,8 +2050,8 @@ async function broadcastRoomInvalidation(
       "room_changed",
       buildRealtimeNotificationPayload({
         reason,
-        roomCode: room.public_room_code,
-        scope: "room",
+        roomCode,
+        scope,
         sentAt: new Date().toISOString(),
       }),
     );

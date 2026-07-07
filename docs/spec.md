@@ -342,7 +342,12 @@ Room を開いている Browser は heartbeat を送る。
 - クライアントはメッセージ受信後にルーム状態を再読み込みするべきである。
 - 公開ルームコードはリアルタイムトピックとして使わない。
 - リアルタイムトピックは Room のために生成されたランダム値である。
-- Room に参加済みの Account だけがリアルタイムトピックを受け取る。
+- Room に参加済みの Account だけが必要なリアルタイム購読先を受け取る。
+- Browser-facing realtime view は `subscriptions[]` として `room`,
+  `player_private`, `role_private` scope の topic を返す。
+- `player_private` と `role_private` topic は短命 grant と一緒に返す。
+- 夜会話などの secret view 更新は room topic へ通知せず、対象 group の
+  private topic へ `private_view_changed` だけを送る。
 
 代表的な通知理由:
 
