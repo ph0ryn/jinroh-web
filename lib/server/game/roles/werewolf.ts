@@ -1,0 +1,96 @@
+import "server-only";
+import {
+  ActionScope,
+  CountGroup,
+  GameActionKind,
+  GameEndReason,
+  GamePhase,
+  InspectionView,
+  PlayerResult,
+  ResolveTiming,
+  RoleGroupActionPolicy,
+  RoleTargetKind,
+  SubmitPolicy,
+  Team,
+} from "../types";
+import { Role } from "./base";
+import { countAliveByGroup } from "./helpers";
+import { WEREWOLF_ROLE_ID } from "./roleIds";
+
+import type { GameEndCandidate, RoleActionDefinition, RoleId } from "../types";
+import type {
+  InspectionContext,
+  PlayerResultContext,
+  PlayerRoleContext,
+  RoleContext,
+} from "./base";
+
+export class WerewolfRole extends Role {
+  override readonly description = "Attacks at night and wins when werewolves dominate.";
+  override readonly id: RoleId = WEREWOLF_ROLE_ID;
+  override readonly minCount = 1;
+  override readonly name = "Werewolf";
+  override readonly nightConversation = {
+    groupId: "werewolf",
+    labelKey: "nightConversation.werewolf",
+  };
+  override readonly required = true;
+  override readonly team = Team.Werewolf;
+
+  override countAs(context: PlayerRoleContext): CountGroup {
+    void context;
+
+    return CountGroup.Werewolf;
+  }
+
+  override seenAs(context: InspectionContext): InspectionView {
+    void context;
+
+    return InspectionView.Werewolf;
+  }
+
+  override getActions(context: PlayerRoleContext): readonly RoleActionDefinition[] {
+    if (context.state.phase !== GamePhase.Night || context.state.nightNumber === 1) {
+      return [];
+    }
+
+    return [
+      {
+        kind: GameActionKind.Attack,
+        phase: GamePhase.Night,
+        required: true,
+        resolveTiming: ResolveTiming.PhaseEnd,
+        roleGroupPolicy: RoleGroupActionPolicy.FirstSubmitWins,
+        roleGroupRoleId: this.id,
+        scope: ActionScope.RoleGroup,
+        submitPolicy: SubmitPolicy.FirstSubmitWins,
+        target: RoleTargetKind.SinglePlayer,
+      },
+    ];
+  }
+
+  override checkEndCondition(context: RoleContext): GameEndCandidate | null {
+    const aliveWerewolves = countAliveByGroup(context, CountGroup.Werewolf);
+    const aliveOthers = countAliveByGroup(context, CountGroup.NonWerewolf);
+
+    if (aliveWerewolves === 0) {
+      return {
+        reason: GameEndReason.WerewolvesEliminated,
+        sourceRoleId: this.id,
+      };
+    }
+
+    if (aliveWerewolves >= aliveOthers) {
+      return {
+        reason: GameEndReason.WerewolfDominance,
+        sourceRoleId: this.id,
+      };
+    }
+
+    return null;
+  }
+
+  override evaluateResult(context: PlayerResultContext): PlayerResult | null {
+    return context.winnerTeam === Team.Werewolf ? PlayerResult.Win : null;
+  }
+}
