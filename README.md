@@ -98,7 +98,7 @@ If a manually applied database is missing migration history rows, repair only
 after verifying the schema:
 
 ```sh
-pnpm exec supabase migration repair --linked --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011
+pnpm exec supabase migration repair --linked --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013
 ```
 
 To verify room-code reuse hardening after
@@ -115,6 +115,19 @@ order by indexname;
 
 The expected result is one `rooms_active_code_unique` row and no
 `rooms_public_room_code_global_unique` row.
+
+Rollback policy:
+
+- Do not edit or delete an already-applied migration.
+- Prefer a forward migration that restores the previous behavior or adds a
+  compatibility path.
+- For a failed `db push` before release traffic reaches the schema, fix the
+  migration locally and rerun against a fresh project.
+- For production data issues, snapshot/export the affected tables first, then
+  apply a forward corrective migration.
+- Application deploys should be rolled back independently from database
+  migrations. Keep server code compatible with the currently applied schema
+  before promoting it.
 
 ## Run
 
@@ -149,6 +162,39 @@ curl -X POST http://localhost:3000/api/maintenance/expire-lobbies \
 
 The endpoint only disbands already-expired lobby rooms and returns the number
 of rooms changed.
+
+## Deploy
+
+Deploy the Next.js app to Vercel or another server runtime that supports the
+Next.js App Router API routes.
+
+Production environment variables:
+
+```sh
+ACCOUNT_TOKEN_HASH_SECRET=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+```
+
+Deployment order:
+
+1. Apply Supabase migrations with `pnpm exec supabase db push`.
+2. Confirm `pnpm exec supabase migration list` shows local and remote at the
+   same latest migration.
+3. Configure the production environment variables in the host.
+4. Build with `pnpm run build`.
+5. Deploy the app.
+6. Run smoke checks against the deployment, for example:
+
+```sh
+E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e
+E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e:security
+```
+
+If using scheduled cleanup, call `/api/maintenance/expire-lobbies` from a
+trusted cron job. The endpoint is idempotent for already-expired lobbies.
 
 ## Validation
 

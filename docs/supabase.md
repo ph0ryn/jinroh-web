@@ -724,7 +724,7 @@ action key の作り方。
 - 無効な submission は current action を完了させない
 - timing が解決されたら削除する
 - 解決済みの結果は `game_events` に残す
-- stale `phase_instance_id` の submission は拒否する
+- stale `phase_instance_id` または stale expected `revision` の submission は拒否する
 
 role group action でも、最初に受理された有効 pending action だけを採用する。
 人狼が複数いて同じ夜に別々の襲撃先を送った場合も、最初の有効な襲撃だけを解決する。
