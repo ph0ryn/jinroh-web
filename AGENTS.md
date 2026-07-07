@@ -8,20 +8,22 @@ Web. Keep personal, machine-level, or global agent rules out of this file.
 ## Project Context
 
 Jinroh Web is a Next.js application for managing shared game state for in-person
-or voice-call werewolf games. The current product boundary is the lobby
-foundation: anonymous browser identity, room creation and joining, player
-management, host state, realtime room updates, and cleanup of rooms that never
-started.
+or voice-call werewolf games. The current product boundary is a complete
+playable foundation: anonymous browser identity, room creation and joining,
+player management, host state, realtime invalidation, role assignment, phase
+timers, night actions, voting, execution, final results, and role-private night
+conversation for roles that opt in.
 
-Do not implement role assignment, night actions, voting, chat, direct messages,
-registered accounts, OAuth, moderation tools, admin screens, billing, or friend
-features unless the product spec is updated first.
+Do not implement general public chat, direct messages, registered accounts,
+OAuth, moderation tools, admin screens, billing, or friend features unless the
+product spec is updated first. Role-private night conversation is in scope only
+through the explicit role opt-in model in `docs/game/night-conversation.md`.
 
 ## Source Of Truth
 
 - Use `docs/spec.md` as the primary product specification.
 - Use `docs/game/*.md` for game-flow, ruleset, visibility, model, and engine
-  details when work moves beyond the lobby foundation.
+  details for playable game behavior.
 - If `README.md` conflicts with `docs/spec.md`, follow `docs/spec.md`.
 
 ## Repository Layout

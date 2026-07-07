@@ -25,21 +25,27 @@ voting, execution, and locked final results.
 
 ## UI Surface
 
-The current app shell is a local, code-native product surface for the full
-Jinroh Web direction:
+The current app shell is a live product surface backed by Next.js API routes
+and Supabase:
 
 - Home and lobby entry for anonymous room creation and code-based joining.
 - Desktop game board with state rail, phase timeline, player seats, host
   controls, action status, activity, and role legend.
-- Night, day, voting, execution, result, and demo states driven by local UI
-  state for product review and demos.
+- First night, night actions, day progress, voting, execution, result, and
+  role-private night conversation.
 - Mobile layout with stacked content, scrollable state rail, and bottom phase
   tabs.
 
-This UI does not add new persisted game behavior by itself. Use `docs/spec.md`
-as the implementation boundary for the current product.
+Use `docs/spec.md` as the primary product boundary and `docs/game/*.md` for
+game-system details.
 
 ## Local Setup
+
+Install dependencies:
+
+```sh
+pnpm install
+```
 
 Create `.env.local`:
 
@@ -57,23 +63,46 @@ Generate the token hash secret with:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
-Install dependencies and run:
-
-```sh
-pnpm install
-pnpm dev
-```
-
-Apply the Supabase schema files in `supabase/migrations/` to a fresh Supabase
-project before using the app.
-
 `NEXT_PUBLIC_SUPABASE_URL` should match `SUPABASE_URL`. Add
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` to enable Supabase Realtime invalidation in the
 browser. Without the public key, the live table still works through polling.
 Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser.
 
-For an existing Supabase project, apply migrations in order. To verify room-code
-reuse hardening after `0003_restore_active_room_code_reuse.sql`, run:
+## Database Setup
+
+Log in and link the Supabase project:
+
+```sh
+pnpm exec supabase login
+pnpm exec supabase link --project-ref <project-ref>
+```
+
+Apply migrations:
+
+```sh
+pnpm exec supabase db push
+```
+
+If the CLI cannot connect with the temporary login role, set
+`SUPABASE_DB_PASSWORD` for the linked project's database password and rerun the
+same command.
+
+For an existing project that was migrated manually, verify migration history:
+
+```sh
+pnpm exec supabase migration list
+```
+
+Local and remote versions should both list `0001` through the latest migration.
+If a manually applied database is missing migration history rows, repair only
+after verifying the schema:
+
+```sh
+pnpm exec supabase migration repair --linked --status applied 0001 0002 0003 0004 0005 0006 0007 0008
+```
+
+To verify room-code reuse hardening after
+`0003_restore_active_room_code_reuse.sql`, run:
 
 ```sql
 select indexname, indexdef
@@ -87,21 +116,50 @@ order by indexname;
 The expected result is one `rooms_active_code_unique` row and no
 `rooms_public_room_code_global_unique` row.
 
+## Run
+
+Start the development server:
+
+```sh
+pnpm dev
+```
+
+Open `http://localhost:3000/live`.
+
+Basic play flow:
+
+- Enter a display name and create a room.
+- Share the six-digit room code with other players.
+- Other browsers or profiles join with the code.
+- The host starts the game once 3 to 10 players are joined.
+- Players use their visible action controls through first night, day, voting,
+  execution, normal night, and result.
+- Werewolf players can open night chat; it is writable during night and
+  read-only outside night.
+
 ## Validation
 
 ```sh
+pnpm run format
 pnpm run lint
 pnpm test
+pnpm exec tsc --noEmit --incremental false --pretty false
 pnpm run build
 pnpm run test:e2e
+pnpm run test:e2e:roles
+E2E_RULESET=ordered_speech E2E_PORT=3015 node scripts/e2e-live-smoke.mjs
 ```
 
 The focused tests cover ruleset validation, token hashing, secret-safe game
 events, role-scoped night actions, winner judgement, and player result mapping.
 The E2E smoke test starts the built app with `next start`, launches three
 isolated browser contexts, and plays a room from creation through the final
-result, including the execution timeout path. To test an already running
-deployment, pass `E2E_BASE_URL=https://... pnpm run test:e2e`.
+result, including the execution timeout path.
+
+`test:e2e:roles` launches eight isolated browser contexts and verifies the
+default role set, role-private night actions, night conversation visibility,
+non-member rejection, and read-only chat after night. To test an already
+running deployment, pass `E2E_BASE_URL=https://...` to the E2E command.
 
 ## Architecture
 
