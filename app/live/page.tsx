@@ -54,6 +54,8 @@ type RealtimeSubscriptionSnapshot = Pick<RealtimeSubscription, "scope" | "topic"
 
 type StartRuleSetSettings = Omit<RuleSetInput, "roleCounts">;
 
+type LiveMood = "closed" | "day" | "execution" | "lobby" | "night" | "result" | "setup" | "voting";
+
 type RuleSetNumberField =
   | "dayReadyCheckSecondsPerPlayer"
   | "daySpeechSeconds"
@@ -592,9 +594,10 @@ export default function LivePage() {
   const startHint = getStartHint(roomSummary, isBusy);
   const advanceHint = getAdvanceHint(roomSummary, isBusy);
   const leaveHint = getLeaveHint(roomSummary, isBusy);
+  const liveMood = getLiveMood(roomSummary);
 
   return (
-    <main className="liveShell">
+    <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
       <section className="liveHero">
         <Link className="liveBackLink" href="/">
           Back to overview
@@ -1518,6 +1521,26 @@ function clampRuleSetNumber(field: RuleSetNumberField, value: number): number {
   const integerValue = Math.trunc(value);
 
   return Math.min(limits.max, Math.max(limits.min, integerValue));
+}
+
+function getLiveMood(summary: RoomSummary | null): LiveMood {
+  if (summary === null) {
+    return "setup";
+  }
+
+  if (summary.status === "disbanded") {
+    return "closed";
+  }
+
+  if (summary.game?.status === "ended") {
+    return "result";
+  }
+
+  if (summary.status === "lobby") {
+    return "lobby";
+  }
+
+  return summary.game?.phase ?? "setup";
 }
 
 function getLiveGuidance(

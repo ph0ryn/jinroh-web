@@ -1277,13 +1277,209 @@ a {
 }
 
 .liveShell {
+  --live-accent: var(--brass-300);
+  --live-accent-rgb: 217, 173, 95;
+  --live-avatar-border: rgba(119, 189, 117, 0.86);
+  --live-bg-image: url("/images/jinroh-lobby.jpg");
+  --live-danger-bg: rgba(116, 48, 45, 0.42);
+  --live-danger-border: rgba(167, 71, 61, 0.62);
+  --live-input-bg: rgba(241, 230, 202, 0.08);
+  --live-muted: var(--muted);
+  --live-panel-bg: rgba(7, 11, 10, 0.74);
+  --live-panel-border: var(--line-strong);
+  --live-primary-bg: linear-gradient(135deg, var(--forest-700), rgba(42, 98, 67, 0.88));
+  --live-primary-border: rgba(119, 189, 117, 0.45);
+  --live-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.92), rgba(7, 11, 10, 0.72));
+  --live-secondary-bg: rgba(241, 230, 202, 0.06);
+  --live-soft-surface: rgba(241, 230, 202, 0.05);
+  --live-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.12), rgba(7, 11, 10, 0.46));
+  --live-wash:
+    radial-gradient(circle at 76% 12%, rgba(217, 173, 95, 0.14), transparent 31rem),
+    radial-gradient(circle at 16% 84%, rgba(119, 189, 117, 0.1), transparent 30rem);
   background:
-    linear-gradient(90deg, rgba(7, 11, 10, 0.92), rgba(7, 11, 10, 0.72)),
-    url("/images/jinroh-tabletop.jpg") center top / cover fixed no-repeat;
+    var(--live-scrim),
+    var(--live-bg-image) center top / cover fixed no-repeat;
   display: grid;
   gap: 14px;
+  isolation: isolate;
   min-height: 100svh;
+  overflow-x: clip;
   padding: 18px;
+  position: relative;
+  transition:
+    background 420ms ease,
+    color 240ms ease;
+}
+
+.liveShell::before,
+.liveShell::after {
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  transition:
+    background 420ms ease,
+    opacity 420ms ease;
+  z-index: -1;
+}
+
+.liveShell::before {
+  background: var(--live-wash);
+  opacity: 1;
+}
+
+.liveShell::after {
+  background: var(--live-vignette);
+}
+
+.liveShell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.liveMood-setup,
+.liveMood-lobby {
+  --live-accent: #d8af68;
+  --live-accent-rgb: 216, 175, 104;
+  --live-avatar-border: rgba(216, 175, 104, 0.58);
+  --live-bg-image: url("/images/jinroh-lobby.jpg");
+  --live-input-bg: rgba(241, 230, 202, 0.075);
+  --live-muted: #a9a08c;
+  --live-panel-bg: rgba(7, 11, 10, 0.76);
+  --live-panel-border: rgba(217, 173, 95, 0.24);
+  --live-primary-bg: linear-gradient(135deg, rgba(28, 77, 55, 0.8), rgba(95, 75, 43, 0.76));
+  --live-primary-border: rgba(216, 175, 104, 0.42);
+  --live-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.9), rgba(12, 18, 16, 0.68));
+  --live-secondary-bg: rgba(241, 230, 202, 0.065);
+  --live-soft-surface: rgba(241, 230, 202, 0.052);
+  --live-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.1), rgba(7, 11, 10, 0.54));
+  --live-wash:
+    radial-gradient(circle at 14% 13%, rgba(217, 173, 95, 0.14), transparent 24rem),
+    radial-gradient(circle at 82% 78%, rgba(119, 189, 117, 0.07), transparent 28rem);
+}
+
+.liveMood-night {
+  --live-accent: #e3b568;
+  --live-accent-rgb: 227, 181, 104;
+  --live-avatar-border: rgba(227, 181, 104, 0.7);
+  --live-bg-image: url("/images/jinroh-night.jpg");
+  --live-input-bg: rgba(241, 230, 202, 0.065);
+  --live-muted: #b8aa8e;
+  --live-panel-bg: rgba(5, 6, 5, 0.82);
+  --live-panel-border: rgba(217, 173, 95, 0.25);
+  --live-primary-bg: linear-gradient(135deg, rgba(85, 40, 34, 0.9), rgba(13, 25, 20, 0.96));
+  --live-primary-border: rgba(227, 181, 104, 0.46);
+  --live-scrim: linear-gradient(90deg, rgba(3, 5, 4, 0.88), rgba(7, 11, 10, 0.54));
+  --live-secondary-bg: rgba(227, 181, 104, 0.068);
+  --live-soft-surface: rgba(227, 181, 104, 0.05);
+  --live-vignette: linear-gradient(180deg, rgba(3, 5, 4, 0.04), rgba(2, 3, 3, 0.72));
+  --live-wash:
+    radial-gradient(circle at 14% 12%, rgba(255, 198, 98, 0.18), transparent 22rem),
+    radial-gradient(circle at 47% 84%, rgba(167, 71, 61, 0.12), transparent 24rem),
+    linear-gradient(120deg, rgba(18, 52, 40, 0.1), transparent 58%);
+}
+
+.liveMood-day {
+  --live-accent: #f0c66e;
+  --live-accent-rgb: 240, 198, 110;
+  --live-avatar-border: rgba(119, 189, 117, 0.9);
+  --live-bg-image: url("/images/jinroh-day.jpg");
+  --live-input-bg: rgba(241, 230, 202, 0.13);
+  --live-muted: #d1c19a;
+  --live-panel-bg: rgba(18, 18, 13, 0.6);
+  --live-panel-border: rgba(241, 230, 202, 0.34);
+  --live-primary-bg: linear-gradient(135deg, rgba(50, 103, 70, 0.92), rgba(139, 103, 48, 0.82));
+  --live-primary-border: rgba(240, 198, 110, 0.48);
+  --live-scrim: linear-gradient(90deg, rgba(12, 18, 16, 0.66), rgba(44, 38, 25, 0.32));
+  --live-secondary-bg: rgba(241, 230, 202, 0.11);
+  --live-soft-surface: rgba(241, 230, 202, 0.09);
+  --live-vignette: linear-gradient(180deg, rgba(255, 232, 164, 0.08), rgba(7, 11, 10, 0.26));
+  --live-wash:
+    radial-gradient(circle at 74% 0%, rgba(255, 220, 138, 0.32), transparent 28rem),
+    radial-gradient(circle at 12% 76%, rgba(119, 189, 117, 0.14), transparent 28rem),
+    linear-gradient(120deg, rgba(255, 238, 184, 0.12), transparent 56%);
+}
+
+.liveMood-voting {
+  --live-accent: #e29a58;
+  --live-accent-rgb: 226, 154, 88;
+  --live-avatar-border: rgba(226, 154, 88, 0.84);
+  --live-bg-image: url("/images/jinroh-voting.jpg");
+  --live-danger-bg: rgba(116, 48, 45, 0.56);
+  --live-input-bg: rgba(241, 230, 202, 0.075);
+  --live-muted: #c8ad8b;
+  --live-panel-bg: rgba(18, 9, 8, 0.8);
+  --live-panel-border: rgba(167, 71, 61, 0.38);
+  --live-primary-bg: linear-gradient(135deg, rgba(116, 48, 45, 0.92), rgba(170, 93, 45, 0.72));
+  --live-primary-border: rgba(226, 154, 88, 0.56);
+  --live-scrim: linear-gradient(90deg, rgba(24, 10, 8, 0.9), rgba(78, 38, 20, 0.5));
+  --live-secondary-bg: rgba(226, 154, 88, 0.075);
+  --live-soft-surface: rgba(226, 154, 88, 0.06);
+  --live-vignette: linear-gradient(180deg, rgba(226, 154, 88, 0.1), rgba(7, 11, 10, 0.62));
+  --live-wash:
+    radial-gradient(circle at 78% 0%, rgba(240, 160, 78, 0.26), transparent 28rem),
+    radial-gradient(circle at 42% 82%, rgba(167, 71, 61, 0.18), transparent 29rem);
+}
+
+.liveMood-execution {
+  --live-accent: #efb36b;
+  --live-accent-rgb: 239, 179, 107;
+  --live-avatar-border: rgba(167, 71, 61, 0.86);
+  --live-bg-image: url("/images/jinroh-voting.jpg");
+  --live-danger-bg: rgba(116, 48, 45, 0.66);
+  --live-input-bg: rgba(241, 230, 202, 0.07);
+  --live-muted: #c2a58a;
+  --live-panel-bg: rgba(9, 5, 6, 0.84);
+  --live-panel-border: rgba(167, 71, 61, 0.44);
+  --live-primary-bg: linear-gradient(135deg, rgba(116, 48, 45, 0.94), rgba(43, 18, 18, 0.92));
+  --live-primary-border: rgba(239, 179, 107, 0.52);
+  --live-scrim: linear-gradient(90deg, rgba(7, 4, 5, 0.97), rgba(30, 9, 10, 0.7));
+  --live-secondary-bg: rgba(239, 179, 107, 0.07);
+  --live-soft-surface: rgba(167, 71, 61, 0.065);
+  --live-vignette: linear-gradient(180deg, rgba(7, 4, 5, 0.16), rgba(2, 2, 2, 0.72));
+  --live-wash:
+    radial-gradient(circle at 50% 12%, rgba(239, 179, 107, 0.16), transparent 22rem),
+    radial-gradient(circle at 52% 64%, rgba(167, 71, 61, 0.16), transparent 26rem);
+}
+
+.liveMood-result {
+  --live-accent: #d8af68;
+  --live-accent-rgb: 216, 175, 104;
+  --live-avatar-border: rgba(216, 175, 104, 0.62);
+  --live-bg-image: url("/images/jinroh-result.jpg");
+  --live-input-bg: rgba(241, 230, 202, 0.08);
+  --live-muted: #aaa18d;
+  --live-panel-bg: rgba(8, 12, 10, 0.74);
+  --live-panel-border: rgba(217, 173, 95, 0.26);
+  --live-primary-bg: linear-gradient(135deg, rgba(28, 77, 55, 0.82), rgba(95, 75, 43, 0.78));
+  --live-primary-border: rgba(216, 175, 104, 0.44);
+  --live-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.86), rgba(12, 18, 16, 0.6));
+  --live-secondary-bg: rgba(241, 230, 202, 0.072);
+  --live-soft-surface: rgba(241, 230, 202, 0.058);
+  --live-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.08), rgba(7, 11, 10, 0.5));
+  --live-wash:
+    radial-gradient(circle at 14% 13%, rgba(217, 173, 95, 0.16), transparent 24rem),
+    radial-gradient(circle at 82% 78%, rgba(119, 189, 117, 0.08), transparent 28rem);
+}
+
+.liveMood-closed {
+  --live-accent: #bda982;
+  --live-accent-rgb: 189, 169, 130;
+  --live-avatar-border: rgba(189, 169, 130, 0.6);
+  --live-bg-image: url("/images/jinroh-result.jpg");
+  --live-input-bg: rgba(241, 230, 202, 0.055);
+  --live-muted: #9f9788;
+  --live-panel-bg: rgba(7, 8, 8, 0.82);
+  --live-panel-border: rgba(189, 169, 130, 0.2);
+  --live-primary-bg: linear-gradient(135deg, rgba(57, 54, 46, 0.84), rgba(23, 25, 24, 0.9));
+  --live-primary-border: rgba(189, 169, 130, 0.32);
+  --live-scrim: linear-gradient(90deg, rgba(5, 6, 6, 0.96), rgba(12, 12, 11, 0.76));
+  --live-secondary-bg: rgba(189, 169, 130, 0.06);
+  --live-soft-surface: rgba(189, 169, 130, 0.045);
+  --live-vignette: linear-gradient(180deg, rgba(5, 6, 6, 0.08), rgba(2, 2, 2, 0.7));
+  --live-wash:
+    radial-gradient(circle at 72% 12%, rgba(189, 169, 130, 0.09), transparent 25rem),
+    radial-gradient(circle at 16% 80%, rgba(80, 86, 78, 0.1), transparent 28rem);
 }
 
 .liveHero {
@@ -1308,7 +1504,7 @@ a {
 }
 
 .liveKicker {
-  color: var(--brass-300);
+  color: var(--live-accent);
   font-size: 0.8rem;
   font-weight: 850;
   text-transform: uppercase;
@@ -1319,10 +1515,16 @@ a {
 .liveStatusBar,
 .livePanel {
   backdrop-filter: blur(18px);
-  background: rgba(7, 11, 10, 0.74);
-  border: 1px solid var(--line-strong);
+  background: var(--live-panel-bg);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-tight);
+  box-shadow:
+    var(--shadow-tight),
+    0 0 42px rgba(var(--live-accent-rgb), 0.04);
+  transition:
+    background 260ms ease,
+    border-color 260ms ease,
+    box-shadow 260ms ease;
 }
 
 .liveBackLink {
@@ -1342,7 +1544,7 @@ a {
 }
 
 .liveEntryPanel label {
-  color: var(--muted);
+  color: var(--live-muted);
   display: grid;
   font-size: 0.84rem;
   font-weight: 780;
@@ -1354,8 +1556,8 @@ a {
 .liveNightChatComposer input,
 .liveRuleSetField input,
 .liveRuleSetField select {
-  background: rgba(241, 230, 202, 0.08);
-  border: 1px solid var(--line-strong);
+  background: var(--live-input-bg);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   color: var(--paper-100);
   min-height: 44px;
@@ -1376,10 +1578,24 @@ a {
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 52px;
   padding: 12px 14px;
+  position: relative;
+}
+
+.liveStatusBar::before {
+  background: linear-gradient(
+    180deg,
+    rgba(var(--live-accent-rgb), 0.9),
+    rgba(var(--live-accent-rgb), 0.12)
+  );
+  border-radius: 999px;
+  content: "";
+  inset: 10px auto 10px 0;
+  position: absolute;
+  width: 3px;
 }
 
 .liveStatusBar span {
-  color: var(--brass-300);
+  color: var(--live-accent);
   font-weight: 820;
   white-space: nowrap;
 }
@@ -1391,7 +1607,7 @@ a {
 }
 
 .liveStatusBar small {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.8rem;
   grid-column: 2;
   line-height: 1.35;
@@ -1399,8 +1615,8 @@ a {
 
 .liveShell button {
   align-items: center;
-  background: linear-gradient(135deg, var(--forest-700), rgba(42, 98, 67, 0.88));
-  border: 1px solid rgba(119, 189, 117, 0.45);
+  background: var(--live-primary-bg);
+  border: 1px solid var(--live-primary-border);
   border-radius: var(--radius-small);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   color: var(--paper-100);
@@ -1430,14 +1646,14 @@ a {
 }
 
 .liveShell .secondaryButton {
-  background: rgba(241, 230, 202, 0.06);
-  border-color: var(--line-strong);
+  background: var(--live-secondary-bg);
+  border-color: var(--live-panel-border);
   color: var(--paper-200);
 }
 
 .liveShell .dangerButton {
-  background: rgba(116, 48, 45, 0.42);
-  border-color: rgba(167, 71, 61, 0.62);
+  background: var(--live-danger-bg);
+  border-color: var(--live-danger-border);
   color: var(--paper-100);
 }
 
@@ -1463,14 +1679,14 @@ a {
 
 .livePanelHeading span,
 .liveSelfView span {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.8rem;
   font-weight: 820;
   text-transform: uppercase;
 }
 
 .livePanelHeading strong {
-  color: var(--brass-300);
+  color: var(--live-accent);
   text-transform: capitalize;
 }
 
@@ -1482,8 +1698,8 @@ a {
 }
 
 .liveMetrics div {
-  background: rgba(241, 230, 202, 0.06);
-  border: 1px solid var(--line);
+  background: var(--live-soft-surface);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   padding: 10px;
 }
@@ -1494,7 +1710,7 @@ a {
 }
 
 .liveMetrics dt {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.76rem;
 }
 
@@ -1514,8 +1730,8 @@ a {
 
 .livePlayerRow {
   align-items: center;
-  background: rgba(241, 230, 202, 0.05);
-  border: 1px solid var(--line);
+  background: var(--live-soft-surface);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   display: grid;
   gap: 10px;
@@ -1524,7 +1740,8 @@ a {
 }
 
 .livePlayerRow.current {
-  border-color: var(--brass-300);
+  border-color: var(--live-accent);
+  box-shadow: 0 0 0 1px rgba(var(--live-accent-rgb), 0.08);
 }
 
 .livePlayerRow span:not(.liveAvatar) {
@@ -1547,7 +1764,7 @@ a {
 .liveEventList time,
 .liveEventList p,
 .liveEmptyState p {
-  color: var(--muted);
+  color: var(--live-muted);
 }
 
 .livePlayerRow em {
@@ -1558,7 +1775,7 @@ a {
 .liveAvatar {
   align-items: center;
   background: linear-gradient(135deg, var(--forest-700), var(--ink-900));
-  border: 2px solid var(--green-500);
+  border: 2px solid var(--live-avatar-border);
   border-radius: 50%;
   display: inline-flex;
   font-weight: 820;
@@ -1579,15 +1796,15 @@ a {
 }
 
 .liveControlHints p {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.78rem;
   line-height: 1.35;
   margin: 0;
 }
 
 .liveRuleSetPanel {
-  background: rgba(241, 230, 202, 0.045);
-  border: 1px solid var(--line);
+  background: var(--live-soft-surface);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   display: grid;
   gap: 12px;
@@ -1603,14 +1820,14 @@ a {
 
 .liveRuleSetHeader span,
 .liveRuleSetField span {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.76rem;
   font-weight: 820;
   text-transform: uppercase;
 }
 
 .liveRuleSetHeader strong {
-  color: var(--brass-300);
+  color: var(--live-accent);
   font-size: 0.88rem;
 }
 
@@ -1651,7 +1868,7 @@ a {
 .liveRolePill {
   align-items: center;
   background: rgba(7, 11, 10, 0.36);
-  border: 1px solid var(--line);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   display: inline-flex;
   gap: 8px;
@@ -1665,11 +1882,11 @@ a {
 }
 
 .liveRolePill.muted strong {
-  color: var(--muted);
+  color: var(--live-muted);
 }
 
 .liveRolePill em {
-  color: var(--brass-300);
+  color: var(--live-accent);
   font-size: 0.8rem;
   font-style: normal;
   font-weight: 850;
@@ -1678,8 +1895,8 @@ a {
 .liveSelfView,
 .liveActionRow,
 .liveEmptyState {
-  background: rgba(241, 230, 202, 0.05);
-  border: 1px solid var(--line);
+  background: var(--live-soft-surface);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   padding: 12px;
 }
@@ -1701,7 +1918,7 @@ a {
 .livePrivateEvents,
 .liveSubmittedActions,
 .liveNightChatPanel {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--live-panel-border);
   display: grid;
   gap: 10px;
   margin-top: 6px;
@@ -1710,7 +1927,7 @@ a {
 
 .livePrivateEvents strong,
 .liveSubmittedActions strong {
-  color: var(--brass-300);
+  color: var(--live-accent);
 }
 
 .liveNightChatPanel {
@@ -1729,7 +1946,7 @@ a {
 }
 
 .liveNightChatHeader em {
-  color: var(--brass-300);
+  color: var(--live-accent);
   font-size: 0.76rem;
   font-style: normal;
   font-weight: 790;
@@ -1745,7 +1962,7 @@ a {
 
 .liveNightChatMessages li {
   background: rgba(7, 11, 10, 0.32);
-  border: 1px solid var(--line);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   display: grid;
   gap: 5px;
@@ -1764,7 +1981,7 @@ a {
 }
 
 .liveNightChatMessages time {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.76rem;
 }
 
@@ -1781,7 +1998,7 @@ a {
 }
 
 .liveNightChatComposer label {
-  color: var(--muted);
+  color: var(--live-muted);
   display: grid;
   font-size: 0.78rem;
   font-weight: 780;
@@ -1789,7 +2006,7 @@ a {
 }
 
 .liveNightChatComposer small {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.76rem;
   justify-self: end;
 }
@@ -1802,7 +2019,7 @@ a {
 }
 
 .liveActionRow.submitted {
-  border-color: rgba(119, 189, 117, 0.36);
+  border-color: rgba(var(--live-accent-rgb), 0.36);
 }
 
 .liveActionRow div {
@@ -1832,7 +2049,7 @@ a {
 }
 
 .liveEventList li {
-  border-left: 2px solid var(--line-strong);
+  border-left: 2px solid var(--live-panel-border);
   display: grid;
   gap: 4px;
   padding: 0 0 14px 12px;
@@ -1850,8 +2067,8 @@ a {
 }
 
 .liveEventDetails div {
-  background: rgba(241, 230, 202, 0.05);
-  border: 1px solid var(--line);
+  background: var(--live-soft-surface);
+  border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
   padding: 7px 8px;
 }
@@ -1862,7 +2079,7 @@ a {
 }
 
 .liveEventDetails dt {
-  color: var(--muted);
+  color: var(--live-muted);
   font-size: 0.72rem;
   font-weight: 780;
 }
@@ -1931,10 +2148,10 @@ a {
 
 .liveEmptySteps span {
   align-items: center;
-  background: rgba(178, 145, 83, 0.12);
-  border: 1px solid rgba(178, 145, 83, 0.36);
+  background: rgba(var(--live-accent-rgb), 0.12);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.36);
   border-radius: 50%;
-  color: var(--brass-300);
+  color: var(--live-accent);
   display: flex;
   font-size: 0.72rem;
   font-weight: 850;
@@ -1974,7 +2191,7 @@ a {
 
 @media (max-width: 720px) {
   .liveShell {
-    background-attachment: scroll, scroll;
+    background-attachment: scroll;
     padding: 14px;
   }
 

@@ -10,6 +10,15 @@ import { chromium } from "playwright";
 const DEFAULT_MANAGED_URL = `http://localhost:${process.env.E2E_PORT ?? "3010"}`;
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const IS_ORDERED_SPEECH_E2E = process.env.E2E_RULESET === "ordered_speech";
+const MOOD_BACKGROUND_BY_NAME = {
+  day: "jinroh-day.jpg",
+  execution: "jinroh-voting.jpg",
+  lobby: "jinroh-lobby.jpg",
+  night: "jinroh-night.jpg",
+  result: "jinroh-result.jpg",
+  setup: "jinroh-lobby.jpg",
+  voting: "jinroh-voting.jpg",
+};
 const SCREENSHOT_DIR =
   process.env.E2E_SCREENSHOT_DIR ?? join(tmpdir(), `jinroh-web-e2e-${Date.now()}`);
 const EXECUTION_TIMEOUT_WAIT_MS = Number(process.env.E2E_EXECUTION_TIMEOUT_WAIT_MS ?? "61500");
@@ -98,6 +107,8 @@ async function runLiveSmoke(baseUrl) {
 
     await clickAndWaitForMetric(host.page, "Create room", "Code");
     const roomCode = await readMetric(host.page, "Code");
+    await waitMood(host.page, "lobby");
+    await assertMoodVisual(host.page, "lobby");
 
     if (!/^\d{6}$/.test(roomCode ?? "")) {
       throw new Error(`Expected six-digit room code, got ${roomCode ?? "null"}.`);
@@ -114,6 +125,8 @@ async function runLiveSmoke(baseUrl) {
 
     await startGame(host, baseUrl, roomCode);
     await waitPhase(host.page, "night");
+    await waitMood(host.page, "night");
+    await assertMoodVisual(host.page, "night");
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "night");
     await waitPhase(player3.page, "night");
@@ -121,6 +134,8 @@ async function runLiveSmoke(baseUrl) {
     await submitAll(players);
     await advance(host);
     await waitPhase(host.page, "day");
+    await waitMood(host.page, "day");
+    await assertMoodVisual(host.page, "day");
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "day");
     await waitPhase(player3.page, "day");
@@ -131,6 +146,8 @@ async function runLiveSmoke(baseUrl) {
       await submitAll(players);
       await advance(host);
       await waitPhase(host.page, "voting");
+      await waitMood(host.page, "voting");
+      await assertMoodVisual(host.page, "voting");
       await refreshAll([player2, player3]);
       await waitPhase(player2.page, "voting");
       await waitPhase(player3.page, "voting");
@@ -139,8 +156,12 @@ async function runLiveSmoke(baseUrl) {
     await submitAll(players);
     await advance(host);
     await waitPhase(host.page, "execution");
+    await waitMood(host.page, "execution");
+    await assertMoodVisual(host.page, "execution");
     await host.page.waitForTimeout(EXECUTION_TIMEOUT_WAIT_MS);
     const resolutionPath = await resolveAfterTimeout(host);
+    await waitMood(host.page, "result");
+    await assertMoodVisual(host.page, "result");
     await refreshAll([player2, player3]);
     await waitEnded(player2.page);
     await waitEnded(player3.page);
@@ -148,13 +169,25 @@ async function runLiveSmoke(baseUrl) {
     const desktopScreenshot = join(SCREENSHOT_DIR, "live-result-desktop.png");
     await host.page.screenshot({ fullPage: false, path: desktopScreenshot });
     await host.page.setViewportSize({ height: 844, width: 390 });
+    await host.page.waitForTimeout(250);
+    await host.page.evaluate(() => {
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+      window.scrollTo(0, 0);
+    });
+    await host.page.waitForTimeout(100);
     const mobileScreenshot = join(SCREENSHOT_DIR, "live-result-mobile.png");
     await host.page.screenshot({ fullPage: false, path: mobileScreenshot });
 
     const evidence = await readEvidence(host.page);
     const visualCheck = await readVisualCheck(host.page);
 
-    if (!evidence.hasResult || evidence.roomStatus !== "Ended" || evidence.winner === "none") {
+    if (
+      !evidence.hasResult ||
+      evidence.liveMood !== "result" ||
+      evidence.roomStatus !== "Ended" ||
+      evidence.winner === "none"
+    ) {
       throw new Error(`Game did not end cleanly: ${JSON.stringify(evidence)}`);
     }
 
@@ -198,6 +231,8 @@ async function createPlayer(browser, baseUrl, label, displayName, errors, warnin
   page.on("pageerror", (error) => errors.push(`${label}: pageerror ${error.message}`));
 
   await page.goto(`${baseUrl}/live`, { waitUntil: "networkidle" });
+  await waitMood(page, "setup");
+  await assertMoodVisual(page, "setup");
   await page.getByLabel("Display name").fill(displayName);
 
   return { context, label, page };
@@ -330,6 +365,61 @@ async function waitPhase(page, phase) {
   await waitMetric(page, "Phase", phase);
 }
 
+async function waitMood(page, mood) {
+  await page.waitForFunction(
+    (expectedMood) =>
+      document.querySelector(".liveShell")?.getAttribute("data-live-mood") === expectedMood,
+    mood,
+    { timeout: 10000 },
+  );
+}
+
+async function assertMoodVisual(page, mood) {
+  const expectedBackground = MOOD_BACKGROUND_BY_NAME[mood];
+  const contract = await page.evaluate((expectedMood) => {
+    const shell = document.querySelector(".liveShell");
+
+    if (shell === null) {
+      return null;
+    }
+
+    const styles = getComputedStyle(shell);
+
+    return {
+      backgroundImage: styles.backgroundImage,
+      dataMood: shell.getAttribute("data-live-mood"),
+      imageVariable: styles.getPropertyValue("--live-bg-image").trim(),
+      mutedColor: styles.getPropertyValue("--live-muted").trim(),
+      panelBackground: styles.getPropertyValue("--live-panel-bg").trim(),
+      expectedMood,
+    };
+  }, mood);
+
+  if (contract === null) {
+    throw new Error(`Live shell missing for mood ${mood}.`);
+  }
+
+  if (contract.dataMood !== mood) {
+    throw new Error(`Expected mood ${mood}, got ${contract.dataMood ?? "null"}.`);
+  }
+
+  if (!contract.imageVariable.includes(expectedBackground)) {
+    throw new Error(
+      `Expected mood ${mood} to use ${expectedBackground}, got ${contract.imageVariable}.`,
+    );
+  }
+
+  if (!contract.backgroundImage.includes(expectedBackground)) {
+    throw new Error(
+      `Expected rendered mood ${mood} background to include ${expectedBackground}, got ${contract.backgroundImage}.`,
+    );
+  }
+
+  if (contract.mutedColor.length === 0 || contract.panelBackground.length === 0) {
+    throw new Error(`Mood ${mood} is missing visual CSS variables: ${JSON.stringify(contract)}`);
+  }
+}
+
 async function refresh(page) {
   await page.getByRole("button", { name: "Refresh" }).click();
   await page
@@ -363,6 +453,8 @@ async function resolveOrderedSpeechDay(players, host) {
     const hostPhase = await readMetric(host.page, "Phase");
 
     if (hostPhase === "voting") {
+      await waitMood(host.page, "voting");
+      await assertMoodVisual(host.page, "voting");
       await waitPhase(players[1].page, "voting");
       await waitPhase(players[2].page, "voting");
 
@@ -468,6 +560,7 @@ async function readEvidence(page) {
         bodyText.includes("won. Start a new room") ||
         bodyText.includes("You won this game.") ||
         bodyText.includes("You lost this game."),
+      liveMood: document.querySelector(".liveShell")?.getAttribute("data-live-mood") ?? null,
       phase: metric("Phase"),
       roomStatus: textOf(document.querySelector(".liveRoomPanel .livePanelHeading strong")),
       status: textOf(document.querySelector(".liveStatusBar strong")),
