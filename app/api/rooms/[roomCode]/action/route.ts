@@ -5,6 +5,7 @@ import { jsonError, jsonOk, readJson } from "@/lib/server/http";
 type SubmitActionBody = {
   actionKey?: unknown;
   phaseInstanceId?: unknown;
+  revision?: unknown;
   targetPlayerId?: unknown;
 };
 
@@ -31,6 +32,10 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
     return jsonError("bad_request", "phaseInstanceId is required.", 400);
   }
 
+  if (!isNonNegativeSafeInteger(body.revision)) {
+    return jsonError("bad_request", "revision is required.", 400);
+  }
+
   const targetPlayerId =
     typeof body.targetPlayerId === "string" && body.targetPlayerId !== ""
       ? body.targetPlayerId
@@ -44,10 +49,15 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
         roomCode,
         body.actionKey,
         body.phaseInstanceId,
+        body.revision,
         targetPlayerId,
       ),
     );
   } catch {
     return jsonError("conflict", "Submit failed.", 409);
   }
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }

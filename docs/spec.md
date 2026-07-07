@@ -50,7 +50,7 @@ Phase 1 のマイルストーンでは、匿名ロビー基盤から実ゲーム
   event history を DB に保存する
 - First night から Result まで phase を進行する
 - 役職ごとの夜 action と core action を受け付ける
-- stale `phaseInstanceId` の送信を拒否する
+- stale `phaseInstanceId` / `revision` の送信を拒否する
 - current action への二重送信を first-submit-wins として扱う
 - 人狼などの対象 role group だけが見られる night conversation を表示する
 - night conversation は Night 中だけ送信でき、Night 以外では read-only にする

@@ -511,9 +511,20 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const expectedRevision = roomSummary?.game?.revision;
       const targetPlayerId = action.targetKind === "single_player" ? getActionTarget(action) : null;
+
+      if (expectedRevision === undefined) {
+        throw new Error("Action window is not open.");
+      }
+
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
-        body: { actionKey: action.key, phaseInstanceId: action.phaseInstanceId, targetPlayerId },
+        body: {
+          actionKey: action.key,
+          phaseInstanceId: action.phaseInstanceId,
+          revision: expectedRevision,
+          targetPlayerId,
+        },
         method: "POST",
         token,
       });

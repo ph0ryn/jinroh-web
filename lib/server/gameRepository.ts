@@ -416,12 +416,14 @@ export async function submitAction(
   roomCode: string,
   actionKey: string,
   phaseInstanceId: string,
+  expectedRevision: number,
   targetPublicPlayerId: string | null,
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const transactionResult = await callRoomMutationRpc(supabase, "app_submit_action", {
     p_account_id: account.id,
     p_action_key: actionKey,
+    p_expected_revision: expectedRevision,
     p_phase_instance_id: phaseInstanceId,
     p_room_code: roomCode,
     p_target_public_player_id: targetPublicPlayerId,
