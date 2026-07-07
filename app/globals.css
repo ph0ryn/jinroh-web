@@ -1398,7 +1398,9 @@ a {
 
 .liveEntryPanel input,
 .liveActionRow select,
-.liveNightChatComposer input {
+.liveNightChatComposer input,
+.liveRuleSetField input,
+.liveRuleSetField select {
   background: rgba(241, 230, 202, 0.08);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-small);
@@ -1628,6 +1630,96 @@ a {
   font-size: 0.78rem;
   line-height: 1.35;
   margin: 0;
+}
+
+.liveRuleSetPanel {
+  background: rgba(241, 230, 202, 0.045);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.liveRuleSetHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.liveRuleSetHeader span,
+.liveRuleSetField span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.liveRuleSetHeader strong {
+  color: var(--brass-300);
+  font-size: 0.88rem;
+}
+
+.liveRuleSetGrid,
+.liveTimingGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.liveRuleSetGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.liveTimingGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.liveRuleSetField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.liveRuleSetField input,
+.liveRuleSetField select {
+  min-height: 40px;
+  width: 100%;
+}
+
+.liveRolePreview {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.liveRolePill {
+  align-items: center;
+  background: rgba(7, 11, 10, 0.36);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  display: inline-flex;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+.liveRolePill strong {
+  color: var(--paper-200);
+  font-size: 0.82rem;
+}
+
+.liveRolePill.muted strong {
+  color: var(--muted);
+}
+
+.liveRolePill em {
+  color: var(--brass-300);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 850;
 }
 
 .liveSelfView,
@@ -1898,8 +1990,13 @@ a {
   .liveEntryPanel,
   .liveActionRow,
   .liveNightChatComposer,
+  .liveRuleSetGrid,
   .liveControlStack {
     grid-template-columns: 1fr;
+  }
+
+  .liveTimingGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .liveStatusBar {

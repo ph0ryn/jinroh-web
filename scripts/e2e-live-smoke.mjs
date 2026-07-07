@@ -223,8 +223,15 @@ async function startGame(host, baseUrl, roomCode) {
     body: JSON.stringify({
       ruleSet: {
         dayMode: "ordered_speech",
+        dayReadyCheckSecondsPerPlayer: 90,
+        daySpeechSeconds: 90,
+        executionLastWordsSeconds: 60,
+        firstDaySpeechRounds: 2,
+        firstNightSeconds: 30,
         guardConsecutiveTargetPolicy: "deny",
         initialInspectionPolicy: "enabled",
+        nightSeconds: 180,
+        normalDaySpeechRounds: 1,
         roleCounts: {
           fox: 0,
           guard: 0,
@@ -234,6 +241,7 @@ async function startGame(host, baseUrl, roomCode) {
           werewolf: 1,
         },
         voteResultVisibility: "count_only",
+        votingSeconds: 30,
       },
     }),
     headers: {

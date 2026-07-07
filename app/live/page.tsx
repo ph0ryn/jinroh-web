@@ -4,13 +4,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
-
-import type {
-  NightConversationView,
-  PrivateGameEvent,
-  PublicAction,
-  PublicPlayer,
-  RoomSummary,
+import {
+  DEFAULT_RULE_SET,
+  makeDefaultRuleSetForPlayers,
+  ROLE_DEFINITIONS,
+  ROLE_IDS,
+  type NightConversationView,
+  type PrivateGameEvent,
+  type PublicAction,
+  type PublicPlayer,
+  type RoomSummary,
+  type RuleSetInput,
 } from "@/lib/shared/game";
 
 type IdentityResponse = {
@@ -45,9 +49,52 @@ type RealtimeBroadcastEnvelope = {
   readonly payload?: unknown;
 };
 
+type StartRuleSetSettings = Omit<RuleSetInput, "roleCounts">;
+
+type RuleSetNumberField =
+  | "dayReadyCheckSecondsPerPlayer"
+  | "daySpeechSeconds"
+  | "executionLastWordsSeconds"
+  | "firstDaySpeechRounds"
+  | "firstNightSeconds"
+  | "nightSeconds"
+  | "normalDaySpeechRounds"
+  | "votingSeconds";
+
+type RuleSetNumberLimit = {
+  readonly max: number;
+  readonly min: number;
+};
+
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
+
+const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
+  dayMode: DEFAULT_RULE_SET.dayMode,
+  dayReadyCheckSecondsPerPlayer: DEFAULT_RULE_SET.dayReadyCheckSecondsPerPlayer,
+  daySpeechSeconds: DEFAULT_RULE_SET.daySpeechSeconds,
+  executionLastWordsSeconds: DEFAULT_RULE_SET.executionLastWordsSeconds,
+  firstDaySpeechRounds: DEFAULT_RULE_SET.firstDaySpeechRounds,
+  firstNightSeconds: DEFAULT_RULE_SET.firstNightSeconds,
+  guardConsecutiveTargetPolicy: DEFAULT_RULE_SET.guardConsecutiveTargetPolicy,
+  initialInspectionPolicy: DEFAULT_RULE_SET.initialInspectionPolicy,
+  nightSeconds: DEFAULT_RULE_SET.nightSeconds,
+  normalDaySpeechRounds: DEFAULT_RULE_SET.normalDaySpeechRounds,
+  voteResultVisibility: DEFAULT_RULE_SET.voteResultVisibility,
+  votingSeconds: DEFAULT_RULE_SET.votingSeconds,
+};
+
+const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
+  dayReadyCheckSecondsPerPlayer: { max: 300, min: 1 },
+  daySpeechSeconds: { max: 300, min: 1 },
+  executionLastWordsSeconds: { max: 300, min: 1 },
+  firstDaySpeechRounds: { max: 5, min: 1 },
+  firstNightSeconds: { max: 300, min: 1 },
+  nightSeconds: { max: 600, min: 1 },
+  normalDaySpeechRounds: { max: 5, min: 1 },
+  votingSeconds: { max: 300, min: 1 },
+};
 
 export default function LivePage() {
   const [identityToken, setIdentityToken] = useState(() => readStorage(IDENTITY_STORAGE_KEY));
@@ -58,6 +105,9 @@ export default function LivePage() {
     () => readStorage(ROOM_CODE_STORAGE_KEY) ?? "",
   );
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [startRuleSetSettings, setStartRuleSetSettings] = useState<StartRuleSetSettings>(
+    DEFAULT_START_RULE_SET_SETTINGS,
+  );
   const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
@@ -329,12 +379,33 @@ export default function LivePage() {
     });
   }
 
+  function handleStartRuleSetChange<Key extends keyof StartRuleSetSettings>(
+    key: Key,
+    value: StartRuleSetSettings[Key],
+  ): void {
+    setStartRuleSetSettings((currentSettings) => ({
+      ...currentSettings,
+      [key]: value,
+    }));
+  }
+
+  function handleStartRuleSetNumberChange(key: RuleSetNumberField, value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    setStartRuleSetSettings((currentSettings) => ({
+      ...currentSettings,
+      [key]: clampRuleSetNumber(key, value),
+    }));
+  }
+
   function handleStartGame(): void {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/start`, {
-        body: {},
+        body: { ruleSet: buildStartRuleSetInput(startRuleSetSettings) },
         method: "POST",
         token,
       });
@@ -525,6 +596,15 @@ export default function LivePage() {
             <strong>{roomSummary?.isHost === true ? "Host" : "Player"}</strong>
           </div>
 
+          {roomSummary?.isHost === true && roomSummary.status === "lobby" ? (
+            <StartRuleSetPanel
+              playerCount={roomSummary.players.length}
+              settings={startRuleSetSettings}
+              onNumberChange={handleStartRuleSetNumberChange}
+              onSettingsChange={handleStartRuleSetChange}
+            />
+          ) : null}
+
           <div className="liveControlStack">
             <button
               className="primaryLiveButton"
@@ -660,6 +740,194 @@ function PlayerList({ players }: { readonly players: readonly PublicPlayer[] }) 
         </div>
       ))}
     </div>
+  );
+}
+
+function StartRuleSetPanel({
+  playerCount,
+  settings,
+  onNumberChange,
+  onSettingsChange,
+}: {
+  readonly playerCount: number;
+  readonly settings: StartRuleSetSettings;
+  readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
+  readonly onSettingsChange: <Key extends keyof StartRuleSetSettings>(
+    key: Key,
+    value: StartRuleSetSettings[Key],
+  ) => void;
+}) {
+  const canPreviewRoleMix = playerCount >= 3 && playerCount <= 10;
+  const previewRuleSet = canPreviewRoleMix ? makeDefaultRuleSetForPlayers(playerCount) : null;
+  const activeRoleIds =
+    previewRuleSet === null
+      ? []
+      : ROLE_IDS.filter((roleId) => previewRuleSet.roleCounts[roleId] > 0);
+
+  return (
+    <div className="liveRuleSetPanel" aria-label="Start settings">
+      <div className="liveRuleSetHeader">
+        <span>Start settings</span>
+        <strong>{playerCount} players</strong>
+      </div>
+
+      <div className="liveRuleSetGrid">
+        <label className="liveRuleSetField">
+          <span>Day mode</span>
+          <select
+            value={settings.dayMode}
+            onChange={(event) =>
+              onSettingsChange("dayMode", event.target.value as StartRuleSetSettings["dayMode"])
+            }
+          >
+            <option value="ready_check">Ready check</option>
+            <option value="ordered_speech">Ordered speech</option>
+          </select>
+        </label>
+
+        <label className="liveRuleSetField">
+          <span>Guard policy</span>
+          <select
+            value={settings.guardConsecutiveTargetPolicy}
+            onChange={(event) =>
+              onSettingsChange(
+                "guardConsecutiveTargetPolicy",
+                event.target.value as StartRuleSetSettings["guardConsecutiveTargetPolicy"],
+              )
+            }
+          >
+            <option value="deny">Deny same target</option>
+            <option value="allow">Allow repeat</option>
+          </select>
+        </label>
+
+        <label className="liveRuleSetField">
+          <span>Initial inspection</span>
+          <select
+            value={settings.initialInspectionPolicy}
+            onChange={(event) =>
+              onSettingsChange(
+                "initialInspectionPolicy",
+                event.target.value as StartRuleSetSettings["initialInspectionPolicy"],
+              )
+            }
+          >
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </label>
+
+        <label className="liveRuleSetField">
+          <span>Vote detail</span>
+          <select
+            value={settings.voteResultVisibility}
+            onChange={(event) =>
+              onSettingsChange(
+                "voteResultVisibility",
+                event.target.value as StartRuleSetSettings["voteResultVisibility"],
+              )
+            }
+          >
+            <option value="count_only">Count only</option>
+            <option value="voter_to_target">Voter to target</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="liveTimingGrid" aria-label="Phase timing">
+        <RuleSetNumberControl
+          field="firstNightSeconds"
+          label="First night"
+          value={settings.firstNightSeconds}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="nightSeconds"
+          label="Night"
+          value={settings.nightSeconds}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="dayReadyCheckSecondsPerPlayer"
+          label="Ready / player"
+          value={settings.dayReadyCheckSecondsPerPlayer}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="daySpeechSeconds"
+          label="Speech"
+          value={settings.daySpeechSeconds}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="votingSeconds"
+          label="Vote"
+          value={settings.votingSeconds}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="executionLastWordsSeconds"
+          label="Last words"
+          value={settings.executionLastWordsSeconds}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="firstDaySpeechRounds"
+          label="First rounds"
+          value={settings.firstDaySpeechRounds}
+          onChange={onNumberChange}
+        />
+        <RuleSetNumberControl
+          field="normalDaySpeechRounds"
+          label="Normal rounds"
+          value={settings.normalDaySpeechRounds}
+          onChange={onNumberChange}
+        />
+      </div>
+
+      <div className="liveRolePreview" aria-label="Automatic role mix">
+        {previewRuleSet === null ? (
+          <span className="liveRolePill muted">
+            <strong>Role mix appears at 3 players</strong>
+          </span>
+        ) : (
+          activeRoleIds.map((roleId) => (
+            <span className="liveRolePill" key={roleId}>
+              <strong>{ROLE_DEFINITIONS[roleId].name}</strong>
+              <em>{previewRuleSet.roleCounts[roleId]}</em>
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RuleSetNumberControl({
+  field,
+  label,
+  value,
+  onChange,
+}: {
+  readonly field: RuleSetNumberField;
+  readonly label: string;
+  readonly value: number;
+  readonly onChange: (field: RuleSetNumberField, value: number) => void;
+}) {
+  const limits = RULE_SET_NUMBER_LIMITS[field];
+
+  return (
+    <label className="liveRuleSetField">
+      <span>{label}</span>
+      <input
+        inputMode="numeric"
+        max={limits.max}
+        min={limits.min}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(field, event.target.valueAsNumber)}
+      />
+    </label>
   );
 }
 
@@ -1048,6 +1316,20 @@ function requireRoomCode(roomCode: string): string {
   }
 
   return roomCode;
+}
+
+function buildStartRuleSetInput(settings: StartRuleSetSettings): RuleSetInput {
+  return {
+    ...settings,
+    roleCounts: {},
+  };
+}
+
+function clampRuleSetNumber(field: RuleSetNumberField, value: number): number {
+  const limits = RULE_SET_NUMBER_LIMITS[field];
+  const integerValue = Math.trunc(value);
+
+  return Math.min(limits.max, Math.max(limits.min, integerValue));
 }
 
 function getLiveGuidance(

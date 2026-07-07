@@ -157,17 +157,33 @@ export type RealtimeView = {
 export type RuleSetInput = {
   roleCounts: Partial<Record<RoleId, number>>;
   dayMode: "ready_check" | "ordered_speech";
+  dayReadyCheckSecondsPerPlayer: number;
+  daySpeechSeconds: number;
+  executionLastWordsSeconds: number;
+  firstDaySpeechRounds: number;
+  firstNightSeconds: number;
   guardConsecutiveTargetPolicy: "allow" | "deny";
   initialInspectionPolicy: "enabled" | "disabled";
+  nightSeconds: number;
+  normalDaySpeechRounds: number;
   voteResultVisibility: "count_only" | "voter_to_target";
+  votingSeconds: number;
 };
 
 export type RuleSet = {
   roleCounts: Record<RoleId, number>;
   dayMode: "ready_check" | "ordered_speech";
+  dayReadyCheckSecondsPerPlayer: number;
+  daySpeechSeconds: number;
+  executionLastWordsSeconds: number;
+  firstDaySpeechRounds: number;
+  firstNightSeconds: number;
   guardConsecutiveTargetPolicy: "allow" | "deny";
   initialInspectionPolicy: "enabled" | "disabled";
+  nightSeconds: number;
+  normalDaySpeechRounds: number;
   voteResultVisibility: "count_only" | "voter_to_target";
+  votingSeconds: number;
 };
 
 export type RoleDefinition = {
@@ -239,8 +255,15 @@ export const ROLE_DEFINITIONS: Record<RoleId, RoleDefinition> = {
 
 export const DEFAULT_RULE_SET: RuleSet = {
   dayMode: "ready_check",
+  dayReadyCheckSecondsPerPlayer: 90,
+  daySpeechSeconds: 90,
+  executionLastWordsSeconds: 60,
+  firstDaySpeechRounds: 2,
+  firstNightSeconds: 30,
   guardConsecutiveTargetPolicy: "deny",
   initialInspectionPolicy: "enabled",
+  nightSeconds: 180,
+  normalDaySpeechRounds: 1,
   roleCounts: {
     fox: 0,
     guard: 1,
@@ -250,24 +273,43 @@ export const DEFAULT_RULE_SET: RuleSet = {
     werewolf: 2,
   },
   voteResultVisibility: "count_only",
+  votingSeconds: 30,
 };
 
 export function normalizeRuleSet(input: RuleSetInput, playerCount: number): RuleSet {
+  const options = normalizeRuleSetOptions(input);
   const roleCounts = Object.fromEntries(
     ROLE_IDS.map((roleId) => [roleId, input.roleCounts[roleId] ?? 0]),
   ) as Record<RoleId, number>;
   const specifiedCount = ROLE_IDS.reduce((total, roleId) => total + roleCounts[roleId], 0);
 
   if (specifiedCount === 0) {
-    return makeDefaultRuleSetForPlayers(playerCount);
+    return {
+      ...makeDefaultRuleSetForPlayers(playerCount),
+      ...options,
+    };
   }
 
   return {
+    ...options,
+    roleCounts,
+  };
+}
+
+function normalizeRuleSetOptions(input: RuleSetInput): Omit<RuleSet, "roleCounts"> {
+  return {
     dayMode: input.dayMode,
+    dayReadyCheckSecondsPerPlayer: input.dayReadyCheckSecondsPerPlayer,
+    daySpeechSeconds: input.daySpeechSeconds,
+    executionLastWordsSeconds: input.executionLastWordsSeconds,
+    firstDaySpeechRounds: input.firstDaySpeechRounds,
+    firstNightSeconds: input.firstNightSeconds,
     guardConsecutiveTargetPolicy: input.guardConsecutiveTargetPolicy,
     initialInspectionPolicy: input.initialInspectionPolicy,
-    roleCounts,
+    nightSeconds: input.nightSeconds,
+    normalDaySpeechRounds: input.normalDaySpeechRounds,
     voteResultVisibility: input.voteResultVisibility,
+    votingSeconds: input.votingSeconds,
   };
 }
 
@@ -329,9 +371,16 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     }
   }
 
+  for (const [optionName, optionValue] of Object.entries(getPositiveIntegerOptions(ruleSet))) {
+    if (!Number.isInteger(optionValue) || optionValue <= 0) {
+      errors.push(`${optionName} must be a positive integer.`);
+    }
+  }
+
   if (ruleSet.initialInspectionPolicy === "enabled") {
-    const humanInspectionCandidates =
-      ruleSet.roleCounts.villager + ruleSet.roleCounts.guard + ruleSet.roleCounts.madman;
+    const humanInspectionCandidates = ROLE_IDS.filter(
+      (roleId) => roleId !== "seer" && ROLE_DEFINITIONS[roleId].seenAs === "human",
+    ).reduce((total, roleId) => total + ruleSet.roleCounts[roleId], 0);
 
     if (ruleSet.roleCounts.seer > 0 && humanInspectionCandidates <= 0) {
       errors.push("Initial inspection requires at least one non-seer human result candidate.");
@@ -339,6 +388,19 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
   }
 
   return errors.length === 0 ? { ok: true, ruleSet } : { errors, ok: false };
+}
+
+function getPositiveIntegerOptions(ruleSet: RuleSet): Readonly<Record<string, number>> {
+  return {
+    dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
+    daySpeechSeconds: ruleSet.daySpeechSeconds,
+    executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
+    firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
+    firstNightSeconds: ruleSet.firstNightSeconds,
+    nightSeconds: ruleSet.nightSeconds,
+    normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
+    votingSeconds: ruleSet.votingSeconds,
+  };
 }
 
 export function getRoleName(roleId: RoleId | null): string | null {

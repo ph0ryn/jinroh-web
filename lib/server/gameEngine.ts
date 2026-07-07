@@ -144,7 +144,7 @@ export function startGame(
     initialEvents,
     ok: true,
     phase: "night",
-    phaseDurationSeconds: 30,
+    phaseDurationSeconds: ruleSet.firstNightSeconds,
     ruleSet,
   };
 }
@@ -349,8 +349,7 @@ function createInitialInspectionEvents(
   const candidates = assignments.filter(
     (assignment) =>
       assignment.playerId !== seer.playerId &&
-      getRoleInspectionResult(assignment.roleId) === "human" &&
-      assignment.roleId !== "fox",
+      getRoleInspectionResult(assignment.roleId) === "human",
   );
 
   if (candidates.length === 0) {
@@ -517,7 +516,7 @@ function openDay(
 
   const nextDayNumber = input.dayNumber + 1;
   const alivePlayers = nextPlayers.filter((player) => player.alive);
-  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, nextDayNumber);
+  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, nextDayNumber, input.ruleSet);
   const firstSpeechSlot = orderedSpeechSlots[0];
   const actionsToOpen =
     input.ruleSet.dayMode === "ordered_speech" && firstSpeechSlot !== undefined
@@ -562,7 +561,9 @@ function openDay(
     nextNightNumber: input.nightNumber,
     nextPhase: "day",
     nextPhaseDurationSeconds:
-      input.ruleSet.dayMode === "ordered_speech" ? 90 : alivePlayers.length * 90,
+      input.ruleSet.dayMode === "ordered_speech"
+        ? input.ruleSet.daySpeechSeconds
+        : alivePlayers.length * input.ruleSet.dayReadyCheckSecondsPerPlayer,
   };
 }
 
@@ -570,7 +571,7 @@ function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
   const currentSpeechAction = input.actions.find((action) => action.kind === "end_speech");
   const currentSlotIndex = parseSpeechSlotIndex(currentSpeechAction?.actionKey);
   const alivePlayers = input.players.filter((player) => player.alive);
-  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, input.dayNumber);
+  const orderedSpeechSlots = createOrderedSpeechSlots(alivePlayers, input.dayNumber, input.ruleSet);
   const nextSpeechSlot =
     currentSlotIndex === null ? undefined : orderedSpeechSlots[currentSlotIndex + 1];
 
@@ -600,19 +601,20 @@ function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
     nextDayNumber: input.dayNumber,
     nextNightNumber: input.nightNumber,
     nextPhase: "day",
-    nextPhaseDurationSeconds: 90,
+    nextPhaseDurationSeconds: input.ruleSet.daySpeechSeconds,
   };
 }
 
 function createOrderedSpeechSlots(
   alivePlayers: readonly PlayerRuntimeState[],
   dayNumber: number,
+  ruleSet: RuleSet,
 ): OrderedSpeechSlot[] {
   const orderedPlayerIds = stableShuffle(
     alivePlayers.map((player) => player.playerId),
     `speech:${dayNumber}:${alivePlayers.map((player) => player.playerId).join(":")}`,
   );
-  const rounds = dayNumber === 1 ? 2 : 1;
+  const rounds = dayNumber === 1 ? ruleSet.firstDaySpeechRounds : ruleSet.normalDaySpeechRounds;
 
   return [...Array(rounds).keys()].flatMap((roundIndex) =>
     orderedPlayerIds.map((speakerPlayerId, playerIndex) => ({
@@ -673,7 +675,7 @@ function openVoting(input: PhaseResolutionInput): PhaseResolution {
     nextDayNumber: input.dayNumber,
     nextNightNumber: input.nightNumber,
     nextPhase: "voting",
-    nextPhaseDurationSeconds: 30,
+    nextPhaseDurationSeconds: input.ruleSet.votingSeconds,
   };
 }
 
@@ -733,7 +735,7 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
     nextDayNumber: input.dayNumber,
     nextNightNumber: input.nightNumber,
     nextPhase: "execution",
-    nextPhaseDurationSeconds: 60,
+    nextPhaseDurationSeconds: input.ruleSet.executionLastWordsSeconds,
   };
 }
 
@@ -848,7 +850,7 @@ function openNight(
     nextDayNumber: input.dayNumber,
     nextNightNumber,
     nextPhase: "night",
-    nextPhaseDurationSeconds: 180,
+    nextPhaseDurationSeconds: input.ruleSet.nightSeconds,
   };
 }
 

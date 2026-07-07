@@ -1614,14 +1614,64 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
 
   return {
     dayMode: data.options["dayMode"] === "ordered_speech" ? "ordered_speech" : "ready_check",
+    dayReadyCheckSecondsPerPlayer: parsePositiveRuleOption(
+      data.options,
+      "dayReadyCheckSecondsPerPlayer",
+      DEFAULT_RULE_SET.dayReadyCheckSecondsPerPlayer,
+    ),
+    daySpeechSeconds: parsePositiveRuleOption(
+      data.options,
+      "daySpeechSeconds",
+      DEFAULT_RULE_SET.daySpeechSeconds,
+    ),
+    executionLastWordsSeconds: parsePositiveRuleOption(
+      data.options,
+      "executionLastWordsSeconds",
+      DEFAULT_RULE_SET.executionLastWordsSeconds,
+    ),
+    firstDaySpeechRounds: parsePositiveRuleOption(
+      data.options,
+      "firstDaySpeechRounds",
+      DEFAULT_RULE_SET.firstDaySpeechRounds,
+    ),
+    firstNightSeconds: parsePositiveRuleOption(
+      data.options,
+      "firstNightSeconds",
+      DEFAULT_RULE_SET.firstNightSeconds,
+    ),
     guardConsecutiveTargetPolicy:
       data.options["guardConsecutiveTargetPolicy"] === "allow" ? "allow" : "deny",
     initialInspectionPolicy:
       data.options["initialInspectionPolicy"] === "disabled" ? "disabled" : "enabled",
+    nightSeconds: parsePositiveRuleOption(
+      data.options,
+      "nightSeconds",
+      DEFAULT_RULE_SET.nightSeconds,
+    ),
+    normalDaySpeechRounds: parsePositiveRuleOption(
+      data.options,
+      "normalDaySpeechRounds",
+      DEFAULT_RULE_SET.normalDaySpeechRounds,
+    ),
     roleCounts: parseRoleCounts(data.role_counts),
     voteResultVisibility:
       data.options["voteResultVisibility"] === "voter_to_target" ? "voter_to_target" : "count_only",
+    votingSeconds: parsePositiveRuleOption(
+      data.options,
+      "votingSeconds",
+      DEFAULT_RULE_SET.votingSeconds,
+    ),
   };
+}
+
+function parsePositiveRuleOption(
+  options: JsonObject,
+  optionName: string,
+  fallbackValue: number,
+): number {
+  const value = options[optionName];
+
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallbackValue;
 }
 
 async function callRoomMutationRpc(
@@ -1652,9 +1702,17 @@ function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
 function serializeRuleSetOptions(ruleSet: RuleSet): JsonObject {
   return {
     dayMode: ruleSet.dayMode,
+    dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
+    daySpeechSeconds: ruleSet.daySpeechSeconds,
+    executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
+    firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
+    firstNightSeconds: ruleSet.firstNightSeconds,
     guardConsecutiveTargetPolicy: ruleSet.guardConsecutiveTargetPolicy,
     initialInspectionPolicy: ruleSet.initialInspectionPolicy,
+    nightSeconds: ruleSet.nightSeconds,
+    normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
     voteResultVisibility: ruleSet.voteResultVisibility,
+    votingSeconds: ruleSet.votingSeconds,
   };
 }
 
@@ -1684,11 +1742,11 @@ function toRegisteredRuleOptions(ruleSet: RuleSet): RegisteredRuleOptions {
       ruleSet.dayMode === "ordered_speech"
         ? DayDiscussionMode.OrderedSpeech
         : DayDiscussionMode.ReadyCheck,
-    dayReadyCheckSecondsPerPlayer: 90,
-    daySpeechSeconds: 90,
-    executionLastWordsSeconds: 60,
-    firstDaySpeechRounds: 2,
-    firstNightSeconds: 30,
+    dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
+    daySpeechSeconds: ruleSet.daySpeechSeconds,
+    executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
+    firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
+    firstNightSeconds: ruleSet.firstNightSeconds,
     guardConsecutiveTargetPolicy:
       ruleSet.guardConsecutiveTargetPolicy === "allow"
         ? GuardConsecutiveTargetPolicy.Allow
@@ -1697,13 +1755,13 @@ function toRegisteredRuleOptions(ruleSet: RuleSet): RegisteredRuleOptions {
       ruleSet.initialInspectionPolicy === "disabled"
         ? InitialInspectionPolicy.Disabled
         : InitialInspectionPolicy.Enabled,
-    nightSeconds: 180,
-    normalDaySpeechRounds: 1,
+    nightSeconds: ruleSet.nightSeconds,
+    normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
     voteResultVisibility:
       ruleSet.voteResultVisibility === "voter_to_target"
         ? VoteResultVisibility.VoterToTarget
         : VoteResultVisibility.CountOnly,
-    votingSeconds: 30,
+    votingSeconds: ruleSet.votingSeconds,
   };
 }
 

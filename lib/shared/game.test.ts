@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_RULE_SET,
   makeDefaultRuleSetForPlayers,
   normalizeRuleSet,
   validateRuleSet,
@@ -19,6 +20,7 @@ describe("ruleset validation", () => {
 
   it("rejects role counts that do not match players", () => {
     const ruleSet: RuleSet = {
+      ...DEFAULT_RULE_SET,
       dayMode: "ready_check",
       guardConsecutiveTargetPolicy: "deny",
       initialInspectionPolicy: "enabled",
@@ -59,15 +61,27 @@ describe("ruleset validation", () => {
     const normalized = normalizeRuleSet(
       {
         dayMode: "ordered_speech",
+        dayReadyCheckSecondsPerPlayer: 75,
+        daySpeechSeconds: 45,
+        executionLastWordsSeconds: 15,
+        firstDaySpeechRounds: 1,
+        firstNightSeconds: 5,
         guardConsecutiveTargetPolicy: "allow",
         initialInspectionPolicy: "disabled",
+        nightSeconds: 60,
+        normalDaySpeechRounds: 2,
         roleCounts: {},
         voteResultVisibility: "voter_to_target",
+        votingSeconds: 20,
       },
       6,
     );
 
     expect(validateRuleSet(normalized, 6).ok).toBe(true);
     expect(normalized.roleCounts.werewolf).toBe(1);
+    expect(normalized.dayMode).toBe("ordered_speech");
+    expect(normalized.daySpeechSeconds).toBe(45);
+    expect(normalized.normalDaySpeechRounds).toBe(2);
+    expect(normalized.voteResultVisibility).toBe("voter_to_target");
   });
 });

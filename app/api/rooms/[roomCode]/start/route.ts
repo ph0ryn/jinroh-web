@@ -13,6 +13,19 @@ type RouteContext = {
   }>;
 };
 
+const RULE_TIMING_FIELDS = [
+  "dayReadyCheckSecondsPerPlayer",
+  "daySpeechSeconds",
+  "executionLastWordsSeconds",
+  "firstDaySpeechRounds",
+  "firstNightSeconds",
+  "nightSeconds",
+  "normalDaySpeechRounds",
+  "votingSeconds",
+] as const;
+
+type RuleTimingField = (typeof RULE_TIMING_FIELDS)[number];
+
 export async function POST(request: Request, context: RouteContext): Promise<Response> {
   const auth = await requireAccount(request);
 
@@ -81,15 +94,49 @@ function parseRuleSetInput(
     return { response: jsonError("bad_request", "voteResultVisibility is invalid.", 400) };
   }
 
+  const parsedTimings = parseRuleTimingFields(value);
+
+  if ("response" in parsedTimings) {
+    return parsedTimings;
+  }
+
   return {
     ruleSet: {
       dayMode: value["dayMode"],
+      dayReadyCheckSecondsPerPlayer: parsedTimings.timings.dayReadyCheckSecondsPerPlayer,
+      daySpeechSeconds: parsedTimings.timings.daySpeechSeconds,
+      executionLastWordsSeconds: parsedTimings.timings.executionLastWordsSeconds,
+      firstDaySpeechRounds: parsedTimings.timings.firstDaySpeechRounds,
+      firstNightSeconds: parsedTimings.timings.firstNightSeconds,
       guardConsecutiveTargetPolicy: value["guardConsecutiveTargetPolicy"],
       initialInspectionPolicy: value["initialInspectionPolicy"],
+      nightSeconds: parsedTimings.timings.nightSeconds,
+      normalDaySpeechRounds: parsedTimings.timings.normalDaySpeechRounds,
       roleCounts,
       voteResultVisibility: value["voteResultVisibility"],
+      votingSeconds: parsedTimings.timings.votingSeconds,
     },
   };
+}
+
+function parseRuleTimingFields(
+  value: Record<string, unknown>,
+): { timings: Record<RuleTimingField, number> } | { response: Response } {
+  const timings = {} as Record<RuleTimingField, number>;
+
+  for (const field of RULE_TIMING_FIELDS) {
+    const rawValue = value[field];
+
+    if (typeof rawValue !== "number" || !Number.isInteger(rawValue) || rawValue <= 0) {
+      return {
+        response: jsonError("bad_request", `${field} must be a positive integer.`, 400),
+      };
+    }
+
+    timings[field] = rawValue;
+  }
+
+  return { timings };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
