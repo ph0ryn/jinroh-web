@@ -3,11 +3,18 @@
 この文書は、ゲーム設計で共有する型と class 境界の sketch を扱う。
 実装完了コードではなく、責務と境界を固定するための設計メモ。
 
+この文書の code block は非網羅の例示。
+`Role` class の method がここに載っていないことは、その extension point を使わないという意味ではない。
+役職ごとの source of truth は `Role` class と `RoleRegistry` であり、実装で必要になった generic
+hook、resolver、effect、rule extension は `Role` 側から提供できる形で追加する。
+common engine に特定 role id の分岐を足して挙動を埋め込まない。
+
 ## TypeScript Design Sketch
 
 `Role` は class として設計する。
 
 この code block は実装完了コードではなく、責務と境界を固定するための設計スケッチ。
+実装の public surface を完全に列挙するものではない。
 
 ```ts
 export type RoleId = string;

@@ -49,6 +49,32 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   base64 encoded 32-byte HMAC key.
 - Keep user-supplied display names as text. Do not render them as HTML.
 
+## Role Architecture Boundaries
+
+Keep role behavior owned by `Role` classes and `RoleRegistry`.
+
+- Role-specific behavior must live in the role class through hooks, action
+  definitions, target resolvers, setup contributions, winner judgements, and
+  result evaluation.
+- Adding a role should normally require adding a role class and registering it.
+  Shared engine changes are acceptable only when adding a generic hook,
+  resolver capability, effect type, or rule extension needed by a class.
+- Do not add role-specific `roleId` branches to common game engine logic unless
+  the role is part of explicitly documented core game primitives.
+- Common game logic may coordinate generic concepts such as phases, actions,
+  effects, deaths, teams, count groups, inspections, and winner judgement
+  priority, but it should delegate role-specific decisions back to roles.
+- `lib/shared/game.ts` is an API/view contract, not the source of truth for role
+  behavior, role metadata, role ordering, default counts, hooks, win conditions,
+  or inspection/count semantics.
+- UI should render configurable role state from server-provided role catalog and
+  rule data rather than maintaining its own role metadata or role universe.
+- Tests and fixtures may hard-code example roles, but production behavior must
+  not depend on fixture-only role lists.
+
+When modifying older code, check whether the change belongs in a role class,
+the registry, a generic engine extension, or a view/API adapter before editing.
+
 ## TypeScript Style
 
 - Follow the naming convention enforced by ESLint:
