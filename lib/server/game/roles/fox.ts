@@ -14,6 +14,7 @@ import { FOX_ROLE_ID } from "./roleIds";
 import type {
   GameEffect,
   RoleId,
+  RoleDefaultCountContext,
   RoleSetupContribution,
   WinnerJudgementContribution,
 } from "../types";
@@ -32,7 +33,13 @@ export class FoxRole extends Role {
   override readonly id: RoleId = FOX_ROLE_ID;
   override readonly maxCount = 1;
   override readonly name = "Fox";
+  override readonly order = 70;
+  override readonly shortLabel = "F";
   override readonly team = Team.Fox;
+
+  override getDefaultCount(context: RoleDefaultCountContext): number {
+    return context.playerCount >= 8 ? 1 : 0;
+  }
 
   override countAs(context: PlayerRoleContext): CountGroup {
     void context;

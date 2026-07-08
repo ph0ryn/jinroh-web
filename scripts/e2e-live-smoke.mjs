@@ -119,7 +119,7 @@ async function runLiveSmoke(baseUrl) {
     await assertCopyRoomCode(host.page, roomCode);
 
     for (const player of [player2, player3]) {
-      await player.page.getByLabel("Room code").fill(roomCode);
+      await fillRoomCode(player.page, roomCode);
       await player.page.getByRole("button", { name: "Join" }).click();
       await waitMetric(player.page, "Code", roomCode);
     }
@@ -251,6 +251,12 @@ async function createPlayer(browser, baseUrl, label, displayName, errors, warnin
   return { context, label, page };
 }
 
+async function fillRoomCode(page, roomCode) {
+  for (const [index, digit] of roomCode.split("").entries()) {
+    await page.getByRole("textbox", { name: `Room code digit ${index + 1}` }).fill(digit);
+  }
+}
+
 async function startGame(host, baseUrl, roomCode) {
   if (!IS_ORDERED_SPEECH_E2E) {
     await host.page.getByRole("button", { name: "Start game" }).click();
@@ -356,6 +362,10 @@ async function readMetric(page, label) {
       }
     }
 
+    if (metricLabel === "Timer") {
+      return textOf(document.querySelector('[aria-label="Current phase"] time'));
+    }
+
     for (const row of document.querySelectorAll(".liveMetrics div")) {
       const term = textOf(row.querySelector("dt"));
 
@@ -416,7 +426,11 @@ async function waitMetric(page, label, expected) {
         const term = textOf(row.querySelector("dt"));
         const detail = textOf(row.querySelector("dd"));
 
-        if (term === label && detail === expected) {
+        if (
+          term === label &&
+          (detail === expected ||
+            (label === "Phase" && detail?.toLowerCase().includes(expected.toLowerCase())))
+        ) {
           return true;
         }
       }
@@ -429,7 +443,10 @@ async function waitMetric(page, label, expected) {
 }
 
 async function waitPhase(page, phase) {
-  await waitMetric(page, "Phase", phase);
+  await page
+    .getByText(new RegExp(`playing / ${phase}`, "i"))
+    .first()
+    .waitFor({ timeout: 10000 });
 }
 
 async function assertPhaseTimerOpen(page) {
@@ -442,9 +459,13 @@ async function assertPhaseTimerOpen(page) {
 
 async function assertNightConversationUi(players) {
   for (const player of players) {
-    const toggle = player.page.getByRole("button", { name: "Show night chat" });
+    const toggle = player.page.getByRole("button", { name: "Night chat" });
 
-    if ((await toggle.count()) === 0 || !(await toggle.first().isVisible())) {
+    if (
+      (await toggle.count()) === 0 ||
+      !(await toggle.first().isVisible()) ||
+      !(await toggle.first().isEnabled())
+    ) {
       continue;
     }
 
@@ -456,6 +477,7 @@ async function assertNightConversationUi(players) {
     await player.page.getByRole("button", { name: "Send" }).click();
     await player.page.getByText(messageBody).waitFor({ timeout: 10000 });
     await assertNightChatVisual(player.page);
+    await player.page.getByRole("button", { name: /^Close / }).click();
 
     return player.label;
   }
@@ -555,14 +577,7 @@ async function assertMoodVisual(page, mood) {
 }
 
 async function refresh(page) {
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await page
-    .waitForFunction(
-      () => !document.body.textContent.includes("Updating the room from the server."),
-      null,
-      { timeout: 10000 },
-    )
-    .catch(() => {});
+  await page.reload({ waitUntil: "networkidle" });
 }
 
 async function refreshAll(players) {
@@ -635,11 +650,28 @@ async function resolveAfterTimeout(host) {
 
   const advanceButton = host.page.getByRole("button", { name: "Advance phase" });
 
-  if (await advanceButton.isEnabled()) {
-    await advanceButton.click();
+  if ((await advanceButton.count()) > 0 && (await advanceButton.first().isEnabled())) {
+    await advanceButton.first().click();
     await waitEnded(host.page);
 
     return "manual";
+  }
+
+  await refresh(host.page);
+
+  if (await isEnded(host.page)) {
+    return "auto";
+  }
+
+  if ((await advanceButton.count()) === 0) {
+    const bodyText = await host.page
+      .locator("body")
+      .innerText({ timeout: 1000 })
+      .catch(() => "");
+
+    throw new Error(
+      `Advance phase button was not available before the game ended.\n${bodyText.slice(0, 2000)}`,
+    );
   }
 
   await waitEnded(host.page);
@@ -649,6 +681,10 @@ async function resolveAfterTimeout(host) {
 
 async function isEnded(page) {
   return page.evaluate(() => {
+    if (/\bwon\./.test(document.body.textContent)) {
+      return true;
+    }
+
     const textOf = (element) => (element === null ? null : element.textContent.trim());
     const roomStatus = textOf(document.querySelector(".liveRoomPanel .livePanelHeading strong"));
     const winnerRow = [...document.querySelectorAll(".liveMetrics div")].find(
@@ -661,20 +697,9 @@ async function isEnded(page) {
 }
 
 async function waitEnded(page) {
-  await page.waitForFunction(
-    () => {
-      const textOf = (element) => (element === null ? null : element.textContent.trim());
-      const roomStatus = textOf(document.querySelector(".liveRoomPanel .livePanelHeading strong"));
-      const winnerRow = [...document.querySelectorAll(".liveMetrics div")].find(
-        (row) => textOf(row.querySelector("dt")) === "Winner",
-      );
-      const winner = winnerRow === undefined ? null : textOf(winnerRow.querySelector("dd"));
-
-      return roomStatus === "Ended" && winner !== null && winner !== "none";
-    },
-    null,
-    { timeout: 20000 },
-  );
+  await page.waitForFunction(() => /\bwon\./.test(document.body.textContent), null, {
+    timeout: 20000,
+  });
 }
 
 async function readEvidence(page) {
@@ -688,20 +713,23 @@ async function readEvidence(page) {
       return row === undefined ? null : textOf(row.querySelector("dd"));
     };
     const bodyText = document.body.textContent;
+    const winnerMatch = /\b(?<winner>Villagers|Werewolves|Fox|Neutral) won\./.exec(bodyText);
 
     return {
       hasLiveTable: document.querySelector(".liveShell") !== null,
       hasResult:
-        bodyText.includes("won. Start a new room") ||
+        /\bwon\./.test(bodyText) ||
         bodyText.includes("You won this game.") ||
         bodyText.includes("You lost this game."),
       liveMood: document.querySelector(".liveShell")?.getAttribute("data-live-mood") ?? null,
       phase: metric("Phase"),
-      roomStatus: textOf(document.querySelector(".liveRoomPanel .livePanelHeading strong")),
+      roomStatus:
+        textOf(document.querySelector(".liveRoomPanel .livePanelHeading strong")) ??
+        (bodyText.includes("Ended") ? "Ended" : null),
       status: textOf(document.querySelector(".liveStatusBar strong")),
       title: document.title,
       url: location.href,
-      winner: metric("Winner"),
+      winner: metric("Winner") ?? winnerMatch?.groups?.winner ?? null,
     };
   });
 }

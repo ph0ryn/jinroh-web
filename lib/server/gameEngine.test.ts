@@ -40,6 +40,33 @@ describe("game engine", () => {
     }
   });
 
+  it("sends first-night automatic human inspection privately from the seer role", () => {
+    const result = startGame(PLAYERS.slice(0, 4), makeDefaultRuleSetForPlayers(4));
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      const seerAssignment = result.assignments.find((assignment) => assignment.roleId === "seer");
+      const inspectionEvent = result.initialEvents.find(
+        (event) => event.kind === "initial_inspection",
+      );
+      const targetPlayerId = inspectionEvent?.payload["targetPlayerId"];
+      const targetAssignment = result.assignments.find(
+        (assignment) => assignment.playerId === targetPlayerId,
+      );
+
+      expect(result.actions.every((action) => action.kind !== "inspect")).toBe(true);
+      expect(seerAssignment).toBeDefined();
+      expect(inspectionEvent).toMatchObject({
+        payload: { result: "human" },
+        visibility: "private",
+        visibleToPlayerIds: [seerAssignment?.playerId],
+      });
+      expect(targetPlayerId).not.toBe(seerAssignment?.playerId);
+      expect(targetAssignment?.roleId).not.toBe("werewolf");
+    }
+  });
+
   it("creates role-scoped werewolf attack but excludes madman from attack owners", () => {
     const players: PlayerRuntimeState[] = [
       { alive: true, playerId: "1", roleId: "werewolf" },
@@ -384,7 +411,7 @@ describe("game engine", () => {
     expect(resolution.events.map((event) => event.kind)).toContain("player_executed");
   });
 
-  it("shows executed roles privately to alive spiritists", () => {
+  it("shows executed werewolf judgement privately to alive spiritists", () => {
     const players: PlayerRuntimeState[] = [
       { alive: true, playerId: "1", roleId: "werewolf" },
       { alive: true, playerId: "2", roleId: "spiritist" },
@@ -402,7 +429,7 @@ describe("game engine", () => {
     const spiritistEvent = resolution.events.find((event) => event.kind === "spiritist_result");
 
     expect(spiritistEvent).toMatchObject({
-      payload: { roleId: "villager", targetPlayerId: "3" },
+      payload: { result: "human", targetPlayerId: "3" },
       visibility: "private",
       visibleToPlayerIds: ["2"],
     });

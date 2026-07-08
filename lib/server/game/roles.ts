@@ -18,18 +18,24 @@ import {
   InitialInspectionPolicy,
   InspectionView,
   PlayerResult,
-  ROLE_IDS,
   RoleSetupContributionKind,
   Team,
   VoteResultVisibility,
 } from "./types";
 
 import type { InspectionContext, PlayerResultContext, WinnerJudgementContext } from "./roles/base";
-import type { RoleId, RoleSetupContribution, WinnerJudgementContribution } from "./types";
+import type {
+  RoleCounts,
+  RoleId,
+  RolePublicMetadata,
+  RoleSetupContribution,
+  WinnerJudgementContribution,
+} from "./types";
 
 export { ROLE_REGISTRY_VERSION, Role, RoleRegistry } from "./roles/base";
 export type {
   AttackContext,
+  DeathResolvedContext,
   ExecutionContext,
   InspectionContext,
   PlayerResultContext,
@@ -51,14 +57,39 @@ export { WerewolfRole } from "./roles/werewolf";
 
 export const roleRegistry = new RoleRegistry([
   new WerewolfRole(),
-  new VillagerRole(),
   new MadmanRole(),
   new SeerRole(),
   new GuardRole(),
   new SpiritistRole(),
   new HunterRole(),
   new FoxRole(),
+  new VillagerRole(),
 ]);
+
+export function getRoleIds(): readonly RoleId[] {
+  return roleRegistry.getAll().map((role) => role.id);
+}
+
+export function getRoleCatalog(): readonly RolePublicMetadata[] {
+  return roleRegistry.getAll().map((role) => role.getPublicMetadata());
+}
+
+export function makeDefaultRoleCounts(playerCount: number): RoleCounts {
+  const roleCounts: Record<RoleId, number> = {};
+  let assignedRoleCount = 0;
+
+  for (const role of roleRegistry.getAll()) {
+    const count = role.getDefaultCount({
+      assignedRoleCount,
+      playerCount,
+    });
+
+    roleCounts[role.id] = count;
+    assignedRoleCount += count;
+  }
+
+  return roleCounts;
+}
 
 export function getCoreSetupContributions(): readonly RoleSetupContribution[] {
   return [
@@ -146,12 +177,12 @@ export function hasInitialInspectionHumanCandidate(params: {
     return true;
   }
 
-  return ROLE_IDS.some((roleId) => {
-    if (roleId === SEER_ROLE_ID || params.roleCounts[roleId] <= 0) {
+  return roleRegistry.getAll().some((role) => {
+    const roleId = role.id;
+
+    if (roleId === SEER_ROLE_ID || (params.roleCounts[roleId] ?? 0) <= 0) {
       return false;
     }
-
-    const role = roleRegistry.get(roleId);
 
     return role.seenAs(createInspectionCandidateContext(roleId)) === InspectionView.Human;
   });

@@ -20,6 +20,8 @@ export class HunterRole extends Role {
   override readonly id: RoleId = HUNTER_ROLE_ID;
   override readonly maxCount = 1;
   override readonly name = "Hunter";
+  override readonly order = 60;
+  override readonly shortLabel = "H";
   override readonly team = Team.Village;
 
   override onExecuted(context: ExecutionContext): readonly GameEffect[] {

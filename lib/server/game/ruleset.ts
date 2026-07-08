@@ -1,7 +1,9 @@
 import "server-only";
 import {
   getCoreSetupContributions,
+  getRoleIds,
   hasInitialInspectionHumanCandidate,
+  makeDefaultRoleCounts as makeDefaultRoleCountsFromRoles,
   roleRegistry,
 } from "./roles";
 import {
@@ -9,7 +11,6 @@ import {
   GameStatus,
   GuardConsecutiveTargetPolicy,
   InitialInspectionPolicy,
-  ROLE_IDS,
   VoteResultVisibility,
 } from "./types";
 
@@ -94,28 +95,16 @@ export function normalizeRuleSetInput(input: RuleSetInput = {}, playerCount = 0)
 }
 
 export function makeDefaultRoleCounts(playerCount: number): RoleCounts {
-  const werewolf = playerCount >= 7 ? 2 : 1;
-  const seer = playerCount >= 4 ? 1 : 0;
-  const guard = playerCount >= 5 ? 1 : 0;
-  const madman = playerCount >= 6 ? 1 : 0;
-  const fox = playerCount >= 8 ? 1 : 0;
-  const fixedRoles = werewolf + seer + guard + madman + fox;
-
-  return {
-    fox,
-    guard,
-    hunter: 0,
-    madman,
-    seer,
-    spiritist: 0,
-    villager: Math.max(playerCount - fixedRoles, 0),
-    werewolf,
-  };
+  return makeDefaultRoleCountsFromRoles(playerCount);
 }
 
 export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetValidationResult {
   const issues: RuleSetValidationIssue[] = [];
-  const totalRoles = ROLE_IDS.reduce((total, roleId) => total + ruleSet.roleCounts[roleId], 0);
+  const roleIds = getRoleIds();
+  const totalRoles = roleIds.reduce(
+    (total, roleId) => total + (ruleSet.roleCounts[roleId] ?? 0),
+    0,
+  );
 
   validateOptions(ruleSet.options, issues);
 
@@ -140,9 +129,9 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     });
   }
 
-  for (const roleId of ROLE_IDS) {
+  for (const roleId of roleIds) {
     const role = roleRegistry.get(roleId);
-    const count = ruleSet.roleCounts[roleId];
+    const count = ruleSet.roleCounts[roleId] ?? 0;
 
     if (!Number.isInteger(count) || count < 0) {
       issues.push({
@@ -179,7 +168,7 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     }
 
     for (const incompatibleRoleId of role.incompatibleRoleIds) {
-      if (count > 0 && ruleSet.roleCounts[incompatibleRoleId] > 0) {
+      if (count > 0 && (ruleSet.roleCounts[incompatibleRoleId] ?? 0) > 0) {
         issues.push({
           code: "role_incompatible",
           message: `${role.name} cannot be used with ${roleRegistry.get(incompatibleRoleId).name}.`,
@@ -193,7 +182,7 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     ruleSet.options.initialInspectionPolicy === InitialInspectionPolicy.Enabled &&
     !hasInitialInspectionHumanCandidate({
       roleCounts: ruleSet.roleCounts,
-      seerCount: ruleSet.roleCounts.seer,
+      seerCount: ruleSet.roleCounts["seer"] ?? 0,
     })
   ) {
     issues.push({
@@ -218,7 +207,7 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
 }
 
 export function resolveRoleSetup(ruleSet: RuleSet): ResolvedRoleSetup {
-  const activeRoleIds = ROLE_IDS.filter((roleId) => ruleSet.roleCounts[roleId] > 0);
+  const activeRoleIds = getRoleIds().filter((roleId) => (ruleSet.roleCounts[roleId] ?? 0) > 0);
   const context = createRoleSetupContext(ruleSet, activeRoleIds);
   const contributions = [
     ...getCoreSetupContributions(),
@@ -266,7 +255,7 @@ function normalizeRoleCounts(
   }
 
   return Object.fromEntries(
-    ROLE_IDS.map((roleId) => [roleId, inputRoleCounts[roleId] ?? 0]),
+    getRoleIds().map((roleId) => [roleId, inputRoleCounts[roleId] ?? 0]),
   ) as RoleCounts;
 }
 

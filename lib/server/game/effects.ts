@@ -3,7 +3,7 @@ import { createGuardProtectionEffect } from "./roles";
 import { GameEffectKind, GameEffectLayer } from "./types";
 
 import type { RoleContext } from "./roles";
-import type { GameActionKind, GameEffect, PlayerId, RoleId } from "./types";
+import type { GameActionKind, GameEffect, PlayerId, ResolvedDeath, RoleId } from "./types";
 
 export type PreventedEffect = {
   effect: GameEffect;
@@ -103,7 +103,12 @@ export function collectInspectionEffects(params: {
       view: targetRole.seenAs(inspectionContext),
       viewerId: params.viewerId,
     },
-    ...targetRole.onInspected(inspectionContext),
+    ...targetRole.onInspected(inspectionContext).map((effect) => {
+      return {
+        ...effect,
+        sourceActionId: params.sourceActionId,
+      };
+    }),
   ];
 }
 
@@ -173,6 +178,28 @@ export function collectExecutionResolvedEffects(params: {
           sourceActionId: params.sourceActionId,
         };
       }),
+  );
+}
+
+export function collectDeathResolvedEffects(params: {
+  context: RoleContext;
+  deaths: readonly ResolvedDeath[];
+  sourceActionId: string | null;
+}): readonly GameEffect[] {
+  return params.deaths.flatMap((death) =>
+    params.context.roles.getActiveRoles(params.context.state).flatMap((role) =>
+      role
+        .onDeathResolved({
+          ...params.context,
+          death,
+        })
+        .map((effect) => {
+          return {
+            ...effect,
+            sourceActionId: params.sourceActionId,
+          };
+        }),
+    ),
   );
 }
 

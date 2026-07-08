@@ -1,6 +1,6 @@
 import "server-only";
 
-export const ROLE_IDS = [
+export const BUILT_IN_ROLE_IDS = [
   "werewolf",
   "villager",
   "madman",
@@ -11,7 +11,7 @@ export const ROLE_IDS = [
   "fox",
 ] as const;
 
-export type RoleId = (typeof ROLE_IDS)[number];
+export type RoleId = string;
 
 export type PlayerId = string;
 
@@ -185,6 +185,28 @@ export type RoleActionDefinition = {
   target: RoleTargetKind;
 };
 
+export type RolePublicMetadata = {
+  description: string;
+  id: RoleId;
+  maxCount: number | null;
+  minCount: number;
+  name: string;
+  order: number;
+  shortLabel: string;
+  team: Team;
+};
+
+export type RoleDefaultCountContext = {
+  assignedRoleCount: number;
+  playerCount: number;
+};
+
+export type RoleSpecificOptionDefinition = {
+  key: string;
+  label: string;
+  roleId: RoleId;
+};
+
 export type CurrentAction = {
   actionKey: string;
   allowedPlayerIds: readonly PlayerId[];
@@ -306,6 +328,13 @@ export type GameEffect =
 export type GameEndCandidate = {
   reason: GameEndReason;
   sourceRoleId: RoleId;
+};
+
+export type ResolvedDeath = {
+  playerId: PlayerId;
+  reason: DeathReason;
+  roleId: RoleId;
+  sourceActionId: string | null;
 };
 
 export type FinalOutcome = {

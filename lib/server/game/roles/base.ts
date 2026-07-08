@@ -1,5 +1,5 @@
 import "server-only";
-import { CountGroup, DeathReason, EffectTag, InspectionView, ROLE_IDS } from "../types";
+import { CountGroup, DeathReason, EffectTag, InspectionView, RoleTargetKind } from "../types";
 import { createDeathEffect } from "./roleEffects";
 
 import type {
@@ -11,10 +11,14 @@ import type {
   PlayerResult,
   PlayerId,
   ReadonlyGameState,
+  ResolvedDeath,
   RoleActionDefinition,
+  RoleDefaultCountContext,
   RoleId,
   RoleNightConversationDefinition,
+  RolePublicMetadata,
   RoleSetupContribution,
+  RoleSpecificOptionDefinition,
   Team,
   WinnerJudgementContribution,
 } from "../types";
@@ -49,6 +53,10 @@ export type ExecutionResolvedContext = RoleContext & {
   targetRoleId: RoleId;
 };
 
+export type DeathResolvedContext = RoleContext & {
+  death: ResolvedDeath;
+};
+
 export type RoleActionResolvedContext = RoleContext & {
   actionKind: GameActionKind;
   actorId: PlayerId;
@@ -74,7 +82,32 @@ export abstract class Role {
   readonly maxCount: number | null = null;
   readonly minCount: number = 0;
   readonly nightConversation: RoleNightConversationDefinition | null = null;
+  readonly order: number = 1000;
   readonly required: boolean = false;
+  readonly shortLabel: string = "?";
+
+  getPublicMetadata(): RolePublicMetadata {
+    return {
+      description: this.description,
+      id: this.id,
+      maxCount: this.maxCount,
+      minCount: this.minCount,
+      name: this.name,
+      order: this.order,
+      shortLabel: this.shortLabel,
+      team: this.team,
+    };
+  }
+
+  getDefaultCount(context: RoleDefaultCountContext): number {
+    void context;
+
+    return 0;
+  }
+
+  getSpecificOptions(): readonly RoleSpecificOptionDefinition[] {
+    return [];
+  }
 
   countAs(context: PlayerRoleContext): CountGroup {
     void context;
@@ -94,6 +127,17 @@ export abstract class Role {
     return [];
   }
 
+  getEligibleTargets(
+    action: RoleActionDefinition,
+    context: PlayerRoleContext,
+  ): readonly PlayerId[] {
+    if (action.target === RoleTargetKind.None) {
+      return [];
+    }
+
+    return context.state.alivePlayerIds.filter((playerId) => playerId !== context.playerId);
+  }
+
   getSetupContributions(context: RoleContext): readonly RoleSetupContribution[] {
     void context;
 
@@ -101,6 +145,12 @@ export abstract class Role {
   }
 
   onInspected(context: InspectionContext): readonly GameEffect[] {
+    void context;
+
+    return [];
+  }
+
+  onFirstNightStarted(context: PlayerRoleContext): readonly GameEffect[] {
     void context;
 
     return [];
@@ -131,6 +181,12 @@ export abstract class Role {
   }
 
   onExecutionResolved(context: ExecutionResolvedContext): readonly GameEffect[] {
+    void context;
+
+    return [];
+  }
+
+  onDeathResolved(context: DeathResolvedContext): readonly GameEffect[] {
     void context;
 
     return [];
@@ -175,9 +231,25 @@ export abstract class Role {
 export class RoleRegistry {
   readonly version = ROLE_REGISTRY_VERSION;
 
+  readonly #roles: readonly Role[];
+
   readonly #rolesById: ReadonlyMap<RoleId, Role>;
 
   constructor(roles: readonly Role[]) {
+    const roleIds = roles.map((role) => role.id);
+    const uniqueRoleIds = new Set(roleIds);
+
+    if (roleIds.length !== uniqueRoleIds.size) {
+      throw new Error("Duplicate role ids are not allowed.");
+    }
+
+    this.#roles = [...roles].sort((left, right) => {
+      if (left.order !== right.order) {
+        return left.order - right.order;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
     this.#rolesById = new Map(roles.map((role) => [role.id, role]));
   }
 
@@ -192,7 +264,7 @@ export class RoleRegistry {
   }
 
   getAll(): readonly Role[] {
-    return ROLE_IDS.map((roleId) => this.get(roleId));
+    return this.#roles;
   }
 
   getActiveRoles(state: ReadonlyGameState): readonly Role[] {

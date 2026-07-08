@@ -123,7 +123,7 @@ async function runRoleCoverage(baseUrl, supabase) {
     }
 
     for (const player of players.slice(1)) {
-      await player.page.getByLabel("Room code").fill(roomCode);
+      await fillRoomCode(player.page, roomCode);
       await player.page.getByRole("button", { name: "Join" }).click();
       await waitMetric(player.page, "Code", roomCode);
     }
@@ -299,6 +299,12 @@ async function createPlayer(browser, baseUrl, label, displayName, errors, warnin
   return { context, label, page };
 }
 
+async function fillRoomCode(page, roomCode) {
+  for (const [index, digit] of roomCode.split("").entries()) {
+    await page.getByRole("textbox", { name: `Room code digit ${index + 1}` }).fill(digit);
+  }
+}
+
 async function readSummaries(players, baseUrl, roomCode) {
   return Promise.all(
     players.map(async (player) => {
@@ -469,7 +475,7 @@ async function exerciseNightConversation(players, baseUrl, roomCode, normalNight
 
 async function sendNightConversationViaUi(entry, body) {
   if ((await entry.player.page.locator(".liveNightChatPanel").count()) === 0) {
-    await entry.player.page.getByRole("button", { name: "Show night chat" }).click();
+    await entry.player.page.getByRole("button", { name: "Night chat" }).click();
   }
 
   const input = entry.player.page.locator(".liveNightChatComposer input");
@@ -712,34 +718,52 @@ async function waitSeated(page, seated, target) {
 }
 
 async function waitMetric(page, label, expected) {
-  await page.waitForFunction(
-    ({ expected, label }) => {
-      const textOf = (element) => (element === null ? null : element.textContent.trim());
+  try {
+    await page.waitForFunction(
+      ({ expected, label }) => {
+        const textOf = (element) => (element === null ? null : element.textContent.trim());
 
-      if (label === "Code") {
-        return (
-          textOf(document.querySelector('[aria-label="Room invite tools"] strong')) === expected
-        );
-      }
-
-      for (const row of document.querySelectorAll(".liveMetrics div")) {
-        if (
-          textOf(row.querySelector("dt")) === label &&
-          textOf(row.querySelector("dd")) === expected
-        ) {
-          return true;
+        if (label === "Code") {
+          return (
+            textOf(document.querySelector('[aria-label="Room invite tools"] strong')) === expected
+          );
         }
-      }
 
-      return false;
-    },
-    { expected, label },
-    { timeout: 10000 },
-  );
+        for (const row of document.querySelectorAll(".liveMetrics div")) {
+          const value = textOf(row.querySelector("dd"));
+
+          if (
+            textOf(row.querySelector("dt")) === label &&
+            (value === expected ||
+              (label === "Phase" && value?.toLowerCase().includes(expected.toLowerCase())))
+          ) {
+            return true;
+          }
+        }
+
+        return false;
+      },
+      { expected, label },
+      { timeout: 10000 },
+    );
+  } catch (error) {
+    const bodyText = await page
+      .locator("body")
+      .innerText({ timeout: 1000 })
+      .catch(() => "");
+
+    throw new Error(
+      `Timed out waiting for metric ${label}=${expected}.\n${bodyText.slice(0, 2000)}`,
+      { cause: error },
+    );
+  }
 }
 
 async function waitPhase(page, phase) {
-  await waitMetric(page, "Phase", phase);
+  await page
+    .getByText(new RegExp(`playing / ${phase}`, "i"))
+    .first()
+    .waitFor({ timeout: 10000 });
 }
 
 async function waitAllPhases(players, phase) {
@@ -749,14 +773,7 @@ async function waitAllPhases(players, phase) {
 }
 
 async function refresh(page) {
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await page
-    .waitForFunction(
-      () => !document.body.textContent.includes("Updating the room from the server."),
-      null,
-      { timeout: 10000 },
-    )
-    .catch(() => {});
+  await page.reload({ waitUntil: "networkidle" });
 }
 
 async function refreshAll(players) {

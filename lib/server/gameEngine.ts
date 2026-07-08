@@ -1,40 +1,61 @@
-import { randomInt } from "node:crypto";
-
 import {
+  DEFAULT_RULE_SET,
   getRoleName,
-  isRoleId,
-  makeDefaultRuleSetForPlayers,
-  normalizeRuleSet,
-  ROLE_DEFINITIONS,
-  ROLE_IDS,
   type ActionKind,
   type DeathReason,
   type GamePhase,
-  type InspectionResult,
+  type PlayerResult as SharedPlayerResult,
   type RoleId,
   type RuleSet,
   type RuleSetInput,
   type Team,
-  validateRuleSet,
 } from "@/lib/shared/game";
 
 import {
+  collectAttackEffects,
+  collectDeathResolvedEffects,
   collectExecutionEffects,
   collectExecutionResolvedEffects,
+  collectInspectionEffects,
   collectRoleActionEffects,
   resolveEffects,
 } from "./game/effects";
-import { roleRegistry, type RoleContext } from "./game/roles";
-import { DEFAULT_RULE_OPTIONS } from "./game/ruleset";
 import {
+  evaluatePlayerResult,
+  evaluateWinnerTeam,
+  getRoleIds,
+  makeDefaultRoleCounts,
+  roleRegistry,
+  type RoleContext,
+} from "./game/roles";
+import {
+  resolveRoleSetup,
+  validateRuleSet as validateRegisteredRuleSet,
+  type RuleSet as RegisteredRuleSet,
+} from "./game/ruleset";
+import {
+  DayDiscussionMode,
   GameActionKind as RegisteredGameActionKind,
   DeathReason as RegisteredDeathReason,
   GameEffectKind,
+  GameEndReason,
+  GameEventKind as RegisteredGameEventKind,
+  GameEventVisibility as RegisteredGameEventVisibility,
   GamePhase as RegisteredGamePhase,
   GameStatus as RegisteredGameStatus,
+  GuardConsecutiveTargetPolicy,
+  InitialInspectionPolicy,
+  InspectionView,
   RoleTargetKind as RegisteredRoleTargetKind,
+  Team as RegisteredTeam,
+  VoteResultVisibility,
   type GameEffect,
+  type PlayerId,
+  type PlayerResult as RegisteredPlayerResult,
+  type ReadonlyGameState,
+  type ResolvedDeath,
   type RoleId as RegisteredRoleId,
+  type RuleOptions as RegisteredRuleOptions,
 } from "./game/types";
 
 export const ENGINE_VERSION = "2026-07-product-foundation";
@@ -102,6 +123,7 @@ export type PhaseResolutionInput = {
 
 export type SubmittedAction = {
   actorPlayerId: string;
+  actorRoleId?: RoleId | null;
   actionKey?: string;
   kind: ActionKind;
   targetPlayerId: string | null;
@@ -116,12 +138,18 @@ export type PhaseResolution = {
   actionsToOpen: EngineAction[];
   deaths: EngineDeath[];
   events: EngineEvent[];
-  finalOutcome: { reason: string; winnerTeam: Team } | null;
+  finalOutcome: EngineFinalOutcome | null;
   nextDayNumber: number;
   nextNightNumber: number;
   nextPhase: GamePhase | null;
   nextPhaseDurationSeconds: number | null;
   speechSlotsToCreate: OrderedSpeechSlot[];
+};
+
+export type EngineFinalOutcome = {
+  playerResultsByPlayerId: Record<string, SharedPlayerResult>;
+  reason: string;
+  winnerTeam: Team;
 };
 
 type EngineDeath = {
@@ -133,11 +161,8 @@ export function startGame(
   players: readonly EnginePlayer[],
   ruleSetInput: RuleSetInput | null,
 ): StartGameResult {
-  const ruleSet =
-    ruleSetInput === null
-      ? makeDefaultRuleSetForPlayers(players.length)
-      : normalizeRuleSet(ruleSetInput, players.length);
-  const validation = validateRuleSet(ruleSet, players.length);
+  const ruleSet = normalizeEngineRuleSet(ruleSetInput, players.length);
+  const validation = validateEngineRuleSet(ruleSet, players.length);
 
   if (!validation.ok) {
     return validation;
@@ -162,7 +187,7 @@ export function startGame(
       visibleToPlayerIds: [],
       visibleToRoleIds: [],
     },
-    ...createInitialInspectionEvents(assignments, ruleSet),
+    ...createFirstNightRoleEvents(assignments, ruleSet),
   ];
 
   return {
@@ -203,122 +228,112 @@ export function resolvePhase(input: PhaseResolutionInput): PhaseResolution {
 export function getAvailableNightActions(
   players: readonly PlayerRuntimeState[],
   nightNumber: number,
-  ruleSet: RuleSet = makeDefaultRuleSetForPlayers(players.length),
+  ruleSet: RuleSet = normalizeEngineRuleSet(null, players.length),
   previousGuardTargetByPlayerId: Readonly<Record<string, string>> = {},
 ): EngineAction[] {
   if (nightNumber <= 1) {
     return [];
   }
 
-  const alivePlayers = players.filter((player) => player.alive);
+  const roleContext = createRoleContext({
+    currentPhase: "night",
+    dayNumber: 0,
+    nightNumber,
+    players,
+    previousGuardTargetByPlayerId,
+    ruleSet,
+  });
+  const openedRoleGroupActionKeys = new Set<string>();
   const actions: EngineAction[] = [];
-  const werewolfIds = alivePlayers
-    .filter((player) => player.roleId === "werewolf")
-    .map((player) => player.playerId);
-  const attackTargets = alivePlayers
-    .filter((player) => player.roleId !== "werewolf")
-    .map((player) => player.playerId);
 
-  if (werewolfIds.length > 0) {
-    actions.push({
-      actorPlayerId: null,
-      actorRoleId: "werewolf",
-      eligibleTargetPlayerIds: attackTargets,
-      key: `attack:${nightNumber}`,
-      kind: "attack",
-      targetKind: "single_player",
-    });
-  }
-
-  for (const player of alivePlayers) {
-    if (player.roleId === "seer") {
-      actions.push({
-        actorPlayerId: player.playerId,
-        actorRoleId: "seer",
-        eligibleTargetPlayerIds: alivePlayers
-          .filter((target) => target.playerId !== player.playerId)
-          .map((target) => target.playerId),
-        key: `inspect:${nightNumber}:${player.playerId}`,
-        kind: "inspect",
-        targetKind: "single_player",
-      });
+  for (const player of players) {
+    if (!player.alive) {
+      continue;
     }
 
-    if (player.roleId === "guard") {
-      const previousTargetId = previousGuardTargetByPlayerId[player.playerId];
-      const eligibleTargetPlayerIds = alivePlayers
-        .filter((target) => target.playerId !== player.playerId)
-        .filter(
-          (target) =>
-            ruleSet.guardConsecutiveTargetPolicy === "allow" ||
-            target.playerId !== previousTargetId,
-        )
-        .map((target) => target.playerId);
+    const role = roleRegistry.get(player.roleId);
+    const playerRoleContext = {
+      ...roleContext,
+      playerId: player.playerId,
+    };
 
-      if (eligibleTargetPlayerIds.length > 0) {
-        actions.push({
-          actorPlayerId: player.playerId,
-          actorRoleId: "guard",
-          eligibleTargetPlayerIds,
-          key: `guard:${nightNumber}:${player.playerId}`,
-          kind: "guard",
-          targetKind: "single_player",
-        });
+    for (const roleAction of role.getActions(playerRoleContext)) {
+      const kind = toSharedActionKind(roleAction.kind);
+      const targetKind = toSharedTargetKind(roleAction.target);
+
+      if (kind === null || targetKind === null) {
+        continue;
       }
+
+      const ownerRoleId = roleAction.roleGroupRoleId;
+      const actionKey =
+        ownerRoleId === null
+          ? `${kind}:${nightNumber}:${player.playerId}`
+          : `${kind}:${nightNumber}:${ownerRoleId}`;
+
+      if (ownerRoleId !== null && openedRoleGroupActionKeys.has(actionKey)) {
+        continue;
+      }
+
+      const eligibleTargetPlayerIds = role.getEligibleTargets(roleAction, playerRoleContext);
+
+      if (
+        roleAction.target !== RegisteredRoleTargetKind.None &&
+        eligibleTargetPlayerIds.length === 0
+      ) {
+        continue;
+      }
+
+      actions.push({
+        actorPlayerId: ownerRoleId === null ? player.playerId : null,
+        actorRoleId: ownerRoleId,
+        eligibleTargetPlayerIds: [...eligibleTargetPlayerIds],
+        key: actionKey,
+        kind,
+        targetKind,
+      });
+      openedRoleGroupActionKeys.add(actionKey);
     }
   }
 
   return actions;
 }
 
-export function getRoleInspectionResult(roleId: RoleId): InspectionResult {
-  return ROLE_DEFINITIONS[roleId].seenAs;
-}
-
 export function evaluateWinner(players: readonly PlayerRuntimeState[]): {
   reason: string;
   winnerTeam: Team;
 } | null {
-  const alivePlayers = players.filter((player) => player.alive);
-  const aliveFox = alivePlayers.some((player) => player.roleId === "fox");
-  const aliveWerewolves = alivePlayers.filter(
-    (player) => ROLE_DEFINITIONS[player.roleId].countAs === "werewolf",
-  ).length;
-  const aliveVillagers = alivePlayers.filter(
-    (player) => ROLE_DEFINITIONS[player.roleId].countAs === "villager",
-  ).length;
+  const finalOutcome = evaluateFinalOutcome(players, makeRuleSetForPlayers(players));
 
-  if (aliveFox && (aliveWerewolves === 0 || aliveWerewolves >= aliveVillagers)) {
-    return { reason: "A fox survived when another team condition resolved.", winnerTeam: "fox" };
-  }
-
-  if (aliveWerewolves === 0) {
-    return { reason: "All werewolves are dead.", winnerTeam: "villagers" };
-  }
-
-  if (aliveWerewolves >= aliveVillagers) {
-    return { reason: "Werewolves reached parity with villagers.", winnerTeam: "werewolves" };
-  }
-
-  return null;
+  return finalOutcome === null
+    ? null
+    : {
+        reason: finalOutcome.reason,
+        winnerTeam: finalOutcome.winnerTeam,
+      };
 }
 
 export function didPlayerWin(roleId: RoleId, winnerTeam: Team): boolean {
-  return ROLE_DEFINITIONS[roleId].team === winnerTeam;
+  const winner = toRegisteredTeam(winnerTeam);
+
+  if (winner === null) {
+    return false;
+  }
+
+  return roleRegistry.get(roleId).team === winner;
 }
 
 export function parseRoleCounts(value: unknown): Record<RoleId, number> {
-  const result = Object.fromEntries(ROLE_IDS.map((roleId) => [roleId, 0])) as Record<
-    RoleId,
-    number
-  >;
+  const roleIds = getRoleIds();
+  const roleIdSet = new Set(roleIds);
+  const result = Object.fromEntries(roleIds.map((roleId) => [roleId, 0])) as Record<RoleId, number>;
 
   if (typeof value !== "object" || value === null) {
     return result;
   }
 
   for (const [key, rawCount] of Object.entries(value)) {
-    if (isRoleId(key) && typeof rawCount === "number") {
+    if (roleIdSet.has(key) && typeof rawCount === "number") {
       result[key] = rawCount;
     }
   }
@@ -327,8 +342,8 @@ export function parseRoleCounts(value: unknown): Record<RoleId, number> {
 }
 
 function assignRoles(players: readonly EnginePlayer[], ruleSet: RuleSet): RoleAssignment[] {
-  const roleDeck = ROLE_IDS.flatMap((roleId) =>
-    Array.from({ length: ruleSet.roleCounts[roleId] }, () => roleId),
+  const roleDeck = getRoleIds().flatMap((roleId) =>
+    Array.from({ length: ruleSet.roleCounts[roleId] ?? 0 }, () => roleId),
   );
   const shuffledRoleDeck = stableShuffle(roleDeck, players.map((player) => player.id).join(":"));
 
@@ -359,150 +374,413 @@ function hashString(value: string): number {
   return hash >>> 0;
 }
 
-function createInitialInspectionEvents(
+function normalizeEngineRuleSet(ruleSetInput: RuleSetInput | null, playerCount: number): RuleSet {
+  if (ruleSetInput === null) {
+    return {
+      ...DEFAULT_RULE_SET,
+      roleCounts: makeDefaultRoleCounts(playerCount) as RuleSet["roleCounts"],
+    };
+  }
+
+  const roleCounts = Object.fromEntries(
+    getRoleIds().map((roleId) => [roleId, ruleSetInput.roleCounts[roleId] ?? 0]),
+  ) as RuleSet["roleCounts"];
+  const specifiedCount = getRoleIds().reduce(
+    (total, roleId) => total + (roleCounts[roleId] ?? 0),
+    0,
+  );
+  const options = {
+    dayMode: ruleSetInput.dayMode,
+    dayReadyCheckSecondsPerPlayer: ruleSetInput.dayReadyCheckSecondsPerPlayer,
+    daySpeechSeconds: ruleSetInput.daySpeechSeconds,
+    executionLastWordsSeconds: ruleSetInput.executionLastWordsSeconds,
+    firstDaySpeechRounds: ruleSetInput.firstDaySpeechRounds,
+    firstNightSeconds: ruleSetInput.firstNightSeconds,
+    guardConsecutiveTargetPolicy: ruleSetInput.guardConsecutiveTargetPolicy,
+    initialInspectionPolicy: ruleSetInput.initialInspectionPolicy,
+    nightSeconds: ruleSetInput.nightSeconds,
+    normalDaySpeechRounds: ruleSetInput.normalDaySpeechRounds,
+    voteResultVisibility: ruleSetInput.voteResultVisibility,
+    votingSeconds: ruleSetInput.votingSeconds,
+  } satisfies Omit<RuleSet, "roleCounts">;
+
+  return {
+    ...(specifiedCount === 0
+      ? {
+          ...DEFAULT_RULE_SET,
+          roleCounts: makeDefaultRoleCounts(playerCount) as RuleSet["roleCounts"],
+        }
+      : {
+          roleCounts,
+        }),
+    ...options,
+  };
+}
+
+function validateEngineRuleSet(
+  ruleSet: RuleSet,
+  playerCount: number,
+): { ok: true } | { errors: string[]; ok: false } {
+  const validation = validateRegisteredRuleSet(toRegisteredRuleSet(ruleSet), playerCount);
+
+  if (validation.ok) {
+    return { ok: true };
+  }
+
+  return {
+    errors: validation.issues.map((issue) => issue.message),
+    ok: false,
+  };
+}
+
+function createFirstNightRoleEvents(
   assignments: readonly RoleAssignment[],
   ruleSet: RuleSet,
 ): EngineEvent[] {
-  if (ruleSet.initialInspectionPolicy !== "enabled") {
+  const players = assignments.map((assignment) => ({
+    alive: true,
+    playerId: assignment.playerId,
+    roleId: assignment.roleId,
+  }));
+  const context = createRoleContext({
+    currentPhase: "night",
+    dayNumber: 0,
+    nightNumber: 1,
+    players,
+    ruleSet,
+  });
+  const effects = assignments.flatMap((assignment) => {
+    return roleRegistry.get(assignment.roleId).onFirstNightStarted({
+      ...context,
+      playerId: assignment.playerId,
+    });
+  });
+  const effectResolution = resolveEffects(effects);
+
+  return toEngineEffectEvents(effectResolution.appliedEffects, [], []);
+}
+
+function collectSubmittedActionEffects(
+  action: SubmittedAction,
+  context: RoleContext,
+  input: PhaseResolutionInput,
+): readonly GameEffect[] {
+  if (action.targetPlayerId === null) {
     return [];
   }
 
-  const seer = assignments.find((assignment) => assignment.roleId === "seer");
+  switch (action.kind) {
+    case "attack":
+      return collectAttackEffects({
+        attackerIds: getActionActorPlayerIds(action, input.players),
+        context,
+        sourceActionId: action.actionKey ?? null,
+        targetId: action.targetPlayerId,
+      });
+    case "guard":
+      return collectRoleActionEffects({
+        actionKind: RegisteredGameActionKind.Guard,
+        actorId: action.actorPlayerId,
+        context,
+        sourceActionId: action.actionKey ?? null,
+        targetId: action.targetPlayerId,
+      });
+    case "inspect":
+      return collectInspectionEffects({
+        context,
+        sourceActionId: action.actionKey ?? null,
+        targetId: action.targetPlayerId,
+        viewerId: action.actorPlayerId,
+      });
+    default:
+      return [];
+  }
+}
 
-  if (seer === undefined) {
-    return [];
+function getActionActorPlayerIds(
+  action: SubmittedAction,
+  players: readonly PlayerRuntimeState[],
+): readonly PlayerId[] {
+  if (action.actorRoleId === null || action.actorRoleId === undefined) {
+    return [action.actorPlayerId];
   }
 
-  const candidates = assignments.filter(
-    (assignment) =>
-      assignment.playerId !== seer.playerId &&
-      getRoleInspectionResult(assignment.roleId) === "human",
+  return players
+    .filter((player) => player.alive && player.roleId === action.actorRoleId)
+    .map((player) => player.playerId);
+}
+
+function resolveEffectsWithDeathHooks(params: {
+  effects: readonly GameEffect[];
+  input: PhaseResolutionInput;
+  sourceActionId: string | null;
+}): ReturnType<typeof resolveEffects> {
+  const initialResolution = resolveEffects(params.effects);
+  const initialDeaths = toResolvedDeaths(initialResolution.appliedEffects, params.input.players);
+
+  if (initialDeaths.length === 0) {
+    return initialResolution;
+  }
+
+  const nextPlayers = applyDeaths(
+    params.input.players,
+    toEngineDeaths(initialResolution.appliedEffects),
   );
+  const deathResolvedContext = createRoleContext({
+    ...params.input,
+    players: nextPlayers,
+  });
+  const deathResolvedEffects = collectDeathResolvedEffects({
+    context: deathResolvedContext,
+    deaths: initialDeaths,
+    sourceActionId: params.sourceActionId,
+  });
 
-  if (candidates.length === 0) {
-    return [];
+  if (deathResolvedEffects.length === 0) {
+    return initialResolution;
   }
 
-  const target = candidates[randomInt(candidates.length)];
+  return resolveEffects([...initialResolution.appliedEffects, ...deathResolvedEffects]);
+}
 
-  if (target === undefined) {
-    return [];
-  }
-
-  return [
-    {
-      kind: "initial_inspection",
-      message: null,
-      payload: {
-        result: "human",
-        targetPlayerId: target.playerId,
-      },
-      visibility: "private",
-      visibleToPlayerIds: [seer.playerId],
-      visibleToRoleIds: [],
-    },
+function evaluateFinalOutcome(
+  players: readonly PlayerRuntimeState[],
+  ruleSet: RuleSet,
+): EngineFinalOutcome | null {
+  const context = createRoleContext({
+    currentPhase: "night",
+    dayNumber: 0,
+    nightNumber: 0,
+    players,
+    ruleSet,
+  });
+  const endReasons = [
+    ...new Set(
+      context.roles
+        .getActiveRoles(context.state)
+        .flatMap((role) => role.checkEndCondition(context)?.reason ?? []),
+    ),
   ];
+
+  if (endReasons.length === 0) {
+    return null;
+  }
+
+  const winnerTeam = evaluateWinnerTeam({
+    ...context,
+    endReasons,
+  });
+
+  return {
+    playerResultsByPlayerId: Object.fromEntries(
+      players.map((player) => [
+        player.playerId,
+        toSharedPlayerResult(
+          evaluatePlayerResult({
+            ...context,
+            endReasons,
+            playerId: player.playerId,
+            winnerTeam,
+          }),
+        ),
+      ]),
+    ),
+    reason: formatFinalOutcomeReason(winnerTeam, endReasons),
+    winnerTeam: toSharedTeam(winnerTeam),
+  };
+}
+
+function makeRuleSetForPlayers(players: readonly PlayerRuntimeState[]): RuleSet {
+  const roleCounts = Object.fromEntries(getRoleIds().map((roleId) => [roleId, 0])) as Record<
+    RoleId,
+    number
+  >;
+
+  for (const player of players) {
+    roleCounts[player.roleId] = (roleCounts[player.roleId] ?? 0) + 1;
+  }
+
+  return {
+    ...DEFAULT_RULE_SET,
+    roleCounts: roleCounts as RuleSet["roleCounts"],
+  };
+}
+
+function resolveRoleSetupForPlayers(
+  ruleSet: RuleSet,
+  players: readonly PlayerRuntimeState[],
+): ReturnType<typeof resolveRoleSetup> {
+  const registeredRuleSet = toRegisteredRuleSet(ruleSet);
+  const roleCounts = { ...registeredRuleSet.roleCounts };
+
+  for (const player of players) {
+    roleCounts[player.roleId] = Math.max(roleCounts[player.roleId] ?? 0, 1);
+  }
+
+  return resolveRoleSetup({
+    ...registeredRuleSet,
+    roleCounts,
+  });
+}
+
+function toResolvedDeaths(
+  effects: readonly GameEffect[],
+  players: readonly PlayerRuntimeState[],
+): ResolvedDeath[] {
+  const roleByPlayerId = new Map(players.map((player) => [player.playerId, player.roleId]));
+
+  return effects.flatMap((effect) => {
+    if (effect.kind !== GameEffectKind.Death) {
+      return [];
+    }
+
+    const roleId = roleByPlayerId.get(effect.playerId);
+
+    if (roleId === undefined) {
+      return [];
+    }
+
+    return [
+      {
+        playerId: effect.playerId,
+        reason: effect.reason,
+        roleId,
+        sourceActionId: effect.sourceActionId,
+      },
+    ];
+  });
+}
+
+function applyDeaths(
+  players: readonly PlayerRuntimeState[],
+  deaths: readonly EngineDeath[],
+): PlayerRuntimeState[] {
+  return players.map((player) => ({
+    ...player,
+    alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
+  }));
+}
+
+function toRegisteredRuleSet(ruleSet: RuleSet): RegisteredRuleSet {
+  return {
+    engineVersion: ENGINE_VERSION,
+    options: toRegisteredRuleOptions(ruleSet),
+    roleCounts: Object.fromEntries(
+      getRoleIds().map((roleId) => [roleId, ruleSet.roleCounts[roleId] ?? 0]),
+    ),
+    roleRegistryVersion: ROLE_REGISTRY_VERSION,
+  };
+}
+
+function toRegisteredRuleOptions(ruleSet: RuleSet): RegisteredRuleOptions {
+  return {
+    dayDiscussionMode:
+      ruleSet.dayMode === "ordered_speech"
+        ? DayDiscussionMode.OrderedSpeech
+        : DayDiscussionMode.ReadyCheck,
+    dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
+    daySpeechSeconds: ruleSet.daySpeechSeconds,
+    executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
+    firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
+    firstNightSeconds: ruleSet.firstNightSeconds,
+    guardConsecutiveTargetPolicy:
+      ruleSet.guardConsecutiveTargetPolicy === "allow"
+        ? GuardConsecutiveTargetPolicy.Allow
+        : GuardConsecutiveTargetPolicy.DenySameTarget,
+    initialInspectionPolicy:
+      ruleSet.initialInspectionPolicy === "disabled"
+        ? InitialInspectionPolicy.Disabled
+        : InitialInspectionPolicy.Enabled,
+    nightSeconds: ruleSet.nightSeconds,
+    normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
+    voteResultVisibility:
+      ruleSet.voteResultVisibility === "voter_to_target"
+        ? VoteResultVisibility.VoterToTarget
+        : VoteResultVisibility.CountOnly,
+    votingSeconds: ruleSet.votingSeconds,
+  };
+}
+
+function toSharedTeam(team: RegisteredTeam): Team {
+  switch (team) {
+    case RegisteredTeam.Fox:
+      return "fox";
+    case RegisteredTeam.Neutral:
+      return "neutral";
+    case RegisteredTeam.Village:
+      return "villagers";
+    case RegisteredTeam.Werewolf:
+      return "werewolves";
+  }
+}
+
+function toRegisteredTeam(team: Team): RegisteredTeam | null {
+  switch (team) {
+    case "fox":
+      return RegisteredTeam.Fox;
+    case "neutral":
+      return RegisteredTeam.Neutral;
+    case "villagers":
+      return RegisteredTeam.Village;
+    case "werewolves":
+      return RegisteredTeam.Werewolf;
+    default:
+      return null;
+  }
+}
+
+function toSharedPlayerResult(result: RegisteredPlayerResult): SharedPlayerResult {
+  return result;
+}
+
+function toSharedInspectionResult(view: InspectionView): "human" | "werewolf" {
+  return view === InspectionView.Werewolf ? "werewolf" : "human";
+}
+
+function formatFinalOutcomeReason(
+  winnerTeam: RegisteredTeam,
+  endReasons: readonly GameEndReason[],
+): string {
+  if (winnerTeam === RegisteredTeam.Fox) {
+    return "A fox survived when another team condition resolved.";
+  }
+
+  if (endReasons.includes(GameEndReason.WerewolvesEliminated)) {
+    return "All werewolves are dead.";
+  }
+
+  if (endReasons.includes(GameEndReason.WerewolfDominance)) {
+    return "Werewolves reached parity with villagers.";
+  }
+
+  return "Game ended.";
 }
 
 function resolveNight(input: PhaseResolutionInput): PhaseResolution {
-  const attack = input.actions.find((action) => action.kind === "attack");
-  const guardActions = input.actions.filter(
-    (action) => action.kind === "guard" && action.targetPlayerId !== null,
+  const roleContext = createRoleContext(input);
+  const effects = input.actions.flatMap((action) =>
+    collectSubmittedActionEffects(action, roleContext, input),
   );
-  const guardTargets = new Set(guardActions.map((action) => action.targetPlayerId));
-  const events: EngineEvent[] = [];
-  const deaths: { playerId: string; reason: "attack" | "rule_effect" }[] = [];
-
-  for (const guardAction of guardActions) {
-    events.push({
-      kind: "guard_resolved",
-      message: null,
-      payload: {
-        actorPlayerId: guardAction.actorPlayerId,
-        targetPlayerId: guardAction.targetPlayerId,
-      },
-      visibility: "internal",
-      visibleToPlayerIds: [],
-      visibleToRoleIds: [],
-    });
-  }
-
-  for (const inspect of input.actions.filter((action) => action.kind === "inspect")) {
-    const target = input.players.find((player) => player.playerId === inspect.targetPlayerId);
-
-    if (target !== undefined) {
-      if (target.roleId === "fox") {
-        deaths.push({ playerId: target.playerId, reason: "rule_effect" });
-        events.push({
-          kind: "player_died",
-          message: "A player died after being inspected.",
-          payload: { reason: "rule_effect", targetPlayerId: target.playerId },
-          visibility: "public",
-          visibleToPlayerIds: [],
-          visibleToRoleIds: [],
-        });
-      }
-
-      events.push({
-        kind: "inspection_result",
-        message: null,
-        payload: {
-          result: getRoleInspectionResult(target.roleId),
-          targetPlayerId: target.playerId,
-        },
-        visibility: "private",
-        visibleToPlayerIds: [inspect.actorPlayerId],
-        visibleToRoleIds: [],
-      });
-    }
-  }
-
-  if (attack?.targetPlayerId !== null && attack?.targetPlayerId !== undefined) {
-    if (guardTargets.has(attack.targetPlayerId)) {
-      events.push({
-        kind: "attack_guarded",
-        message: "Someone was attacked, but no one died.",
-        payload: {},
-        visibility: "public",
-        visibleToPlayerIds: [],
-        visibleToRoleIds: [],
-      });
-    } else {
-      const target = input.players.find((player) => player.playerId === attack.targetPlayerId);
-
-      if (target?.roleId === "fox") {
-        events.push({
-          kind: "attack_guarded",
-          message: "Someone was attacked, but no one died.",
-          payload: { reason: "fox_survived_attack" },
-          visibility: "public",
-          visibleToPlayerIds: [],
-          visibleToRoleIds: [],
-        });
-
-        return openDay(input, deaths, events);
-      }
-
-      deaths.push({ playerId: attack.targetPlayerId, reason: "attack" });
-      events.push({
-        kind: "player_died",
-        message: "A player died during the night.",
-        payload: { reason: "attack", targetPlayerId: attack.targetPlayerId },
-        visibility: "public",
-        visibleToPlayerIds: [],
-        visibleToRoleIds: [],
-      });
-    }
-  } else {
-    events.push({
-      kind: "peaceful_night",
-      message: "The night ended with no death.",
-      payload: {},
-      visibility: "public",
-      visibleToPlayerIds: [],
-      visibleToRoleIds: [],
-    });
-  }
+  const effectResolution = resolveEffectsWithDeathHooks({
+    effects,
+    input,
+    sourceActionId: "night",
+  });
+  const deaths = toEngineDeaths(effectResolution.appliedEffects);
+  const attack = input.actions.find((action) => action.kind === "attack");
+  const attackDeathResolved =
+    attack?.targetPlayerId !== null &&
+    attack?.targetPlayerId !== undefined &&
+    deaths.some((death) => death.playerId === attack.targetPlayerId && death.reason === "attack");
+  const events: EngineEvent[] = [
+    ...input.actions.flatMap((action) => toActionResolvedEvents(action)),
+    ...toPublicNightOutcomeEvents({
+      attack,
+      attackDeathResolved,
+      deaths,
+    }),
+    ...toEngineEffectEvents(effectResolution.appliedEffects, deaths, []),
+  ];
 
   return openDay(input, deaths, events);
 }
@@ -516,7 +794,7 @@ function openDay(
     ...player,
     alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
   }));
-  const finalOutcome = evaluateWinner(nextPlayers);
+  const finalOutcome = evaluateFinalOutcome(nextPlayers, input.ruleSet);
 
   if (finalOutcome !== null) {
     return {
@@ -837,7 +1115,11 @@ function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
       targetId: targetPlayerId,
     }),
   ];
-  const effectResolution = resolveEffects(effects);
+  const effectResolution = resolveEffectsWithDeathHooks({
+    effects,
+    input,
+    sourceActionId: event.actionKey ?? null,
+  });
   const deaths = toEngineDeaths(effectResolution.appliedEffects);
   const actionsToOpen = toEngineActions(effectResolution.appliedEffects);
   const events: EngineEvent[] = [
@@ -849,8 +1131,7 @@ function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
       visibleToPlayerIds: [],
       visibleToRoleIds: [],
     },
-    ...toPrivateEngineEvents(effectResolution.appliedEffects),
-    ...toPublicDeathEvents(deaths, ["execution"]),
+    ...toEngineEffectEvents(effectResolution.appliedEffects, deaths, ["execution"]),
   ];
 
   if (actionsToOpen.length > 0) {
@@ -887,12 +1168,13 @@ function resolveExecutionRoleAction(
     sourceActionId: action.actionKey ?? null,
     targetId: action.targetPlayerId,
   });
-  const effectResolution = resolveEffects(effects);
+  const effectResolution = resolveEffectsWithDeathHooks({
+    effects,
+    input,
+    sourceActionId: action.actionKey ?? null,
+  });
   const deaths = toEngineDeaths(effectResolution.appliedEffects);
-  const events = [
-    ...toPrivateEngineEvents(effectResolution.appliedEffects),
-    ...toPublicDeathEvents(deaths, []),
-  ];
+  const events = toEngineEffectEvents(effectResolution.appliedEffects, deaths, []);
 
   return finishExecutionAfterRoleActions(input, events, deaths);
 }
@@ -906,7 +1188,7 @@ function finishExecutionAfterRoleActions(
     ...player,
     alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
   }));
-  const finalOutcome = evaluateWinner(nextPlayers);
+  const finalOutcome = evaluateFinalOutcome(nextPlayers, input.ruleSet);
 
   if (finalOutcome !== null) {
     return {
@@ -935,13 +1217,20 @@ function finishExecutionAfterRoleActions(
   return openNight(input, events, deaths);
 }
 
-function createRoleContext(input: PhaseResolutionInput): RoleContext {
+type RoleContextInput = {
+  currentPhase: GamePhase;
+  dayNumber: number;
+  nightNumber: number;
+  players: readonly PlayerRuntimeState[];
+  previousGuardTargetByPlayerId?: Readonly<Record<string, string>>;
+  ruleSet: RuleSet;
+};
+
+function createRoleContext(input: RoleContextInput): RoleContext {
   const roleByPlayerId = new Map(
     input.players.map((player) => [player.playerId, player.roleId as RegisteredRoleId]),
   );
-  const activeRoleIds = [
-    ...new Set(input.players.map((player) => player.roleId as RegisteredRoleId)),
-  ];
+  const resolvedRoleSetup = resolveRoleSetupForPlayers(input.ruleSet, input.players);
 
   return {
     roles: roleRegistry,
@@ -950,24 +1239,39 @@ function createRoleContext(input: PhaseResolutionInput): RoleContext {
         .filter((player) => player.alive)
         .map((player) => player.playerId),
       currentActions: [],
-      events: [],
+      events: createGuardHistoryEvents(input.previousGuardTargetByPlayerId ?? {}),
       finalOutcome: null,
       nightConversationMessages: [],
       nightNumber: input.nightNumber,
       pendingActions: [],
       phase: toRegisteredPhase(input.currentPhase),
       phaseInstanceId: null,
-      resolvedRoleSetup: {
-        activeRoleIds,
-        contributions: [],
-        nightConversationGroups: [],
-        winnerJudgements: [],
-      },
+      resolvedRoleSetup,
       roleByPlayerId,
-      ruleOptions: DEFAULT_RULE_OPTIONS,
+      ruleOptions: toRegisteredRuleOptions(input.ruleSet),
       status: RegisteredGameStatus.Playing,
     },
   };
+}
+
+function createGuardHistoryEvents(
+  previousGuardTargetByPlayerId: Readonly<Record<string, string>>,
+): ReadonlyGameState["events"] {
+  return Object.entries(previousGuardTargetByPlayerId).map(([guardPlayerId, targetPlayerId]) => ({
+    actorPlayerId: guardPlayerId,
+    id: `previous-guard:${guardPlayerId}:${targetPlayerId}`,
+    kind: RegisteredGameEventKind.ActionResolved,
+    payload: {
+      actionKind: RegisteredGameActionKind.Guard,
+      targetPlayerIds: [targetPlayerId],
+    },
+    phase: RegisteredGamePhase.Night,
+    phaseInstanceId: null,
+    targetPlayerIds: [targetPlayerId],
+    visibility: RegisteredGameEventVisibility.Internal,
+    visibleToPlayerIds: [],
+    visibleToRoleIds: [],
+  }));
 }
 
 function toRegisteredPhase(phase: GamePhase): RegisteredGamePhase {
@@ -1009,7 +1313,11 @@ function toEngineActions(effects: readonly GameEffect[]): EngineAction[] {
     const kind = toSharedActionKind(effect.actionKind);
     const targetKind = toSharedTargetKind(effect.target);
 
-    if (kind === null || targetKind === null || effect.eligibleTargetPlayerIds.length === 0) {
+    if (
+      kind === null ||
+      targetKind === null ||
+      (targetKind !== "none" && effect.eligibleTargetPlayerIds.length === 0)
+    ) {
       return [];
     }
 
@@ -1026,21 +1334,130 @@ function toEngineActions(effects: readonly GameEffect[]): EngineAction[] {
   });
 }
 
-function toPrivateEngineEvents(effects: readonly GameEffect[]): EngineEvent[] {
-  return effects.flatMap((effect) =>
-    effect.kind === GameEffectKind.PrivateMessage
-      ? [
+function toEngineEffectEvents(
+  effects: readonly GameEffect[],
+  deaths: readonly EngineDeath[],
+  excludedDeathReasons: readonly DeathReason[],
+): EngineEvent[] {
+  return [
+    ...effects.flatMap((effect): EngineEvent[] => {
+      switch (effect.kind) {
+        case GameEffectKind.InspectionResult:
+          return [
+            {
+              kind: "inspection_result",
+              message: null,
+              payload: {
+                result: toSharedInspectionResult(effect.view),
+                targetPlayerId: effect.targetId,
+              },
+              visibility: "private",
+              visibleToPlayerIds: [effect.viewerId],
+              visibleToRoleIds: [],
+            },
+          ];
+        case GameEffectKind.PrivateMessage:
+          return [
+            {
+              kind: effect.messageKey,
+              message: null,
+              payload: { ...effect.payload },
+              visibility: "private",
+              visibleToPlayerIds: [effect.playerId],
+              visibleToRoleIds: [],
+            },
+          ];
+        case GameEffectKind.PublicMessage:
+          return [
+            {
+              kind: effect.messageKey,
+              message: null,
+              payload: {},
+              visibility: "public",
+              visibleToPlayerIds: [],
+              visibleToRoleIds: [],
+            },
+          ];
+        default:
+          return [];
+      }
+    }),
+    ...toPublicDeathEvents(deaths, excludedDeathReasons),
+  ];
+}
+
+function toActionResolvedEvents(action: SubmittedAction): EngineEvent[] {
+  if (action.targetPlayerId === null) {
+    return [];
+  }
+
+  const actionResolvedEvent: EngineEvent = {
+    kind: "action_resolved",
+    message: null,
+    payload: {
+      actionKind: action.kind,
+      actorPlayerId: action.actorPlayerId,
+      targetPlayerIds: [action.targetPlayerId],
+    },
+    visibility: "internal",
+    visibleToPlayerIds: [],
+    visibleToRoleIds: [],
+  };
+
+  if (action.kind !== "guard") {
+    return [actionResolvedEvent];
+  }
+
+  return [
+    actionResolvedEvent,
+    {
+      kind: "guard_resolved",
+      message: null,
+      payload: {
+        actorPlayerId: action.actorPlayerId,
+        targetPlayerId: action.targetPlayerId,
+      },
+      visibility: "internal",
+      visibleToPlayerIds: [],
+      visibleToRoleIds: [],
+    },
+  ];
+}
+
+function toPublicNightOutcomeEvents(params: {
+  attack: SubmittedAction | undefined;
+  attackDeathResolved: boolean;
+  deaths: readonly EngineDeath[];
+}): EngineEvent[] {
+  if (params.attack?.targetPlayerId !== null && params.attack?.targetPlayerId !== undefined) {
+    return params.attackDeathResolved
+      ? []
+      : [
           {
-            kind: effect.messageKey,
-            message: null,
-            payload: { ...effect.payload },
-            visibility: "private",
-            visibleToPlayerIds: [effect.playerId],
+            kind: "attack_guarded",
+            message: "Someone was attacked, but no one died.",
+            payload: {},
+            visibility: "public",
+            visibleToPlayerIds: [],
             visibleToRoleIds: [],
           },
-        ]
-      : [],
-  );
+        ];
+  }
+
+  if (params.deaths.length > 0) {
+    return [];
+  }
+
+  return [
+    {
+      kind: "peaceful_night",
+      message: "The night ended with no death.",
+      payload: {},
+      visibility: "public",
+      visibleToPlayerIds: [],
+      visibleToRoleIds: [],
+    },
+  ];
 }
 
 function toPublicDeathEvents(

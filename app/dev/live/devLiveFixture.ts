@@ -1,3 +1,5 @@
+import { ROLE_DEFINITIONS, ROLE_IDS } from "@/lib/shared/game";
+
 import type {
   ActionKind,
   GamePhase,
@@ -261,6 +263,16 @@ function createFixture(params: {
       players: params.id === "result" ? createResultPlayers() : [...players],
       realtime: null,
       rolePrivate: params.id === "night" ? createWerewolfRolePrivateView() : null,
+      roleCatalog: ROLE_IDS.map((roleId, index) => ({
+        description: ROLE_DEFINITIONS[roleId].name,
+        id: roleId,
+        maxCount: ROLE_DEFINITIONS[roleId].maxCount,
+        minCount: ROLE_DEFINITIONS[roleId].minCount,
+        name: ROLE_DEFINITIONS[roleId].name,
+        order: index,
+        shortLabel: ROLE_DEFINITIONS[roleId].name.slice(0, 2),
+        team: ROLE_DEFINITIONS[roleId].team,
+      })),
       self: createSelfView(params.id, params.actions),
       status: params.status === "ended" ? "ended" : "playing",
       targetPlayerCount: players.length,

@@ -30,10 +30,10 @@ describe("validateRuleSet", () => {
 
     expect(result.resolvedRoleSetup.activeRoleIds).toEqual([
       "werewolf",
-      "villager",
       "madman",
       "seer",
       "guard",
+      "villager",
     ]);
     expect(result.resolvedRoleSetup.nightConversationGroups).toEqual([
       {

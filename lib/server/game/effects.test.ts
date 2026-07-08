@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   collectAttackEffects,
+  collectDeathResolvedEffects,
   collectExecutionEffects,
-  collectExecutionResolvedEffects,
   collectGuardEffects,
   collectInspectionEffects,
   resolveEffects,
 } from "./effects";
 import { roleRegistry } from "./roles";
 import { DEFAULT_RULE_OPTIONS } from "./ruleset";
-import { GameActionKind, GameEffectKind, GamePhase, GameStatus } from "./types";
+import { DeathReason, GameActionKind, GameEffectKind, GamePhase, GameStatus } from "./types";
 
 import type { RoleContext } from "./roles";
 import type { PlayerId, ReadonlyGameState, ResolvedRoleSetup, RoleId } from "./types";
@@ -121,10 +121,17 @@ describe("resolveEffects", () => {
       ["target", "villager"],
       ["wolf", "werewolf"],
     ]);
-    const effects = collectExecutionResolvedEffects({
+    const effects = collectDeathResolvedEffects({
       context,
+      deaths: [
+        {
+          playerId: "target",
+          reason: DeathReason.Execution,
+          roleId: "villager",
+          sourceActionId: "execution-action",
+        },
+      ],
       sourceActionId: "execution-action",
-      targetId: "target",
     });
 
     expect(effects).toEqual([
@@ -132,7 +139,7 @@ describe("resolveEffects", () => {
         kind: GameEffectKind.PrivateMessage,
         messageKey: "spiritist_result",
         payload: {
-          roleId: "villager",
+          result: "human",
           targetPlayerId: "target",
         },
         playerId: "spiritist",

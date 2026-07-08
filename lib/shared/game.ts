@@ -12,13 +12,17 @@ export const MIN_ROOM_PLAYERS = 3;
 export const MAX_ROOM_PLAYERS = 10;
 export const DEFAULT_TARGET_PLAYER_COUNT = 6;
 
-export type RoleId = (typeof ROLE_IDS)[number];
+export type BuiltInRoleId = (typeof ROLE_IDS)[number];
 
-export type Team = "villagers" | "werewolves" | "fox";
+export type RoleId = string;
+
+export type Team = string;
 
 export type CountGroup = "villager" | "werewolf" | "none";
 
 export type InspectionResult = "human" | "werewolf";
+
+export type PlayerResult = "win" | "lose" | "draw" | "special";
 
 export type RoomStatus = "lobby" | "playing" | "disbanded" | "ended";
 
@@ -52,6 +56,7 @@ export type RoomSummary = {
   currentPlayerId: string | null;
   isHost: boolean;
   players: PublicPlayer[];
+  roleCatalog: RoleCatalogItem[];
   game: PublicGameView | null;
   self: SelfPrivateView | null;
   rolePrivate: RolePrivateView | null;
@@ -119,7 +124,7 @@ export type SelfPrivateView = {
   actions: PublicAction[];
   events: PrivateGameEvent[];
   submittedActions: PublicSubmittedAction[];
-  result: "win" | "lose" | null;
+  result: PlayerResult | null;
 };
 
 export type PrivateGameEvent = {
@@ -194,8 +199,10 @@ export type RuleSetInput = {
   votingSeconds: number;
 };
 
+export type RoleCounts = Record<BuiltInRoleId, number> & Partial<Record<RoleId, number>>;
+
 export type RuleSet = {
-  roleCounts: Record<RoleId, number>;
+  roleCounts: RoleCounts;
   dayMode: "ready_check" | "ordered_speech";
   dayReadyCheckSecondsPerPlayer: number;
   daySpeechSeconds: number;
@@ -220,7 +227,18 @@ export type RoleDefinition = {
   maxCount: number;
 };
 
-export const ROLE_DEFINITIONS: Record<RoleId, RoleDefinition> = {
+export type RoleCatalogItem = {
+  description: string;
+  id: RoleId;
+  maxCount: number | null;
+  minCount: number;
+  name: string;
+  order: number;
+  shortLabel: string;
+  team: Team;
+};
+
+export const ROLE_DEFINITIONS: Record<BuiltInRoleId, RoleDefinition> = {
   fox: {
     id: "fox",
     name: "Fox",
@@ -324,7 +342,7 @@ export function normalizeRuleSet(input: RuleSetInput, playerCount: number): Rule
   const options = normalizeRuleSetOptions(input);
   const roleCounts = Object.fromEntries(
     ROLE_IDS.map((roleId) => [roleId, input.roleCounts[roleId] ?? 0]),
-  ) as Record<RoleId, number>;
+  ) as RoleCounts;
   const specifiedCount = ROLE_IDS.reduce((total, roleId) => total + roleCounts[roleId], 0);
 
   if (specifiedCount === 0) {
@@ -376,7 +394,7 @@ export function makeDefaultRuleSetForPlayers(playerCount: number): RuleSet {
       seer: seerCount,
       villager: Math.max(playerCount - specialCount, 0),
       werewolf: werewolfCount,
-    },
+    } satisfies RoleCounts,
   };
 }
 
@@ -428,7 +446,7 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
       (roleId) => roleId !== "seer" && ROLE_DEFINITIONS[roleId].seenAs === "human",
     ).reduce((total, roleId) => total + ruleSet.roleCounts[roleId], 0);
 
-    if (ruleSet.roleCounts.seer > 0 && humanInspectionCandidates <= 0) {
+    if (ruleSet.roleCounts["seer"] > 0 && humanInspectionCandidates <= 0) {
       errors.push("Initial inspection requires at least one non-seer human result candidate.");
     }
   }
@@ -450,9 +468,13 @@ function getPositiveIntegerOptions(ruleSet: RuleSet): Readonly<Record<string, nu
 }
 
 export function getRoleName(roleId: RoleId | null): string | null {
-  return roleId === null ? null : ROLE_DEFINITIONS[roleId].name;
+  if (roleId === null) {
+    return null;
+  }
+
+  return isRoleId(roleId) ? ROLE_DEFINITIONS[roleId].name : roleId;
 }
 
-export function isRoleId(value: string): value is RoleId {
+export function isRoleId(value: string): value is BuiltInRoleId {
   return (ROLE_IDS as readonly string[]).includes(value);
 }

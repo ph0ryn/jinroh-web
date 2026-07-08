@@ -17,7 +17,12 @@ import { Role } from "./base";
 import { countAliveByGroup } from "./helpers";
 import { WEREWOLF_ROLE_ID } from "./roleIds";
 
-import type { GameEndCandidate, RoleActionDefinition, RoleId } from "../types";
+import type {
+  GameEndCandidate,
+  RoleActionDefinition,
+  RoleDefaultCountContext,
+  RoleId,
+} from "../types";
 import type {
   InspectionContext,
   PlayerResultContext,
@@ -34,8 +39,14 @@ export class WerewolfRole extends Role {
     groupId: "werewolf",
     labelKey: "nightConversation.werewolf",
   };
+  override readonly order = 10;
   override readonly required = true;
+  override readonly shortLabel = "W";
   override readonly team = Team.Werewolf;
+
+  override getDefaultCount(context: RoleDefaultCountContext): number {
+    return context.playerCount >= 7 ? 2 : 1;
+  }
 
   override countAs(context: PlayerRoleContext): CountGroup {
     void context;
@@ -67,6 +78,19 @@ export class WerewolfRole extends Role {
         target: RoleTargetKind.SinglePlayer,
       },
     ];
+  }
+
+  override getEligibleTargets(
+    action: RoleActionDefinition,
+    context: PlayerRoleContext,
+  ): readonly string[] {
+    if (action.kind !== GameActionKind.Attack) {
+      return super.getEligibleTargets(action, context);
+    }
+
+    return context.state.alivePlayerIds.filter((playerId) => {
+      return context.state.roleByPlayerId.get(playerId) !== this.id;
+    });
   }
 
   override checkEndCondition(context: RoleContext): GameEndCandidate | null {

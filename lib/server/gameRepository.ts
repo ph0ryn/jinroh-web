@@ -6,8 +6,8 @@ import {
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   getRoleName,
-  isRoleId,
   type PrivateGameEvent,
+  type PlayerResult,
   type PublicAction,
   type PublicActionProgress,
   type PublicGameEvent,
@@ -18,6 +18,7 @@ import {
   type RealtimeScope,
   type RealtimeSubscription,
   type RoleId,
+  type RoleCatalogItem,
   type RolePrivateView,
   type RoomStatus,
   type RoomSummary,
@@ -32,6 +33,7 @@ import {
   isValidTokenShape,
   TOKEN_HASH_KEY_ID,
 } from "./accountToken";
+import { getRoleCatalog, getRoleIds } from "./game/roles";
 import {
   resolveRoleSetup as resolveRegisteredRoleSetup,
   type RuleSet as RegisteredRuleSet,
@@ -40,12 +42,12 @@ import {
   DayDiscussionMode,
   GuardConsecutiveTargetPolicy,
   InitialInspectionPolicy,
+  Team as RegisteredTeam,
   VoteResultVisibility,
   type RuleOptions as RegisteredRuleOptions,
 } from "./game/types";
 import { buildRealtimeNotificationPayload } from "./game/views";
 import {
-  didPlayerWin,
   ENGINE_VERSION,
   parseRoleCounts,
   resolvePhase,
@@ -163,12 +165,12 @@ type GameEventVisibleRoleRecord = {
 
 type FinalOutcomeRecord = {
   reason: string;
-  winner_team: "villagers" | "werewolves" | "fox";
+  winner_team: string;
 };
 
 type PlayerResultRecord = {
   player_id: number;
-  result: "win" | "lose";
+  result: PlayerResult;
 };
 
 type GameRuleSetRecord = {
@@ -485,7 +487,7 @@ export async function submitNightConversationMessage(
     state.phase_instance_id !== input.phaseInstanceId ||
     state.night_number !== input.nightNumber ||
     currentAssignment === undefined ||
-    !isRoleId(currentAssignment.role_id) ||
+    !getRoleIds().includes(currentAssignment.role_id) ||
     group === undefined ||
     !group.roleIds.includes(currentAssignment.role_id)
   ) {
@@ -615,7 +617,7 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
         ? []
         : runtimePlayers.map((runtimePlayer) => ({
             player_id: Number.parseInt(runtimePlayer.playerId, 10),
-            result: didPlayerWin(runtimePlayer.roleId, finalOutcome.winnerTeam) ? "win" : "lose",
+            result: finalOutcome.playerResultsByPlayerId[runtimePlayer.playerId] ?? "lose",
           })),
     p_room_code: roomCode,
   });
@@ -674,8 +676,9 @@ async function getRoomViewByRoom(
   }));
   const currentAssignment =
     currentPlayer === null ? null : (assignmentByPlayer.get(currentPlayer.id) ?? null);
+  const registeredRoleIds = new Set(getRoleIds());
   const currentRoleId =
-    currentAssignment !== null && isRoleId(currentAssignment.role_id)
+    currentAssignment !== null && registeredRoleIds.has(currentAssignment.role_id)
       ? currentAssignment.role_id
       : null;
   const [events, realtimeSubscriptions, visiblePrivateEvents] = await Promise.all([
@@ -742,10 +745,37 @@ async function getRoomViewByRoom(
       currentRoleId,
       state,
     ),
+    roleCatalog: getSharedRoleCatalog(),
     self,
     status: currentRoom.status,
     targetPlayerCount: currentRoom.target_player_count,
   };
+}
+
+function getSharedRoleCatalog(): RoleCatalogItem[] {
+  return getRoleCatalog().map((role) => ({
+    description: role.description,
+    id: role.id,
+    maxCount: role.maxCount,
+    minCount: role.minCount,
+    name: role.name,
+    order: role.order,
+    shortLabel: role.shortLabel,
+    team: toSharedTeam(role.team),
+  }));
+}
+
+function toSharedTeam(team: RegisteredTeam): RoleCatalogItem["team"] {
+  switch (team) {
+    case RegisteredTeam.Fox:
+      return "fox";
+    case RegisteredTeam.Neutral:
+      return "neutral";
+    case RegisteredTeam.Village:
+      return "villagers";
+    case RegisteredTeam.Werewolf:
+      return "werewolves";
+  }
 }
 
 function toPublicActions(
@@ -904,9 +934,11 @@ function toNightConversationView({
   }
 
   const playerById = new Map(players.map((player) => [player.id, player]));
+  const registeredRoleIds = new Set(getRoleIds());
   const participantPlayerIds = assignments
     .filter(
-      (assignment) => isRoleId(assignment.role_id) && group.roleIds.includes(assignment.role_id),
+      (assignment) =>
+        registeredRoleIds.has(assignment.role_id) && group.roleIds.includes(assignment.role_id),
     )
     .map((assignment) => playerById.get(assignment.player_id)?.public_player_id)
     .filter((playerId): playerId is string => playerId !== undefined);
@@ -959,7 +991,10 @@ function getNightConversationGroups(
       return [];
     }
 
-    const roleIds = group["roleIds"].filter((roleId): roleId is RoleId => isRoleId(roleId));
+    const registeredRoleIds = new Set(getRoleIds());
+    const roleIds = group["roleIds"].filter(
+      (roleId): roleId is RoleId => typeof roleId === "string" && registeredRoleIds.has(roleId),
+    );
 
     return roleIds.length === 0
       ? []
@@ -1021,10 +1056,9 @@ function formatPrivateEventMessage(
 
   if (event.event_kind === "spiritist_result") {
     const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
-    const roleId = event.payload["roleId"];
-    const roleName = typeof roleId === "string" && isRoleId(roleId) ? getRoleName(roleId) : null;
+    const result = event.payload["result"] === "werewolf" ? "a werewolf" : "not a werewolf";
 
-    return `${targetPlayerName} was ${roleName ?? "Unknown"}.`;
+    return `${targetPlayerName} was ${result}.`;
   }
 
   return event.public_message ?? event.event_kind.replaceAll("_", " ");
@@ -1130,6 +1164,7 @@ function toSubmittedResolutionActions(
     return [
       {
         actorPlayerId: String(pendingAction.submitter_player_id),
+        actorRoleId: action.actor_role_id,
         actionKey: action.action_key,
         kind: action.action_kind as SubmittedAction["kind"],
         targetPlayerId:
@@ -1154,6 +1189,7 @@ function toSubmittedResolutionActions(
     )
     .map((action) => ({
       actorPlayerId: String(action.actor_player_id),
+      actorRoleId: action.actor_role_id,
       actionKey: action.action_key,
       kind: "execution_skip" as const,
       targetPlayerId: null,
@@ -1433,13 +1469,14 @@ async function getRuntimePlayers(
     getGamePlayerStates(supabase, roomId),
   ]);
   const stateByPlayer = new Map(playerStates.map((state) => [state.player_id, state]));
+  const registeredRoleIds = new Set(getRoleIds());
 
   return assignments
-    .filter((assignment) => isRoleId(assignment.role_id))
+    .filter((assignment) => registeredRoleIds.has(assignment.role_id))
     .map((assignment) => ({
       alive: stateByPlayer.get(assignment.player_id)?.alive ?? true,
       playerId: String(assignment.player_id),
-      roleId: assignment.role_id as RoleId,
+      roleId: assignment.role_id,
     }));
 }
 
@@ -1815,7 +1852,7 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
       "normalDaySpeechRounds",
       DEFAULT_RULE_SET.normalDaySpeechRounds,
     ),
-    roleCounts: parseRoleCounts(data.role_counts),
+    roleCounts: parseRoleCounts(data.role_counts) as RuleSet["roleCounts"],
     voteResultVisibility:
       data.options["voteResultVisibility"] === "voter_to_target" ? "voter_to_target" : "count_only",
     votingSeconds: parsePositiveRuleOption(
@@ -1915,7 +1952,9 @@ function toRegisteredRuleSet(ruleSet: RuleSet): RegisteredRuleSet {
   return {
     engineVersion: ENGINE_VERSION,
     options: toRegisteredRuleOptions(ruleSet),
-    roleCounts: ruleSet.roleCounts,
+    roleCounts: Object.fromEntries(
+      getRoleCatalog().map((role) => [role.id, ruleSet.roleCounts[role.id] ?? 0]),
+    ),
     roleRegistryVersion: ROLE_REGISTRY_VERSION,
   };
 }

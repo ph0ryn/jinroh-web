@@ -1,7 +1,8 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
+import { getRoleIds } from "@/lib/server/game/roles";
 import { startRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
-import { ROLE_IDS, type RoleId, type RuleSetInput } from "@/lib/shared/game";
+import { type RoleId, type RuleSetInput } from "@/lib/shared/game";
 
 type StartBody = {
   ruleSet?: RuleSetInput | null;
@@ -62,7 +63,7 @@ function parseRuleSetInput(
 
   const roleCounts: Partial<Record<RoleId, number>> = {};
 
-  for (const roleId of ROLE_IDS) {
+  for (const roleId of getRoleIds()) {
     const rawCount = value["roleCounts"][roleId];
 
     if (rawCount !== undefined) {
