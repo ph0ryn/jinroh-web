@@ -11,11 +11,11 @@ import {
   MIN_ROOM_PLAYERS,
   makeDefaultRuleSetForPlayers,
   ROLE_DEFINITIONS,
-  ROLE_IDS,
   type NightConversationView,
   type PublicAction,
   type PublicPlayer,
   type RealtimeSubscription,
+  type RoleId,
   type RoomSummary,
   type RuleSetInput,
 } from "@/lib/shared/game";
@@ -56,7 +56,7 @@ type RealtimeBroadcastEnvelope = {
 
 type RealtimeSubscriptionSnapshot = Pick<RealtimeSubscription, "scope" | "topic">;
 
-type StartRuleSetSettings = Omit<RuleSetInput, "roleCounts">;
+type StartRuleSetSettings = RuleSetInput;
 
 type DevLiveFixture = {
   readonly id: string;
@@ -134,6 +134,8 @@ type RuleSetNumberLimit = {
   readonly min: number;
 };
 
+type StartSettingsTab = "general" | "roles" | "timers";
+
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
@@ -166,6 +168,7 @@ const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
   initialInspectionPolicy: DEFAULT_RULE_SET.initialInspectionPolicy,
   nightSeconds: DEFAULT_RULE_SET.nightSeconds,
   normalDaySpeechRounds: DEFAULT_RULE_SET.normalDaySpeechRounds,
+  roleCounts: {},
   voteResultVisibility: DEFAULT_RULE_SET.voteResultVisibility,
   votingSeconds: DEFAULT_RULE_SET.votingSeconds,
 };
@@ -179,6 +182,57 @@ const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
   nightSeconds: { max: 600, min: 1 },
   normalDaySpeechRounds: { max: 5, min: 1 },
   votingSeconds: { max: 300, min: 1 },
+};
+
+const START_SETTINGS_TABS: readonly {
+  readonly id: StartSettingsTab;
+  readonly label: string;
+}[] = [
+  { id: "general", label: "General" },
+  { id: "timers", label: "Timers" },
+  { id: "roles", label: "Roles" },
+];
+
+const START_SETTINGS_ROLE_ORDER = [
+  "werewolf",
+  "madman",
+  "seer",
+  "guard",
+  "fox",
+  "villager",
+] as const;
+
+const ROLE_META: Record<
+  (typeof START_SETTINGS_ROLE_ORDER)[number],
+  {
+    readonly description: string;
+    readonly shortLabel: string;
+  }
+> = {
+  fox: {
+    description: "Independent role. Max one.",
+    shortLabel: "F",
+  },
+  guard: {
+    description: "Protects one player at night when active.",
+    shortLabel: "G",
+  },
+  madman: {
+    description: "Wins with werewolves, seen as human.",
+    shortLabel: "M",
+  },
+  seer: {
+    description: "Inspects one player at night.",
+    shortLabel: "Se",
+  },
+  villager: {
+    description: "No special night action.",
+    shortLabel: "V",
+  },
+  werewolf: {
+    description: "Night attack role.",
+    shortLabel: "W",
+  },
 };
 
 export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
@@ -734,27 +788,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     });
   }
 
-  function handleStartRuleSetChange<Key extends keyof StartRuleSetSettings>(
-    key: Key,
-    value: StartRuleSetSettings[Key],
-  ): void {
-    setStartRuleSetSettings((currentSettings) => ({
-      ...currentSettings,
-      [key]: value,
-    }));
-  }
-
-  function handleStartRuleSetNumberChange(key: RuleSetNumberField, value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
-    }
-
-    setStartRuleSetSettings((currentSettings) => ({
-      ...currentSettings,
-      [key]: clampRuleSetNumber(key, value),
-    }));
-  }
-
   function handleStartGame(): void {
     if (isDevMode) {
       const fixture = getDevFixture(devFixtures, "night") ?? devFixtures[0];
@@ -1178,8 +1211,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
           playerCount={roomSummary.targetPlayerCount}
           settings={startRuleSetSettings}
           onClose={() => setIsStartSettingsOpen(false)}
-          onNumberChange={handleStartRuleSetNumberChange}
-          onSettingsChange={handleStartRuleSetChange}
+          onApplySettings={(nextSettings) => setStartRuleSetSettings(nextSettings)}
         />
       ) : null}
     </main>
@@ -1225,21 +1257,68 @@ function StartSettingsDialog({
   playerCount,
   settings,
   onClose,
-  onNumberChange,
-  onSettingsChange,
+  onApplySettings,
 }: {
   readonly playerCount: number;
   readonly settings: StartRuleSetSettings;
   readonly onClose: () => void;
-  readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
-  readonly onSettingsChange: <Key extends keyof StartRuleSetSettings>(
+  readonly onApplySettings: (settings: StartRuleSetSettings) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<StartSettingsTab>("general");
+  const [draftSettings, setDraftSettings] = useState<StartRuleSetSettings>(() => ({
+    ...settings,
+    roleCounts: { ...settings.roleCounts },
+  }));
+  const canApplySettings =
+    getStartRuleSetValidationMessages(draftSettings, playerCount).length === 0;
+
+  function handleDraftSettingsChange<Key extends keyof StartRuleSetSettings>(
     key: Key,
     value: StartRuleSetSettings[Key],
-  ) => void;
-}) {
+  ): void {
+    setDraftSettings((currentSettings) => ({
+      ...currentSettings,
+      [key]: value,
+    }));
+  }
+
+  function handleDraftNumberChange(key: RuleSetNumberField, value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    setDraftSettings((currentSettings) => ({
+      ...currentSettings,
+      [key]: clampRuleSetNumber(key, value),
+    }));
+  }
+
+  function handleDraftRoleCountChange(roleId: RoleId, value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    setDraftSettings((currentSettings) => ({
+      ...currentSettings,
+      roleCounts: {
+        ...getEffectiveStartRoleCounts(currentSettings, playerCount),
+        [roleId]: clampRoleCount(roleId, value, playerCount),
+      },
+    }));
+  }
+
+  function handleApplySettings(): void {
+    if (!canApplySettings) {
+      return;
+    }
+
+    onApplySettings(draftSettings);
+    onClose();
+  }
+
   return (
     <div
-      className="liveModalBackdrop"
+      className="liveModalBackdrop liveSettingsBackdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -1247,33 +1326,76 @@ function StartSettingsDialog({
       }}
     >
       <section
-        className="liveModal"
+        className="liveModal liveSettingsModal"
         id="start-settings-dialog"
         aria-labelledby="start-settings-title"
         aria-modal="true"
         role="dialog"
       >
-        <div className="liveModalHeader">
+        <div className="liveSettingsHeader">
           <div>
-            <span>Game setup</span>
-            <h2 id="start-settings-title">Start settings</h2>
+            <span>Host settings</span>
+            <h2 id="start-settings-title">Game settings</h2>
+            <p>Adjust the room flow before the first night starts.</p>
           </div>
-          <button
-            className="secondaryButton liveIconButton"
-            aria-label="Close settings"
-            type="button"
-            onClick={onClose}
-          >
-            <span aria-hidden="true">X</span>
-          </button>
+          <div className="liveSettingsHeaderActions">
+            <span className="liveSettingsRoomBadge">{playerCount} seats</span>
+            <button
+              className="secondaryButton liveIconButton"
+              aria-label="Close settings"
+              type="button"
+              onClick={onClose}
+            >
+              <span aria-hidden="true">X</span>
+            </button>
+          </div>
         </div>
 
-        <StartRuleSetPanel
-          playerCount={playerCount}
-          settings={settings}
-          onNumberChange={onNumberChange}
-          onSettingsChange={onSettingsChange}
-        />
+        <div className="liveSettingsTabs" role="tablist" aria-label="Settings sections">
+          {START_SETTINGS_TABS.map((tab) => (
+            <button
+              aria-controls={`start-settings-${tab.id}-panel`}
+              aria-selected={activeTab === tab.id}
+              className={activeTab === tab.id ? "active" : ""}
+              id={`start-settings-${tab.id}-tab`}
+              key={tab.id}
+              role="tab"
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="liveSettingsBody">
+          <StartRuleSetPanel
+            activeTab={activeTab}
+            playerCount={playerCount}
+            settings={draftSettings}
+            onNumberChange={handleDraftNumberChange}
+            onRoleCountChange={handleDraftRoleCountChange}
+            onSettingsChange={handleDraftSettingsChange}
+          />
+        </div>
+
+        <div className="liveSettingsFooter">
+          <button
+            className="secondaryButton"
+            type="button"
+            onClick={() => setDraftSettings({ ...DEFAULT_START_RULE_SET_SETTINGS, roleCounts: {} })}
+          >
+            Reset
+          </button>
+          <div>
+            <button className="secondaryButton" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="button" disabled={!canApplySettings} onClick={handleApplySettings}>
+              Apply settings
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   );
@@ -1921,156 +2043,371 @@ function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
 }
 
 function StartRuleSetPanel({
+  activeTab,
   playerCount,
   settings,
   onNumberChange,
+  onRoleCountChange,
   onSettingsChange,
 }: {
+  readonly activeTab: StartSettingsTab;
   readonly playerCount: number;
   readonly settings: StartRuleSetSettings;
   readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
+  readonly onRoleCountChange: (roleId: RoleId, value: number) => void;
   readonly onSettingsChange: <Key extends keyof StartRuleSetSettings>(
     key: Key,
     value: StartRuleSetSettings[Key],
   ) => void;
 }) {
   const canPreviewRoleMix = playerCount >= MIN_ROOM_PLAYERS && playerCount <= MAX_ROOM_PLAYERS;
-  const previewRuleSet = canPreviewRoleMix ? makeDefaultRuleSetForPlayers(playerCount) : null;
-  const activeRoleIds =
-    previewRuleSet === null
-      ? []
-      : ROLE_IDS.filter((roleId) => previewRuleSet.roleCounts[roleId] > 0);
+  const roleCounts = canPreviewRoleMix ? getEffectiveStartRoleCounts(settings, playerCount) : null;
+  const assignedRoleCount =
+    roleCounts === null
+      ? 0
+      : START_SETTINGS_ROLE_ORDER.reduce((total, roleId) => total + roleCounts[roleId], 0);
+  const roleValidationMessages = getStartRuleSetValidationMessages(settings, playerCount);
+  const isRoleMixValid = roleValidationMessages.length === 0;
+  const displayedRoleValidationMessages = isRoleMixValid
+    ? ["Role counts are valid for this lobby."]
+    : roleValidationMessages;
+  const flowItems = getSettingsFlowItems(settings);
 
   return (
     <div className="liveRuleSetPanel">
-      <div className="liveRuleSetGrid">
-        <label className="liveRuleSetField">
-          <span>Day mode</span>
-          <select
-            value={settings.dayMode}
-            onChange={(event) =>
-              onSettingsChange("dayMode", event.target.value as StartRuleSetSettings["dayMode"])
+      <section
+        aria-labelledby="start-settings-general-tab"
+        hidden={activeTab !== "general"}
+        id="start-settings-general-panel"
+        role="tabpanel"
+      >
+        <div className="liveSettingsSectionHead">
+          <div>
+            <h3>Overall settings</h3>
+            <p>Set the day progression and vote result visibility for the room.</p>
+          </div>
+        </div>
+
+        <div className="liveSettingsGridTwo">
+          <article className="liveSettingsCard">
+            <h4>Day progression</h4>
+            <p>The selected mode changes which timer fields are used during the day phase.</p>
+
+            <div className="liveSettingsChoiceGrid">
+              <label className="liveSettingsChoice">
+                <input
+                  checked={settings.dayMode === "ordered_speech"}
+                  name="dayMode"
+                  type="radio"
+                  value="ordered_speech"
+                  onChange={() => onSettingsChange("dayMode", "ordered_speech")}
+                />
+                <span>Ordered</span>
+                <strong>Ordered speech</strong>
+                <em>Players speak through fixed slots before voting opens.</em>
+              </label>
+
+              <label className="liveSettingsChoice">
+                <input
+                  checked={settings.dayMode === "ready_check"}
+                  name="dayMode"
+                  type="radio"
+                  value="ready_check"
+                  onChange={() => onSettingsChange("dayMode", "ready_check")}
+                />
+                <span>Ready check</span>
+                <strong>Ready check</strong>
+                <em>Voting opens when players are ready or the meeting cap is reached.</em>
+              </label>
+            </div>
+          </article>
+
+          <article className="liveSettingsCard">
+            <h4>Vote detail</h4>
+            <p>Choose how much detail is shown after votes resolve.</p>
+            <label className="liveRuleSetField">
+              <span>Visibility</span>
+              <select
+                value={settings.voteResultVisibility}
+                onChange={(event) =>
+                  onSettingsChange(
+                    "voteResultVisibility",
+                    event.target.value as StartRuleSetSettings["voteResultVisibility"],
+                  )
+                }
+              >
+                <option value="count_only">Count only</option>
+                <option value="voter_to_target">Voter to target</option>
+              </select>
+            </label>
+          </article>
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="start-settings-timers-tab"
+        hidden={activeTab !== "timers"}
+        id="start-settings-timers-panel"
+        role="tabpanel"
+      >
+        <div className="liveSettingsSectionHead">
+          <div>
+            <h3>Time settings</h3>
+            <p>Keep common phase timers separate from the selected day mode.</p>
+          </div>
+        </div>
+
+        <div className="liveSettingsMainSide">
+          <div className="liveSettingsStack">
+            <article className="liveSettingsCard">
+              <h4>Common phase timers</h4>
+              <p>These timers are used regardless of the day progression mode.</p>
+              <div className="liveTimingGrid common" aria-label="Common phase timing">
+                <RuleSetNumberControl
+                  field="firstNightSeconds"
+                  label="First night"
+                  value={settings.firstNightSeconds}
+                  onChange={onNumberChange}
+                />
+                <RuleSetNumberControl
+                  field="nightSeconds"
+                  label="Night"
+                  value={settings.nightSeconds}
+                  onChange={onNumberChange}
+                />
+                <RuleSetNumberControl
+                  field="votingSeconds"
+                  label="Vote"
+                  value={settings.votingSeconds}
+                  onChange={onNumberChange}
+                />
+                <RuleSetNumberControl
+                  field="executionLastWordsSeconds"
+                  label="Last words"
+                  value={settings.executionLastWordsSeconds}
+                  onChange={onNumberChange}
+                />
+              </div>
+            </article>
+
+            <article className="liveSettingsCard">
+              <h4>{settings.dayMode === "ordered_speech" ? "Ordered speech" : "Ready check"}</h4>
+              <p>
+                {settings.dayMode === "ordered_speech"
+                  ? "Speech slot timing for first and normal days."
+                  : "Meeting cap timing for ready-check days."}
+              </p>
+              {settings.dayMode === "ordered_speech" ? (
+                <div className="liveTimingGrid day" aria-label="Ordered speech timing">
+                  <RuleSetNumberControl
+                    field="daySpeechSeconds"
+                    label="Speech / player"
+                    value={settings.daySpeechSeconds}
+                    onChange={onNumberChange}
+                  />
+                  <RuleSetNumberControl
+                    field="firstDaySpeechRounds"
+                    label="First day rounds"
+                    value={settings.firstDaySpeechRounds}
+                    onChange={onNumberChange}
+                  />
+                  <RuleSetNumberControl
+                    field="normalDaySpeechRounds"
+                    label="Normal rounds"
+                    value={settings.normalDaySpeechRounds}
+                    onChange={onNumberChange}
+                  />
+                </div>
+              ) : (
+                <div className="liveTimingGrid day" aria-label="Ready check timing">
+                  <RuleSetNumberControl
+                    field="dayReadyCheckSecondsPerPlayer"
+                    label="Ready / player"
+                    value={settings.dayReadyCheckSecondsPerPlayer}
+                    onChange={onNumberChange}
+                  />
+                </div>
+              )}
+            </article>
+          </div>
+
+          <aside className="liveSettingsCard liveSettingsSticky">
+            <h4>Flow preview</h4>
+            <p>
+              {settings.dayMode === "ordered_speech" ? "Ordered speech flow." : "Ready check flow."}
+            </p>
+            <div className="liveSettingsFlow">
+              {flowItems.map((item, index) => (
+                <span key={item.label}>
+                  {index > 0 ? <em aria-hidden="true">-&gt;</em> : null}
+                  <strong>{item.label}</strong>
+                  {item.value}
+                </span>
+              ))}
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="start-settings-roles-tab"
+        hidden={activeTab !== "roles"}
+        id="start-settings-roles-panel"
+        role="tabpanel"
+      >
+        <div className="liveSettingsStack">
+          <section className="liveSettingsCard">
+            <div className="liveRolesHeader">
+              <div>
+                <h3>Role counts</h3>
+                <p>Adjust role counts for the selected room size.</p>
+              </div>
+              <span
+                className={isRoleMixValid ? "liveRoleTotal is-valid" : "liveRoleTotal is-invalid"}
+              >
+                <strong>
+                  {assignedRoleCount} / {playerCount}
+                </strong>{" "}
+                assigned
+              </span>
+            </div>
+            <div className="liveRoleGrid" aria-label="Automatic role counts">
+              {roleCounts === null ? (
+                <div className="liveSettingsEmptyOptions">
+                  <strong>Role mix appears at 3 players</strong>
+                </div>
+              ) : (
+                START_SETTINGS_ROLE_ORDER.map((roleId) => {
+                  const count = roleCounts[roleId];
+                  const roleName = ROLE_DEFINITIONS[roleId].name;
+                  const canDecrease = canChangeRoleCount(roleCounts, roleId, -1, playerCount);
+                  const canIncrease = canChangeRoleCount(roleCounts, roleId, 1, playerCount);
+
+                  return (
+                    <article
+                      className={count === 0 ? "liveRoleCard is-zero" : "liveRoleCard"}
+                      key={roleId}
+                    >
+                      <span className="liveRoleIcon" aria-hidden="true">
+                        {ROLE_META[roleId].shortLabel}
+                      </span>
+                      <div>
+                        <div className="liveRoleName">{roleName}</div>
+                        <div className="liveRoleDescription">{ROLE_META[roleId].description}</div>
+                      </div>
+                      <div className="liveRoleCounter" aria-label={`${roleName} count`}>
+                        <button
+                          type="button"
+                          aria-label={`Decrease ${roleName}`}
+                          disabled={!canDecrease}
+                          onClick={() => onRoleCountChange(roleId, count - 1)}
+                        >
+                          -
+                        </button>
+                        <span>{count}</span>
+                        <button
+                          type="button"
+                          aria-label={`Increase ${roleName}`}
+                          disabled={!canIncrease}
+                          onClick={() => onRoleCountChange(roleId, count + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
+          <section className="liveSettingsCard">
+            <div className="liveSettingsSectionHead">
+              <div>
+                <h3>Role-specific settings</h3>
+                <p>Only options for active roles affect the game when it starts.</p>
+              </div>
+            </div>
+            <div className="liveSettingsOptionGrid">
+              {roleCounts !== null && roleCounts.seer > 0 ? (
+                <div className="liveSettingsOptionCard">
+                  <h4>Seer - Initial inspection</h4>
+                  <div
+                    className="liveSettingsSegments"
+                    role="group"
+                    aria-label="Initial inspection policy"
+                  >
+                    <button
+                      aria-pressed={settings.initialInspectionPolicy === "enabled"}
+                      type="button"
+                      onClick={() => onSettingsChange("initialInspectionPolicy", "enabled")}
+                    >
+                      Enabled
+                    </button>
+                    <button
+                      aria-pressed={settings.initialInspectionPolicy === "disabled"}
+                      type="button"
+                      onClick={() => onSettingsChange("initialInspectionPolicy", "disabled")}
+                    >
+                      Disabled
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {roleCounts !== null && roleCounts.guard > 0 ? (
+                <div className="liveSettingsOptionCard">
+                  <h4>Guard - Consecutive target</h4>
+                  <div
+                    className="liveSettingsSegments"
+                    role="group"
+                    aria-label="Guard consecutive target policy"
+                  >
+                    <button
+                      aria-pressed={settings.guardConsecutiveTargetPolicy === "deny"}
+                      type="button"
+                      onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "deny")}
+                    >
+                      Deny same
+                    </button>
+                    <button
+                      aria-pressed={settings.guardConsecutiveTargetPolicy === "allow"}
+                      type="button"
+                      onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "allow")}
+                    >
+                      Allow
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {roleCounts === null || (roleCounts.seer === 0 && roleCounts.guard === 0) ? (
+                <div className="liveSettingsEmptyOptions">
+                  No extra role options for the current automatic mix.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section
+            className={
+              isRoleMixValid
+                ? "liveSettingsValidationBox is-valid"
+                : "liveSettingsValidationBox is-invalid"
             }
           >
-            <option value="ready_check">Ready check</option>
-            <option value="ordered_speech">Ordered speech</option>
-          </select>
-        </label>
-
-        <label className="liveRuleSetField">
-          <span>Guard policy</span>
-          <select
-            value={settings.guardConsecutiveTargetPolicy}
-            onChange={(event) =>
-              onSettingsChange(
-                "guardConsecutiveTargetPolicy",
-                event.target.value as StartRuleSetSettings["guardConsecutiveTargetPolicy"],
-              )
-            }
-          >
-            <option value="deny">Deny same target</option>
-            <option value="allow">Allow repeat</option>
-          </select>
-        </label>
-
-        <label className="liveRuleSetField">
-          <span>Initial inspection</span>
-          <select
-            value={settings.initialInspectionPolicy}
-            onChange={(event) =>
-              onSettingsChange(
-                "initialInspectionPolicy",
-                event.target.value as StartRuleSetSettings["initialInspectionPolicy"],
-              )
-            }
-          >
-            <option value="enabled">Enabled</option>
-            <option value="disabled">Disabled</option>
-          </select>
-        </label>
-
-        <label className="liveRuleSetField">
-          <span>Vote detail</span>
-          <select
-            value={settings.voteResultVisibility}
-            onChange={(event) =>
-              onSettingsChange(
-                "voteResultVisibility",
-                event.target.value as StartRuleSetSettings["voteResultVisibility"],
-              )
-            }
-          >
-            <option value="count_only">Count only</option>
-            <option value="voter_to_target">Voter to target</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="liveTimingGrid" aria-label="Phase timing">
-        <RuleSetNumberControl
-          field="firstNightSeconds"
-          label="First night"
-          value={settings.firstNightSeconds}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="nightSeconds"
-          label="Night"
-          value={settings.nightSeconds}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="dayReadyCheckSecondsPerPlayer"
-          label="Ready / player"
-          value={settings.dayReadyCheckSecondsPerPlayer}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="daySpeechSeconds"
-          label="Speech"
-          value={settings.daySpeechSeconds}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="votingSeconds"
-          label="Vote"
-          value={settings.votingSeconds}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="executionLastWordsSeconds"
-          label="Last words"
-          value={settings.executionLastWordsSeconds}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="firstDaySpeechRounds"
-          label="First rounds"
-          value={settings.firstDaySpeechRounds}
-          onChange={onNumberChange}
-        />
-        <RuleSetNumberControl
-          field="normalDaySpeechRounds"
-          label="Normal rounds"
-          value={settings.normalDaySpeechRounds}
-          onChange={onNumberChange}
-        />
-      </div>
-
-      <div className="liveRolePreview" aria-label="Automatic role mix">
-        {previewRuleSet === null ? (
-          <span className="liveRolePill muted">
-            <strong>Role mix appears at 3 players</strong>
-          </span>
-        ) : (
-          activeRoleIds.map((roleId) => (
-            <span className="liveRolePill" key={roleId}>
-              <strong>{ROLE_DEFINITIONS[roleId].name}</strong>
-              <em>{previewRuleSet.roleCounts[roleId]}</em>
-            </span>
-          ))
-        )}
-      </div>
+            <div>
+              <h3>{isRoleMixValid ? "Ready to apply" : "Needs adjustment"}</h3>
+              <ul>
+                {displayedRoleValidationMessages.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            </div>
+            <span aria-hidden="true" />
+          </section>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2502,8 +2839,148 @@ function requireRoomCode(roomCode: string): string {
 function buildStartRuleSetInput(settings: StartRuleSetSettings): RuleSetInput {
   return {
     ...settings,
-    roleCounts: {},
+    roleCounts: { ...settings.roleCounts },
   };
+}
+
+function getEffectiveStartRoleCounts(
+  settings: StartRuleSetSettings,
+  playerCount: number,
+): Record<RoleId, number> {
+  const specifiedRoleCount = START_SETTINGS_ROLE_ORDER.reduce(
+    (total, roleId) => total + (settings.roleCounts[roleId] ?? 0),
+    0,
+  );
+
+  if (specifiedRoleCount === 0) {
+    return makeDefaultRuleSetForPlayers(playerCount).roleCounts;
+  }
+
+  return Object.fromEntries(
+    START_SETTINGS_ROLE_ORDER.map((roleId) => [roleId, settings.roleCounts[roleId] ?? 0]),
+  ) as Record<RoleId, number>;
+}
+
+function getStartRuleSetValidationMessages(
+  settings: StartRuleSetSettings,
+  playerCount: number,
+): readonly string[] {
+  const roleCounts = getEffectiveStartRoleCounts(settings, playerCount);
+  const messages: string[] = [];
+  const totalRoles = getRoleCountTotal(roleCounts);
+
+  if (playerCount < MIN_ROOM_PLAYERS || playerCount > MAX_ROOM_PLAYERS) {
+    messages.push(`Role counts are available for ${MIN_ROOM_PLAYERS}-${MAX_ROOM_PLAYERS} players.`);
+  }
+
+  if (totalRoles !== playerCount) {
+    const diff = playerCount - totalRoles;
+    messages.push(
+      diff > 0
+        ? `Add ${diff} more role${diff === 1 ? "" : "s"}.`
+        : `Remove ${Math.abs(diff)} role${Math.abs(diff) === 1 ? "" : "s"}.`,
+    );
+  }
+
+  for (const roleId of START_SETTINGS_ROLE_ORDER) {
+    const definition = ROLE_DEFINITIONS[roleId];
+    const count = roleCounts[roleId];
+    const maxCount = getRoleMaxCount(roleId, playerCount);
+
+    if (!Number.isInteger(count) || count < 0) {
+      messages.push(`${definition.name} count must be a non-negative integer.`);
+    }
+
+    if (count < definition.minCount) {
+      messages.push(`${definition.name} count must be at least ${definition.minCount}.`);
+    }
+
+    if (count > maxCount) {
+      messages.push(`${definition.name} count must be at most ${maxCount}.`);
+    }
+  }
+
+  if (settings.initialInspectionPolicy === "enabled" && roleCounts.seer > 0) {
+    const humanInspectionCandidates = START_SETTINGS_ROLE_ORDER.filter(
+      (roleId) => roleId !== "seer" && ROLE_DEFINITIONS[roleId].seenAs === "human",
+    ).reduce((total, roleId) => total + roleCounts[roleId], 0);
+
+    if (humanInspectionCandidates <= 0) {
+      messages.push("Initial inspection requires at least one non-seer human result candidate.");
+    }
+  }
+
+  return messages;
+}
+
+function getRoleCountTotal(roleCounts: Readonly<Record<RoleId, number>>): number {
+  return START_SETTINGS_ROLE_ORDER.reduce((total, roleId) => total + roleCounts[roleId], 0);
+}
+
+function canChangeRoleCount(
+  roleCounts: Readonly<Record<RoleId, number>>,
+  roleId: RoleId,
+  delta: -1 | 1,
+  playerCount: number,
+): boolean {
+  const currentCount = roleCounts[roleId];
+  const nextCount = currentCount + delta;
+
+  if (
+    nextCount < ROLE_DEFINITIONS[roleId].minCount ||
+    nextCount > getRoleMaxCount(roleId, playerCount)
+  ) {
+    return false;
+  }
+
+  if (delta > 0 && getRoleCountTotal(roleCounts) >= playerCount) {
+    return false;
+  }
+
+  return true;
+}
+
+function clampRoleCount(roleId: RoleId, value: number, playerCount: number): number {
+  const integerValue = Math.trunc(value);
+
+  return Math.min(
+    getRoleMaxCount(roleId, playerCount),
+    Math.max(ROLE_DEFINITIONS[roleId].minCount, integerValue),
+  );
+}
+
+function getRoleMaxCount(roleId: RoleId, playerCount: number): number {
+  return Math.min(ROLE_DEFINITIONS[roleId].maxCount, playerCount);
+}
+
+function getSettingsFlowItems(
+  settings: StartRuleSetSettings,
+): readonly { readonly label: string; readonly value: string }[] {
+  const dayValue =
+    settings.dayMode === "ordered_speech"
+      ? `${settings.firstDaySpeechRounds}r first / ${settings.normalDaySpeechRounds}r normal x ${formatSettingsDuration(
+          settings.daySpeechSeconds,
+        )}`
+      : `alive x ${formatSettingsDuration(settings.dayReadyCheckSecondsPerPlayer)} cap`;
+
+  return [
+    { label: "First night", value: formatSettingsDuration(settings.firstNightSeconds) },
+    { label: "Day", value: dayValue },
+    { label: "Vote", value: formatSettingsDuration(settings.votingSeconds) },
+    { label: "Last words", value: formatSettingsDuration(settings.executionLastWordsSeconds) },
+    { label: "Night", value: formatSettingsDuration(settings.nightSeconds) },
+  ];
+}
+
+function formatSettingsDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
 }
 
 function clampRuleSetNumber(field: RuleSetNumberField, value: number): number {

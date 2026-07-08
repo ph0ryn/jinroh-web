@@ -2687,6 +2687,466 @@ a {
   width: min(100%, 680px);
 }
 
+.liveSettingsBackdrop {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(var(--live-accent-rgb), 0.18), transparent 32rem),
+    rgba(0, 0, 0, 0.58);
+}
+
+.liveSettingsModal {
+  --settings-panel: rgba(13, 16, 12, 0.95);
+  --settings-soft: rgba(255, 255, 255, 0.045);
+  --settings-strong: #fff4d6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 27%),
+    linear-gradient(140deg, rgba(var(--live-accent-rgb), 0.12), transparent 35%),
+    var(--settings-panel);
+  border-color: rgba(var(--live-accent-rgb), 0.34);
+  border-radius: 24px;
+  box-shadow:
+    0 36px 120px rgba(0, 0, 0, 0.72),
+    inset 0 1px rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: min(720px, calc(100svh - 48px));
+  max-height: none;
+  overflow: hidden;
+  padding: 0;
+  width: min(100%, 1080px);
+}
+
+.liveSettingsHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 24px 26px 18px;
+}
+
+.liveSettingsHeader > div:first-child {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.liveSettingsHeader > div:first-child > span {
+  color: var(--live-accent);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.liveSettingsHeader h2 {
+  color: var(--settings-strong);
+  font-size: 1.88rem;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin: 0;
+}
+
+.liveSettingsHeader p {
+  color: var(--live-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  margin: 10px 0 0;
+}
+
+.liveSettingsHeaderActions {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.liveSettingsRoomBadge {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  color: var(--live-muted);
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 800;
+  height: 36px;
+  letter-spacing: 0.08em;
+  padding: 0 12px;
+  text-transform: uppercase;
+}
+
+.liveSettingsTabs {
+  background: rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  padding: 14px 26px;
+}
+
+.liveSettingsTabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  box-shadow: none;
+  color: var(--live-muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+  height: 42px;
+  letter-spacing: 0.04em;
+  min-height: 42px;
+  min-width: 126px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.liveSettingsTabs button:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(var(--live-accent-rgb), 0.16);
+  color: var(--paper-100);
+}
+
+.liveSettingsTabs button.active {
+  background: linear-gradient(180deg, #f2c77a, var(--live-accent));
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 26px rgba(var(--live-accent-rgb), 0.2);
+  color: #1e1308;
+}
+
+.liveSettingsBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 26px 20px;
+  scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
+  scrollbar-width: thin;
+}
+
+.liveSettingsBody::-webkit-scrollbar {
+  width: 10px;
+}
+
+.liveSettingsBody::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.liveSettingsBody::-webkit-scrollbar-thumb {
+  background: rgba(var(--live-accent-rgb), 0.22);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.liveSettingsFooter {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.18);
+  border-top: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 16px 26px;
+}
+
+.liveSettingsFooter > div {
+  display: flex;
+  gap: 10px;
+}
+
+.liveSettingsFooter button {
+  border-radius: 999px;
+  min-height: 42px;
+  padding-inline: 16px;
+}
+
+.liveSettingsSectionHead {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.liveSettingsSectionHead h3,
+.liveSettingsCard h4 {
+  color: var(--settings-strong);
+  line-height: 1.15;
+  margin: 0;
+}
+
+.liveSettingsSectionHead h3 {
+  font-size: 1.12rem;
+  letter-spacing: -0.02em;
+}
+
+.liveSettingsSectionHead p,
+.liveSettingsCard p {
+  color: var(--live-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 7px 0 0;
+}
+
+.liveRolesHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.liveRolesHeader h3,
+.liveSettingsValidationBox h3 {
+  color: var(--settings-strong);
+  line-height: 1.15;
+  margin: 0;
+}
+
+.liveRolesHeader h3 {
+  font-size: 1.12rem;
+  letter-spacing: -0.02em;
+}
+
+.liveRolesHeader p {
+  color: var(--live-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 7px 0 0;
+}
+
+.liveRoleTotal {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  color: var(--live-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.liveRoleTotal strong {
+  color: var(--settings-strong);
+  margin-right: 4px;
+}
+
+.liveRoleTotal.is-valid {
+  border-color: rgba(119, 189, 117, 0.42);
+  color: var(--green-400);
+}
+
+.liveRoleTotal.is-invalid {
+  border-color: rgba(167, 71, 61, 0.44);
+  color: #d47a70;
+}
+
+.liveSettingsGridTwo,
+.liveSettingsMainSide {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+}
+
+.liveSettingsGridTwo {
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+}
+
+.liveSettingsMainSide {
+  grid-template-columns: minmax(0, 1fr) 310px;
+}
+
+.liveSettingsStack {
+  display: grid;
+  gap: 16px;
+}
+
+.liveSettingsCard {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.062), rgba(255, 255, 255, 0.026)),
+    rgba(12, 14, 10, 0.74);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 18px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.07);
+  padding: 18px;
+}
+
+.liveSettingsCard h4 {
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+
+.liveSettingsChoiceGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.liveSettingsChoice {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 13px;
+  cursor: pointer;
+  display: grid;
+  min-height: 158px;
+  padding: 16px;
+  position: relative;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.liveSettingsChoice input {
+  block-size: 1px;
+  inline-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.liveSettingsChoice:hover {
+  background: rgba(255, 255, 255, 0.052);
+  border-color: rgba(var(--live-accent-rgb), 0.34);
+  transform: translateY(-1px);
+}
+
+.liveSettingsChoice:has(input:checked) {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(242, 199, 122, 0.18), transparent 13rem),
+    rgba(var(--live-accent-rgb), 0.075);
+  border-color: rgba(246, 202, 125, 0.74);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.22),
+    inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.liveSettingsChoice span {
+  align-self: start;
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  color: #f2c77a;
+  font-size: 0.62rem;
+  font-weight: 900;
+  justify-self: start;
+  letter-spacing: 0.12em;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.liveSettingsChoice strong {
+  color: var(--settings-strong);
+  font-size: 1.06rem;
+  letter-spacing: -0.02em;
+  margin-top: 14px;
+}
+
+.liveSettingsChoice em {
+  color: var(--live-muted);
+  font-size: 0.76rem;
+  font-style: normal;
+  line-height: 1.55;
+  margin-top: 6px;
+}
+
+.liveSettingsSticky {
+  position: sticky;
+  top: 0;
+}
+
+.liveSettingsFlow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.liveSettingsFlow span {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  color: var(--live-muted);
+  display: inline-flex;
+  font-size: 0.76rem;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.liveSettingsFlow strong {
+  color: var(--settings-strong);
+  font-weight: 900;
+}
+
+.liveSettingsFlow em {
+  color: color-mix(in srgb, var(--live-muted) 68%, transparent);
+  font-style: normal;
+}
+
+.liveSettingsOptionGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.liveSettingsOptionCard,
+.liveSettingsEmptyOptions {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 13px;
+  padding: 14px;
+}
+
+.liveSettingsEmptyOptions {
+  color: var(--live-muted);
+  font-size: 0.82rem;
+  grid-column: 1 / -1;
+}
+
+.liveSettingsOptionCard h4 {
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+.liveSettingsSegments {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.liveSettingsSegments button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  color: var(--live-muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.liveSettingsSegments button[aria-pressed="true"] {
+  background: linear-gradient(180deg, #f2c77a, var(--live-accent));
+  color: #1e1308;
+}
+
 .livePopupModal .liveNightChatPanel {
   border-top: 0;
   margin-top: 0;
@@ -2794,6 +3254,11 @@ a {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.liveTimingGrid.day {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
 .liveRuleSetField {
   display: grid;
   gap: 6px;
@@ -2812,6 +3277,158 @@ a {
   flex-wrap: wrap;
   gap: 6px;
   padding-top: 10px;
+}
+
+.liveRoleGrid {
+  border-top: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 0;
+}
+
+.liveRoleCard {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 13px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 44px minmax(0, 1fr) 112px;
+  min-height: 72px;
+  padding: 12px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.liveRoleCard.is-zero {
+  opacity: 0.58;
+}
+
+.liveRoleIcon {
+  align-items: center;
+  background: radial-gradient(circle at 35% 25%, rgba(242, 199, 122, 0.22), rgba(0, 0, 0, 0.16));
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 50%;
+  color: #f2c77a;
+  display: flex;
+  font-size: 0.74rem;
+  font-weight: 950;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.liveRoleName,
+.liveRoleDescription {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.liveRoleName {
+  color: var(--settings-strong);
+  font-size: 0.82rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.liveRoleDescription {
+  color: var(--live-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  margin: 3px 0 0;
+  white-space: nowrap;
+}
+
+.liveRoleCounter {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  min-height: 36px;
+  overflow: hidden;
+}
+
+.liveRoleCounter button {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #f2c77a;
+  font-size: 1.12rem;
+  font-weight: 800;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  width: 34px;
+}
+
+.liveRoleCounter button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.liveRoleCounter button:disabled {
+  color: color-mix(in srgb, var(--live-muted) 58%, transparent);
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.liveRoleCounter span {
+  color: var(--settings-strong);
+  font-size: 0.94rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.liveSettingsValidationBox {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 18px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.liveSettingsValidationBox.is-valid {
+  background: rgba(119, 189, 117, 0.07);
+  border-color: rgba(119, 189, 117, 0.4);
+}
+
+.liveSettingsValidationBox.is-invalid {
+  background: rgba(167, 71, 61, 0.07);
+  border-color: rgba(167, 71, 61, 0.42);
+}
+
+.liveSettingsValidationBox h3 {
+  font-size: 0.9rem;
+}
+
+.liveSettingsValidationBox ul {
+  color: var(--live-muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.liveSettingsValidationBox > span {
+  background: var(--green-400);
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(119, 189, 117, 0.45);
+  flex: 0 0 auto;
+  height: 11px;
+  margin-top: 4px;
+  width: 11px;
+}
+
+.liveSettingsValidationBox.is-invalid > span {
+  background: var(--red-500);
+  box-shadow: 0 0 18px rgba(167, 71, 61, 0.42);
 }
 
 .liveRolePill {
@@ -3174,6 +3791,23 @@ a {
     grid-column: 1 / -1;
   }
 
+  .liveSettingsModal {
+    height: min(900px, calc(100svh - 32px));
+  }
+
+  .liveSettingsGridTwo,
+  .liveSettingsMainSide {
+    grid-template-columns: 1fr;
+  }
+
+  .liveSettingsSticky {
+    position: static;
+  }
+
+  .liveRoleGrid {
+    grid-template-columns: 1fr;
+  }
+
   .liveEntryActions {
     grid-column: 1 / -1;
     justify-content: stretch;
@@ -3247,6 +3881,103 @@ a {
 
   .liveSetupButtonRow {
     align-items: stretch;
+  }
+
+  .liveSettingsBackdrop {
+    align-items: start;
+    padding: 12px;
+  }
+
+  .liveSettingsModal {
+    border-radius: 18px;
+    height: calc(100svh - 24px);
+  }
+
+  .liveSettingsHeader {
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .liveSettingsHeader h2 {
+    font-size: 1.55rem;
+  }
+
+  .liveSettingsHeaderActions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .liveSettingsTabs {
+    gap: 8px;
+    overflow-x: auto;
+    padding: 12px 18px;
+  }
+
+  .liveSettingsTabs button {
+    flex: 0 0 auto;
+    min-width: 108px;
+  }
+
+  .liveSettingsBody {
+    padding: 16px 18px;
+  }
+
+  .liveSettingsFooter {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px 18px;
+  }
+
+  .liveSettingsFooter > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .liveSettingsFooter button {
+    width: 100%;
+  }
+
+  .liveSettingsChoiceGrid,
+  .liveSettingsOptionGrid,
+  .liveTimingGrid.day {
+    grid-template-columns: 1fr;
+  }
+
+  .liveSettingsChoice {
+    min-height: 132px;
+  }
+
+  .liveRolesHeader {
+    flex-direction: column;
+  }
+
+  .liveRoleTotal {
+    align-self: flex-start;
+  }
+
+  .liveRoleCard {
+    grid-template-columns: 40px minmax(0, 1fr) 98px;
+  }
+
+  .liveRoleIcon {
+    height: 40px;
+    width: 40px;
+  }
+
+  .liveRoleCounter {
+    grid-template-columns: 30px 1fr 30px;
+  }
+
+  .liveRoleCounter button {
+    width: 30px;
+  }
+
+  .liveRoleName {
+    white-space: normal;
+  }
+
+  .liveRoleDescription {
+    white-space: normal;
   }
 
   .livePlayTablePanel .liveTableBoard {
