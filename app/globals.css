@@ -2950,6 +2950,128 @@ a {
   color: #d47a70;
 }
 
+.liveRolePresetStatus {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  color: var(--live-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.liveRolePresetStatus.is-selected {
+  border-color: rgba(246, 202, 125, 0.52);
+  color: #f2c77a;
+}
+
+.liveRolePresetGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.liveRolePresetCard {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 13px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+  color: inherit;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  min-height: 138px;
+  padding: 14px;
+  text-align: left;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.liveRolePresetCard:hover {
+  background: rgba(255, 255, 255, 0.052);
+  border-color: rgba(var(--live-accent-rgb), 0.34);
+  transform: translateY(-1px);
+}
+
+.liveRolePresetCard.is-selected {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(242, 199, 122, 0.18), transparent 12rem),
+    rgba(var(--live-accent-rgb), 0.075);
+  border-color: rgba(246, 202, 125, 0.74);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.22),
+    inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.liveRolePresetMark {
+  align-items: center;
+  background: radial-gradient(circle at 35% 25%, rgba(242, 199, 122, 0.22), rgba(0, 0, 0, 0.16));
+  border: 1px solid rgba(var(--live-accent-rgb), 0.2);
+  border-radius: 50%;
+  color: #f2c77a;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 950;
+  height: 48px;
+  justify-content: center;
+  width: 48px;
+}
+
+.liveRolePresetCopy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.liveRolePresetCopy strong {
+  color: var(--settings-strong);
+  font-size: 0.92rem;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.liveRolePresetCopy em {
+  color: var(--live-muted);
+  font-size: 0.76rem;
+  font-style: normal;
+  line-height: 1.42;
+}
+
+.liveRolePresetChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.liveRolePresetChip {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 999px;
+  color: var(--live-muted);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.liveRolePresetChip strong {
+  color: #f2c77a;
+  font-size: 0.76rem;
+}
+
 .liveSettingsGridTwo,
 .liveSettingsMainSide {
   align-items: start;
@@ -3951,8 +4073,20 @@ a {
     flex-direction: column;
   }
 
+  .liveRolePresetStatus,
   .liveRoleTotal {
     align-self: flex-start;
+  }
+
+  .liveRolePresetCard {
+    grid-template-columns: 42px minmax(0, 1fr);
+    min-height: 124px;
+  }
+
+  .liveRolePresetMark {
+    font-size: 0.72rem;
+    height: 42px;
+    width: 42px;
   }
 
   .liveRoleCard {
