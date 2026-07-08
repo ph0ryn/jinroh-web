@@ -761,6 +761,11 @@ function getSharedRoleCatalog(): RoleCatalogItem[] {
     name: role.name,
     order: role.order,
     shortLabel: role.shortLabel,
+    specificOptions: role.specificOptions.map((option) => ({
+      key: option.key,
+      label: option.label,
+      roleId: option.roleId,
+    })),
     team: toSharedTeam(role.team),
   }));
 }

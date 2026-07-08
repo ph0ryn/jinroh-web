@@ -7,6 +7,7 @@ import type {
   PublicActionProgress,
   PublicGameEvent,
   PublicPlayer,
+  RoleSpecificOptionItem,
   RoomSummary,
   SelfPrivateView,
 } from "@/lib/shared/game";
@@ -22,6 +23,19 @@ export type DevLiveFixture = {
 const ROOM_CODE = "424242";
 const CURRENT_PLAYER_ID = "player-sora";
 const PHASE_DURATION_SECONDS = 540;
+
+function getRoleSpecificOptions(
+  roleId: (typeof ROLE_IDS)[number],
+): readonly RoleSpecificOptionItem[] {
+  switch (roleId) {
+    case "guard":
+      return [{ key: "guardConsecutiveTargetPolicy", label: "Consecutive target", roleId }];
+    case "seer":
+      return [{ key: "initialInspectionPolicy", label: "Initial inspection", roleId }];
+    default:
+      return [];
+  }
+}
 
 const players: readonly PublicPlayer[] = [
   {
@@ -271,6 +285,7 @@ function createFixture(params: {
         name: ROLE_DEFINITIONS[roleId].name,
         order: index,
         shortLabel: ROLE_DEFINITIONS[roleId].name.slice(0, 2),
+        specificOptions: getRoleSpecificOptions(roleId),
         team: ROLE_DEFINITIONS[roleId].team,
       })),
       self: createSelfView(params.id, params.actions),

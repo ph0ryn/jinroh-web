@@ -18,6 +18,7 @@ import {
   type RealtimeSubscription,
   type RoleCounts,
   type RoleCatalogItem,
+  type RoleSpecificOptionItem,
   type RoomSummary,
   type RuleSetInput,
 } from "@/lib/shared/game";
@@ -245,6 +246,23 @@ const ROLE_META: Record<
     description: "Night attack role.",
     shortLabel: "W",
   },
+};
+
+const ROLE_SPECIFIC_OPTION_FALLBACKS: Partial<Record<BuiltInRoleId, RoleSpecificOptionItem[]>> = {
+  guard: [
+    {
+      key: "guardConsecutiveTargetPolicy",
+      label: "Consecutive target",
+      roleId: "guard",
+    },
+  ],
+  seer: [
+    {
+      key: "initialInspectionPolicy",
+      label: "Initial inspection",
+      roleId: "seer",
+    },
+  ],
 };
 
 export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
@@ -1971,6 +1989,7 @@ function LiveRoundTable({ summary }: { readonly summary: RoomSummary }) {
             "--seat-x": `${position.x}%`,
             "--seat-y": `${position.y}%`,
           };
+
           const seatClassName = [
             "seat",
             "liveTableSeat",
@@ -2090,6 +2109,8 @@ function StartRuleSetPanel({
     playerCount,
     roleCatalog,
   );
+  const activeRoleOptions =
+    roleCounts === null ? [] : getActiveRoleSpecificOptions(roleCatalog, roleCounts);
   const isRoleMixValid = roleValidationMessages.length === 0;
   const displayedRoleValidationMessages = isRoleMixValid
     ? ["Role counts are valid for this lobby."]
@@ -2365,59 +2386,16 @@ function StartRuleSetPanel({
               </div>
             </div>
             <div className="liveSettingsOptionGrid">
-              {roleCounts !== null && roleCounts.seer > 0 ? (
-                <div className="liveSettingsOptionCard">
-                  <h4>Seer - Initial inspection</h4>
-                  <div
-                    className="liveSettingsSegments"
-                    role="group"
-                    aria-label="Initial inspection policy"
-                  >
-                    <button
-                      aria-pressed={settings.initialInspectionPolicy === "enabled"}
-                      type="button"
-                      onClick={() => onSettingsChange("initialInspectionPolicy", "enabled")}
-                    >
-                      Enabled
-                    </button>
-                    <button
-                      aria-pressed={settings.initialInspectionPolicy === "disabled"}
-                      type="button"
-                      onClick={() => onSettingsChange("initialInspectionPolicy", "disabled")}
-                    >
-                      Disabled
-                    </button>
-                  </div>
+              {activeRoleOptions.map(({ option, role }) => (
+                <div className="liveSettingsOptionCard" key={`${role.id}:${option.key}`}>
+                  <h4>
+                    {role.name} - {option.label}
+                  </h4>
+                  {renderRoleSpecificOptionControl(option, settings, onSettingsChange)}
                 </div>
-              ) : null}
+              ))}
 
-              {roleCounts !== null && roleCounts.guard > 0 ? (
-                <div className="liveSettingsOptionCard">
-                  <h4>Guard - Consecutive target</h4>
-                  <div
-                    className="liveSettingsSegments"
-                    role="group"
-                    aria-label="Guard consecutive target policy"
-                  >
-                    <button
-                      aria-pressed={settings.guardConsecutiveTargetPolicy === "deny"}
-                      type="button"
-                      onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "deny")}
-                    >
-                      Deny same
-                    </button>
-                    <button
-                      aria-pressed={settings.guardConsecutiveTargetPolicy === "allow"}
-                      type="button"
-                      onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "allow")}
-                    >
-                      Allow
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {roleCounts === null || (roleCounts.seer === 0 && roleCounts.guard === 0) ? (
+              {activeRoleOptions.length === 0 ? (
                 <div className="liveSettingsEmptyOptions">
                   No extra role options for the current automatic mix.
                 </div>
@@ -3007,6 +2985,78 @@ function getStartRoleCatalog(roleCatalog: readonly RoleCatalogItem[]): readonly 
   return START_SETTINGS_ROLE_ORDER.map((roleId) => getStartRoleCatalogItem(roleCatalog, roleId));
 }
 
+function getActiveRoleSpecificOptions(
+  roleCatalog: readonly RoleCatalogItem[],
+  roleCounts: Readonly<RoleCounts>,
+): { readonly option: RoleSpecificOptionItem; readonly role: RoleCatalogItem }[] {
+  return getStartRoleCatalog(roleCatalog).flatMap((role) => {
+    if ((roleCounts[role.id] ?? 0) <= 0) {
+      return [];
+    }
+
+    return role.specificOptions.map((option) => ({
+      option,
+      role,
+    }));
+  });
+}
+
+function renderRoleSpecificOptionControl(
+  option: RoleSpecificOptionItem,
+  settings: StartRuleSetSettings,
+  onSettingsChange: <Key extends keyof StartRuleSetSettings>(
+    key: Key,
+    value: StartRuleSetSettings[Key],
+  ) => void,
+): ReactNode {
+  switch (option.key) {
+    case "guardConsecutiveTargetPolicy":
+      return (
+        <div
+          className="liveSettingsSegments"
+          role="group"
+          aria-label="Guard consecutive target policy"
+        >
+          <button
+            aria-pressed={settings.guardConsecutiveTargetPolicy === "deny"}
+            type="button"
+            onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "deny")}
+          >
+            Deny same
+          </button>
+          <button
+            aria-pressed={settings.guardConsecutiveTargetPolicy === "allow"}
+            type="button"
+            onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "allow")}
+          >
+            Allow
+          </button>
+        </div>
+      );
+    case "initialInspectionPolicy":
+      return (
+        <div className="liveSettingsSegments" role="group" aria-label="Initial inspection policy">
+          <button
+            aria-pressed={settings.initialInspectionPolicy === "enabled"}
+            type="button"
+            onClick={() => onSettingsChange("initialInspectionPolicy", "enabled")}
+          >
+            Enabled
+          </button>
+          <button
+            aria-pressed={settings.initialInspectionPolicy === "disabled"}
+            type="button"
+            onClick={() => onSettingsChange("initialInspectionPolicy", "disabled")}
+          >
+            Disabled
+          </button>
+        </div>
+      );
+    default:
+      return <p>{option.label} is not configurable in this client yet.</p>;
+  }
+}
+
 function getStartRoleCatalogItem(
   roleCatalog: readonly RoleCatalogItem[],
   roleId: BuiltInRoleId,
@@ -3020,6 +3070,7 @@ function getStartRoleCatalogItem(
       name: ROLE_DEFINITIONS[roleId].name,
       order: START_SETTINGS_ROLE_ORDER.indexOf(roleId),
       shortLabel: ROLE_META[roleId].shortLabel,
+      specificOptions: ROLE_SPECIFIC_OPTION_FALLBACKS[roleId] ?? [],
       team: ROLE_DEFINITIONS[roleId].team,
     }
   );

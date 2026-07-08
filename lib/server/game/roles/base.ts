@@ -95,6 +95,7 @@ export abstract class Role {
       name: this.name,
       order: this.order,
       shortLabel: this.shortLabel,
+      specificOptions: this.getSpecificOptions(),
       team: this.team,
     };
   }

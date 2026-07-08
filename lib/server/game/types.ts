@@ -193,6 +193,7 @@ export type RolePublicMetadata = {
   name: string;
   order: number;
   shortLabel: string;
+  specificOptions: readonly RoleSpecificOptionDefinition[];
   team: Team;
 };
 

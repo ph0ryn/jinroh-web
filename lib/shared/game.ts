@@ -235,7 +235,14 @@ export type RoleCatalogItem = {
   name: string;
   order: number;
   shortLabel: string;
+  specificOptions: readonly RoleSpecificOptionItem[];
   team: Team;
+};
+
+export type RoleSpecificOptionItem = {
+  key: string;
+  label: string;
+  roleId: RoleId;
 };
 
 export const ROLE_DEFINITIONS: Record<BuiltInRoleId, RoleDefinition> = {
