@@ -2,9 +2,11 @@ import "server-only";
 import { RoleRegistry } from "./roles/base";
 import { FoxRole } from "./roles/fox";
 import { GuardRole } from "./roles/guard";
+import { HunterRole } from "./roles/hunter";
 import { MadmanRole } from "./roles/madman";
 import { SEER_ROLE_ID } from "./roles/roleIds";
 import { SeerRole } from "./roles/seer";
+import { SpiritistRole } from "./roles/spiritist";
 import { VillagerRole } from "./roles/villager";
 import { WerewolfRole } from "./roles/werewolf";
 import {
@@ -37,11 +39,13 @@ export type {
 } from "./roles/base";
 export { FoxRole } from "./roles/fox";
 export { GuardRole } from "./roles/guard";
+export { HunterRole } from "./roles/hunter";
 export { isGuardTargetAllowed } from "./roles/guardTarget";
 export { countAliveByGroup } from "./roles/helpers";
 export { MadmanRole } from "./roles/madman";
 export { createGuardProtectionEffect } from "./roles/roleEffects";
 export { SeerRole } from "./roles/seer";
+export { SpiritistRole } from "./roles/spiritist";
 export { VillagerRole } from "./roles/villager";
 export { WerewolfRole } from "./roles/werewolf";
 
@@ -51,6 +55,8 @@ export const roleRegistry = new RoleRegistry([
   new MadmanRole(),
   new SeerRole(),
   new GuardRole(),
+  new SpiritistRole(),
+  new HunterRole(),
   new FoxRole(),
 ]);
 

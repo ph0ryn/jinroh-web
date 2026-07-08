@@ -198,6 +198,8 @@ const START_SETTINGS_ROLE_ORDER = [
   "madman",
   "seer",
   "guard",
+  "spiritist",
+  "hunter",
   "fox",
   "villager",
 ] as const;
@@ -217,6 +219,10 @@ const ROLE_META: Record<
     description: "Protects one player at night when active.",
     shortLabel: "G",
   },
+  hunter: {
+    description: "Retaliates when executed.",
+    shortLabel: "H",
+  },
   madman: {
     description: "Wins with werewolves, seen as human.",
     shortLabel: "M",
@@ -224,6 +230,10 @@ const ROLE_META: Record<
   seer: {
     description: "Inspects one player at night.",
     shortLabel: "Se",
+  },
+  spiritist: {
+    description: "Sees executed roles.",
+    shortLabel: "Sp",
   },
   villager: {
     description: "No special night action.",

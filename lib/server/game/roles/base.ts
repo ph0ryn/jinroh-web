@@ -5,6 +5,7 @@ import { createDeathEffect } from "./roleEffects";
 import type {
   CurrentAction,
   GameEffect,
+  GameActionKind,
   GameEndCandidate,
   GameEndReason,
   PlayerResult,
@@ -18,7 +19,7 @@ import type {
   WinnerJudgementContribution,
 } from "../types";
 
-export const ROLE_REGISTRY_VERSION = "jinroh-core-v1";
+export const ROLE_REGISTRY_VERSION = "jinroh-core-v2";
 
 export type RoleContext = {
   roles: RoleRegistry;
@@ -41,6 +42,17 @@ export type AttackContext = RoleContext & {
 
 export type ExecutionContext = RoleContext & {
   targetId: PlayerId;
+};
+
+export type ExecutionResolvedContext = RoleContext & {
+  targetId: PlayerId;
+  targetRoleId: RoleId;
+};
+
+export type RoleActionResolvedContext = RoleContext & {
+  actionKind: GameActionKind;
+  actorId: PlayerId;
+  targetId: PlayerId | null;
 };
 
 export type WinnerJudgementContext = RoleContext & {
@@ -116,6 +128,18 @@ export abstract class Role {
         tags: [EffectTag.Execution, EffectTag.Unpreventable],
       }),
     ];
+  }
+
+  onExecutionResolved(context: ExecutionResolvedContext): readonly GameEffect[] {
+    void context;
+
+    return [];
+  }
+
+  onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
+    void context;
+
+    return [];
   }
 
   onMissingAction(currentAction: CurrentAction, context: RoleContext): readonly GameEffect[] {

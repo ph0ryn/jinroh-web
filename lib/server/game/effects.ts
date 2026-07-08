@@ -3,7 +3,7 @@ import { createGuardProtectionEffect } from "./roles";
 import { GameEffectKind, GameEffectLayer } from "./types";
 
 import type { RoleContext } from "./roles";
-import type { GameEffect, PlayerId, RoleId } from "./types";
+import type { GameActionKind, GameEffect, PlayerId, RoleId } from "./types";
 
 export type PreventedEffect = {
   effect: GameEffect;
@@ -17,6 +17,7 @@ export type EffectResolution = {
 };
 
 const EFFECT_LAYER_ORDER: Readonly<Record<GameEffectLayer, number>> = {
+  [GameEffectLayer.Action]: 50,
   [GameEffectLayer.Prevention]: 10,
   [GameEffectLayer.Death]: 20,
   [GameEffectLayer.Information]: 30,
@@ -142,6 +143,55 @@ export function collectExecutionEffects(params: {
   return targetRole
     .onExecuted({
       ...params.context,
+      targetId: params.targetId,
+    })
+    .map((effect) => {
+      return {
+        ...effect,
+        sourceActionId: params.sourceActionId,
+      };
+    });
+}
+
+export function collectExecutionResolvedEffects(params: {
+  context: RoleContext;
+  sourceActionId: string | null;
+  targetId: PlayerId;
+}): readonly GameEffect[] {
+  const targetRoleId = getRequiredRoleIdForPlayer(params.context, params.targetId);
+
+  return params.context.roles.getActiveRoles(params.context.state).flatMap((role) =>
+    role
+      .onExecutionResolved({
+        ...params.context,
+        targetId: params.targetId,
+        targetRoleId,
+      })
+      .map((effect) => {
+        return {
+          ...effect,
+          sourceActionId: params.sourceActionId,
+        };
+      }),
+  );
+}
+
+export function collectRoleActionEffects(params: {
+  actionKind: GameActionKind;
+  actorId: PlayerId;
+  context: RoleContext;
+  sourceActionId: string | null;
+  targetId: PlayerId | null;
+}): readonly GameEffect[] {
+  const actorRole = params.context.roles.get(
+    getRequiredRoleIdForPlayer(params.context, params.actorId),
+  );
+
+  return actorRole
+    .onActionResolved({
+      ...params.context,
+      actionKind: params.actionKind,
+      actorId: params.actorId,
       targetId: params.targetId,
     })
     .map((effect) => {

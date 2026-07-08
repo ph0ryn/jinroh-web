@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_RULE_SET,
+  ROLE_DEFINITIONS,
   makeDefaultRuleSetForPlayers,
   normalizeRuleSet,
   validateRuleSet,
@@ -27,7 +28,9 @@ describe("ruleset validation", () => {
       roleCounts: {
         fox: 0,
         guard: 0,
+        hunter: 0,
         madman: 0,
+        spiritist: 0,
         seer: 1,
         villager: 1,
         werewolf: 1,
@@ -83,5 +86,22 @@ describe("ruleset validation", () => {
     expect(normalized.daySpeechSeconds).toBe(45);
     expect(normalized.normalDaySpeechRounds).toBe(2);
     expect(normalized.voteResultVisibility).toBe("voter_to_target");
+  });
+
+  it("keeps spiritist and hunter as optional village-side human roles", () => {
+    const ruleSet = makeDefaultRuleSetForPlayers(9);
+
+    expect(ruleSet.roleCounts.spiritist).toBe(0);
+    expect(ruleSet.roleCounts.hunter).toBe(0);
+    expect(ROLE_DEFINITIONS.spiritist).toMatchObject({
+      countAs: "villager",
+      seenAs: "human",
+      team: "villagers",
+    });
+    expect(ROLE_DEFINITIONS.hunter).toMatchObject({
+      countAs: "villager",
+      seenAs: "human",
+      team: "villagers",
+    });
   });
 });

@@ -104,8 +104,10 @@ export function makeDefaultRoleCounts(playerCount: number): RoleCounts {
   return {
     fox,
     guard,
+    hunter: 0,
     madman,
     seer,
+    spiritist: 0,
     villager: Math.max(playerCount - fixedRoles, 0),
     werewolf,
   };

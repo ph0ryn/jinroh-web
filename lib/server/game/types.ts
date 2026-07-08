@@ -1,6 +1,15 @@
 import "server-only";
 
-export const ROLE_IDS = ["werewolf", "villager", "madman", "seer", "guard", "fox"] as const;
+export const ROLE_IDS = [
+  "werewolf",
+  "villager",
+  "madman",
+  "seer",
+  "guard",
+  "spiritist",
+  "hunter",
+  "fox",
+] as const;
 
 export type RoleId = (typeof ROLE_IDS)[number];
 
@@ -75,6 +84,7 @@ export enum GameActionKind {
   ReadyForFirstDay = "ready_for_first_day",
   ReadyForVoting = "ready_for_voting",
   EndSpeech = "end_speech",
+  HunterRetaliate = "hunter_retaliate",
   Vote = "vote",
   None = "none",
 }
@@ -108,6 +118,7 @@ export enum GameEffectKind {
   Death = "death",
   Protection = "protection",
   InspectionResult = "inspection_result",
+  CurrentAction = "current_action",
   PublicMessage = "public_message",
   PrivateMessage = "private_message",
 }
@@ -117,6 +128,7 @@ export enum GameEffectLayer {
   Death = "death",
   Information = "information",
   Message = "message",
+  Action = "action",
 }
 
 export enum GameEndReason {
@@ -139,6 +151,7 @@ export enum GameEventKind {
   PhaseChanged = "phase_changed",
   VoteResolved = "vote_resolved",
   GameEnded = "game_ended",
+  SpiritistResult = "spiritist_result",
 }
 
 export enum GameEventVisibility {
@@ -273,11 +286,20 @@ export type GameEffect =
       view: InspectionView;
       viewerId: PlayerId;
     })
+  | (GameEffectBase<GameEffectKind.CurrentAction> & {
+      actionKind: GameActionKind;
+      actionKey: string;
+      actorPlayerId: PlayerId | null;
+      actorRoleId: RoleId | null;
+      eligibleTargetPlayerIds: readonly PlayerId[];
+      target: RoleTargetKind;
+    })
   | (GameEffectBase<GameEffectKind.PublicMessage> & {
       messageKey: string;
     })
   | (GameEffectBase<GameEffectKind.PrivateMessage> & {
       messageKey: string;
+      payload: Readonly<Record<string, unknown>>;
       playerId: PlayerId;
     });
 

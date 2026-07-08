@@ -1019,6 +1019,14 @@ function formatPrivateEventMessage(
     return `${targetPlayerName} appears to be ${result}.`;
   }
 
+  if (event.event_kind === "spiritist_result") {
+    const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
+    const roleId = event.payload["roleId"];
+    const roleName = typeof roleId === "string" && isRoleId(roleId) ? getRoleName(roleId) : null;
+
+    return `${targetPlayerName} was ${roleName ?? "Unknown"}.`;
+  }
+
   return event.public_message ?? event.event_kind.replaceAll("_", " ");
 }
 
@@ -1079,6 +1087,8 @@ function labelAction(actionKind: string): string {
       return "Ready for first day";
     case "guard":
       return "Choose guard target";
+    case "hunter_retaliate":
+      return "Choose retaliation target";
     case "inspect":
       return "Choose inspection target";
     case "vote":

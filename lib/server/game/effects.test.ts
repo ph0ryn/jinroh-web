@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   collectAttackEffects,
   collectExecutionEffects,
+  collectExecutionResolvedEffects,
   collectGuardEffects,
   collectInspectionEffects,
   resolveEffects,
 } from "./effects";
 import { roleRegistry } from "./roles";
 import { DEFAULT_RULE_OPTIONS } from "./ruleset";
-import { GameEffectKind, GamePhase, GameStatus } from "./types";
+import { GameActionKind, GameEffectKind, GamePhase, GameStatus } from "./types";
 
 import type { RoleContext } from "./roles";
 import type { PlayerId, ReadonlyGameState, ResolvedRoleSetup, RoleId } from "./types";
@@ -91,6 +92,52 @@ describe("resolveEffects", () => {
 
     expect(attackResolution.deathEffectsByPlayerId.has("fox")).toBe(false);
     expect(inspectionResolution.deathEffectsByPlayerId.get("fox")?.kind).toBe(GameEffectKind.Death);
+  });
+
+  it("collects hunter retaliation as an execution follow-up action from the role class", () => {
+    const context = createRoleContext([
+      ["hunter", "hunter"],
+      ["wolf", "werewolf"],
+      ["villager", "villager"],
+    ]);
+    const effects = collectExecutionEffects({
+      context,
+      sourceActionId: "execution-action",
+      targetId: "hunter",
+    });
+    const actionEffect = effects.find((effect) => effect.kind === GameEffectKind.CurrentAction);
+
+    expect(actionEffect).toMatchObject({
+      actionKind: GameActionKind.HunterRetaliate,
+      actorPlayerId: "hunter",
+      eligibleTargetPlayerIds: ["wolf", "villager"],
+      kind: GameEffectKind.CurrentAction,
+    });
+  });
+
+  it("collects spiritist result private messages from the role class", () => {
+    const context = createRoleContext([
+      ["spiritist", "spiritist"],
+      ["target", "villager"],
+      ["wolf", "werewolf"],
+    ]);
+    const effects = collectExecutionResolvedEffects({
+      context,
+      sourceActionId: "execution-action",
+      targetId: "target",
+    });
+
+    expect(effects).toEqual([
+      expect.objectContaining({
+        kind: GameEffectKind.PrivateMessage,
+        messageKey: "spiritist_result",
+        payload: {
+          roleId: "villager",
+          targetPlayerId: "target",
+        },
+        playerId: "spiritist",
+      }),
+    ]);
   });
 });
 

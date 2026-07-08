@@ -8,6 +8,7 @@ import {
   ROLE_DEFINITIONS,
   ROLE_IDS,
   type ActionKind,
+  type DeathReason,
   type GamePhase,
   type InspectionResult,
   type RoleId,
@@ -17,8 +18,27 @@ import {
   validateRuleSet,
 } from "@/lib/shared/game";
 
+import {
+  collectExecutionEffects,
+  collectExecutionResolvedEffects,
+  collectRoleActionEffects,
+  resolveEffects,
+} from "./game/effects";
+import { roleRegistry, type RoleContext } from "./game/roles";
+import { DEFAULT_RULE_OPTIONS } from "./game/ruleset";
+import {
+  GameActionKind as RegisteredGameActionKind,
+  DeathReason as RegisteredDeathReason,
+  GameEffectKind,
+  GamePhase as RegisteredGamePhase,
+  GameStatus as RegisteredGameStatus,
+  RoleTargetKind as RegisteredRoleTargetKind,
+  type GameEffect,
+  type RoleId as RegisteredRoleId,
+} from "./game/types";
+
 export const ENGINE_VERSION = "2026-07-product-foundation";
-export const ROLE_REGISTRY_VERSION = "2026-07-core-six";
+export const ROLE_REGISTRY_VERSION = roleRegistry.version;
 
 export type EnginePlayer = {
   id: string;
@@ -94,7 +114,7 @@ export type OrderedSpeechSlot = {
 
 export type PhaseResolution = {
   actionsToOpen: EngineAction[];
-  deaths: { playerId: string; reason: "attack" | "execution" | "rule_effect" }[];
+  deaths: EngineDeath[];
   events: EngineEvent[];
   finalOutcome: { reason: string; winnerTeam: Team } | null;
   nextDayNumber: number;
@@ -102,6 +122,11 @@ export type PhaseResolution = {
   nextPhase: GamePhase | null;
   nextPhaseDurationSeconds: number | null;
   speechSlotsToCreate: OrderedSpeechSlot[];
+};
+
+type EngineDeath = {
+  playerId: string;
+  reason: DeathReason;
 };
 
 export function startGame(
@@ -484,7 +509,7 @@ function resolveNight(input: PhaseResolutionInput): PhaseResolution {
 
 function openDay(
   input: PhaseResolutionInput,
-  deaths: { playerId: string; reason: "attack" | "execution" | "rule_effect" }[],
+  deaths: EngineDeath[],
   events: EngineEvent[] = [],
 ): PhaseResolution {
   const nextPlayers = input.players.map((player) => ({
@@ -784,19 +809,37 @@ function toVoteResolvedPayload(
 }
 
 function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
-  const event = input.actions.find((action) => action.kind === "execution_skip");
-  const targetPlayerId = event?.actorPlayerId;
+  const roleAction = input.actions.find(
+    (action) => toRegisteredRoleActionKind(action.kind) !== null,
+  );
 
-  if (targetPlayerId === undefined) {
-    return openNight(input, []);
+  if (roleAction !== undefined) {
+    return resolveExecutionRoleAction(input, roleAction);
   }
 
-  const deaths = [{ playerId: targetPlayerId, reason: "execution" as const }];
-  const nextPlayers = input.players.map((player) => ({
-    ...player,
-    alive: player.playerId === targetPlayerId ? false : player.alive,
-  }));
-  const finalOutcome = evaluateWinner(nextPlayers);
+  const event = input.actions.find((action) => action.kind === "execution_skip");
+
+  if (event === undefined) {
+    return finishExecutionAfterRoleActions(input, [], []);
+  }
+
+  const targetPlayerId = event.actorPlayerId;
+  const roleContext = createRoleContext(input);
+  const effects = [
+    ...collectExecutionEffects({
+      context: roleContext,
+      sourceActionId: event.actionKey ?? null,
+      targetId: targetPlayerId,
+    }),
+    ...collectExecutionResolvedEffects({
+      context: roleContext,
+      sourceActionId: event.actionKey ?? null,
+      targetId: targetPlayerId,
+    }),
+  ];
+  const effectResolution = resolveEffects(effects);
+  const deaths = toEngineDeaths(effectResolution.appliedEffects);
+  const actionsToOpen = toEngineActions(effectResolution.appliedEffects);
   const events: EngineEvent[] = [
     {
       kind: "player_executed",
@@ -806,7 +849,64 @@ function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
       visibleToPlayerIds: [],
       visibleToRoleIds: [],
     },
+    ...toPrivateEngineEvents(effectResolution.appliedEffects),
+    ...toPublicDeathEvents(deaths, ["execution"]),
   ];
+
+  if (actionsToOpen.length > 0) {
+    return {
+      actionsToOpen,
+      deaths,
+      events,
+      finalOutcome: null,
+      nextDayNumber: input.dayNumber,
+      nextNightNumber: input.nightNumber,
+      nextPhase: "execution",
+      nextPhaseDurationSeconds: input.ruleSet.executionLastWordsSeconds,
+      speechSlotsToCreate: [],
+    };
+  }
+
+  return finishExecutionAfterRoleActions(input, events, deaths);
+}
+
+function resolveExecutionRoleAction(
+  input: PhaseResolutionInput,
+  action: SubmittedAction,
+): PhaseResolution {
+  const actionKind = toRegisteredRoleActionKind(action.kind);
+
+  if (actionKind === null) {
+    return openNight(input, []);
+  }
+
+  const effects = collectRoleActionEffects({
+    actionKind,
+    actorId: action.actorPlayerId,
+    context: createRoleContext(input),
+    sourceActionId: action.actionKey ?? null,
+    targetId: action.targetPlayerId,
+  });
+  const effectResolution = resolveEffects(effects);
+  const deaths = toEngineDeaths(effectResolution.appliedEffects);
+  const events = [
+    ...toPrivateEngineEvents(effectResolution.appliedEffects),
+    ...toPublicDeathEvents(deaths, []),
+  ];
+
+  return finishExecutionAfterRoleActions(input, events, deaths);
+}
+
+function finishExecutionAfterRoleActions(
+  input: PhaseResolutionInput,
+  events: EngineEvent[],
+  deaths: EngineDeath[],
+): PhaseResolution {
+  const nextPlayers = input.players.map((player) => ({
+    ...player,
+    alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
+  }));
+  const finalOutcome = evaluateWinner(nextPlayers);
 
   if (finalOutcome !== null) {
     return {
@@ -835,10 +935,186 @@ function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
   return openNight(input, events, deaths);
 }
 
+function createRoleContext(input: PhaseResolutionInput): RoleContext {
+  const roleByPlayerId = new Map(
+    input.players.map((player) => [player.playerId, player.roleId as RegisteredRoleId]),
+  );
+  const activeRoleIds = [
+    ...new Set(input.players.map((player) => player.roleId as RegisteredRoleId)),
+  ];
+
+  return {
+    roles: roleRegistry,
+    state: {
+      alivePlayerIds: input.players
+        .filter((player) => player.alive)
+        .map((player) => player.playerId),
+      currentActions: [],
+      events: [],
+      finalOutcome: null,
+      nightConversationMessages: [],
+      nightNumber: input.nightNumber,
+      pendingActions: [],
+      phase: toRegisteredPhase(input.currentPhase),
+      phaseInstanceId: null,
+      resolvedRoleSetup: {
+        activeRoleIds,
+        contributions: [],
+        nightConversationGroups: [],
+        winnerJudgements: [],
+      },
+      roleByPlayerId,
+      ruleOptions: DEFAULT_RULE_OPTIONS,
+      status: RegisteredGameStatus.Playing,
+    },
+  };
+}
+
+function toRegisteredPhase(phase: GamePhase): RegisteredGamePhase {
+  switch (phase) {
+    case "day":
+      return RegisteredGamePhase.Day;
+    case "execution":
+      return RegisteredGamePhase.Execution;
+    case "night":
+      return RegisteredGamePhase.Night;
+    case "voting":
+      return RegisteredGamePhase.Voting;
+  }
+}
+
+function toRegisteredRoleActionKind(actionKind: ActionKind): RegisteredGameActionKind | null {
+  return actionKind === "hunter_retaliate" ? RegisteredGameActionKind.HunterRetaliate : null;
+}
+
+function toEngineDeaths(effects: readonly GameEffect[]): EngineDeath[] {
+  return effects.flatMap((effect) =>
+    effect.kind === GameEffectKind.Death
+      ? [
+          {
+            playerId: effect.playerId,
+            reason: toSharedDeathReason(effect.reason),
+          },
+        ]
+      : [],
+  );
+}
+
+function toEngineActions(effects: readonly GameEffect[]): EngineAction[] {
+  return effects.flatMap((effect) => {
+    if (effect.kind !== GameEffectKind.CurrentAction) {
+      return [];
+    }
+
+    const kind = toSharedActionKind(effect.actionKind);
+    const targetKind = toSharedTargetKind(effect.target);
+
+    if (kind === null || targetKind === null || effect.eligibleTargetPlayerIds.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        actorPlayerId: effect.actorPlayerId,
+        actorRoleId: effect.actorRoleId,
+        eligibleTargetPlayerIds: [...effect.eligibleTargetPlayerIds],
+        key: effect.actionKey,
+        kind,
+        targetKind,
+      },
+    ];
+  });
+}
+
+function toPrivateEngineEvents(effects: readonly GameEffect[]): EngineEvent[] {
+  return effects.flatMap((effect) =>
+    effect.kind === GameEffectKind.PrivateMessage
+      ? [
+          {
+            kind: effect.messageKey,
+            message: null,
+            payload: { ...effect.payload },
+            visibility: "private",
+            visibleToPlayerIds: [effect.playerId],
+            visibleToRoleIds: [],
+          },
+        ]
+      : [],
+  );
+}
+
+function toPublicDeathEvents(
+  deaths: readonly EngineDeath[],
+  excludedReasons: readonly DeathReason[],
+): EngineEvent[] {
+  return deaths.flatMap((death) =>
+    excludedReasons.includes(death.reason)
+      ? []
+      : [
+          {
+            kind: "player_died",
+            message: "A player died.",
+            payload: {
+              reason: death.reason,
+              targetPlayerId: death.playerId,
+            },
+            visibility: "public",
+            visibleToPlayerIds: [],
+            visibleToRoleIds: [],
+          },
+        ],
+  );
+}
+
+function toSharedActionKind(actionKind: RegisteredGameActionKind): ActionKind | null {
+  switch (actionKind) {
+    case RegisteredGameActionKind.Attack:
+      return "attack";
+    case RegisteredGameActionKind.EndSpeech:
+      return "end_speech";
+    case RegisteredGameActionKind.Guard:
+      return "guard";
+    case RegisteredGameActionKind.HunterRetaliate:
+      return "hunter_retaliate";
+    case RegisteredGameActionKind.Inspect:
+      return "inspect";
+    case RegisteredGameActionKind.Vote:
+      return "vote";
+    default:
+      return null;
+  }
+}
+
+function toSharedTargetKind(
+  targetKind: RegisteredRoleTargetKind,
+): EngineAction["targetKind"] | null {
+  switch (targetKind) {
+    case RegisteredRoleTargetKind.None:
+      return "none";
+    case RegisteredRoleTargetKind.SinglePlayer:
+      return "single_player";
+    default:
+      return null;
+  }
+}
+
+function toSharedDeathReason(reason: RegisteredDeathReason): DeathReason {
+  switch (reason) {
+    case RegisteredDeathReason.Attack:
+      return "attack";
+    case RegisteredDeathReason.Execution:
+      return "execution";
+    case RegisteredDeathReason.Retaliation:
+      return "retaliation";
+    case RegisteredDeathReason.RuleEffect:
+      return "rule_effect";
+  }
+}
+
 function openNight(
   input: PhaseResolutionInput,
   events: EngineEvent[],
-  deaths: { playerId: string; reason: "attack" | "execution" | "rule_effect" }[] = [],
+  deaths: EngineDeath[] = [],
 ): PhaseResolution {
   const nextPlayers = input.players.map((player) => ({
     ...player,

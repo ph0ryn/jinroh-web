@@ -1,4 +1,13 @@
-export const ROLE_IDS = ["werewolf", "villager", "madman", "seer", "guard", "fox"] as const;
+export const ROLE_IDS = [
+  "werewolf",
+  "villager",
+  "madman",
+  "seer",
+  "guard",
+  "spiritist",
+  "hunter",
+  "fox",
+] as const;
 export const MIN_ROOM_PLAYERS = 3;
 export const MAX_ROOM_PLAYERS = 10;
 export const DEFAULT_TARGET_PLAYER_COUNT = 6;
@@ -27,9 +36,10 @@ export type ActionKind =
   | "day_ready"
   | "vote"
   | "end_speech"
-  | "execution_skip";
+  | "execution_skip"
+  | "hunter_retaliate";
 
-export type DeathReason = "attack" | "execution" | "rule_effect";
+export type DeathReason = "attack" | "execution" | "retaliation" | "rule_effect";
 
 export type GameEventVisibility = "public" | "private" | "internal";
 
@@ -229,10 +239,28 @@ export const ROLE_DEFINITIONS: Record<RoleId, RoleDefinition> = {
     minCount: 0,
     maxCount: 1,
   },
+  hunter: {
+    id: "hunter",
+    name: "Hunter",
+    team: "villagers",
+    countAs: "villager",
+    seenAs: "human",
+    minCount: 0,
+    maxCount: 1,
+  },
   madman: {
     id: "madman",
     name: "Madman",
     team: "werewolves",
+    countAs: "villager",
+    seenAs: "human",
+    minCount: 0,
+    maxCount: 1,
+  },
+  spiritist: {
+    id: "spiritist",
+    name: "Spiritist",
+    team: "villagers",
     countAs: "villager",
     seenAs: "human",
     minCount: 0,
@@ -281,7 +309,9 @@ export const DEFAULT_RULE_SET: RuleSet = {
   roleCounts: {
     fox: 0,
     guard: 1,
+    hunter: 0,
     madman: 1,
+    spiritist: 0,
     seer: 1,
     villager: 3,
     werewolf: 2,
@@ -340,7 +370,9 @@ export function makeDefaultRuleSetForPlayers(playerCount: number): RuleSet {
     roleCounts: {
       fox: foxCount,
       guard: guardCount,
+      hunter: 0,
       madman: madmanCount,
+      spiritist: 0,
       seer: seerCount,
       villager: Math.max(playerCount - specialCount, 0),
       werewolf: werewolfCount,

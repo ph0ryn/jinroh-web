@@ -384,6 +384,125 @@ describe("game engine", () => {
     expect(resolution.events.map((event) => event.kind)).toContain("player_executed");
   });
 
+  it("shows executed roles privately to alive spiritists", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "spiritist" },
+      { alive: true, playerId: "3", roleId: "villager" },
+      { alive: true, playerId: "4", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "3", kind: "execution_skip", targetPlayerId: null }],
+      currentPhase: "execution",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+    const spiritistEvent = resolution.events.find((event) => event.kind === "spiritist_result");
+
+    expect(spiritistEvent).toMatchObject({
+      payload: { roleId: "villager", targetPlayerId: "3" },
+      visibility: "private",
+      visibleToPlayerIds: ["2"],
+    });
+  });
+
+  it("opens a role-defined retaliation action when the hunter is executed", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "hunter" },
+      { alive: true, playerId: "3", roleId: "villager" },
+      { alive: true, playerId: "4", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "2", kind: "execution_skip", targetPlayerId: null }],
+      currentPhase: "execution",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+
+    expect(resolution.deaths).toEqual([{ playerId: "2", reason: "execution" }]);
+    expect(resolution.nextPhase).toBe("execution");
+    expect(resolution.actionsToOpen).toEqual([
+      expect.objectContaining({
+        actorPlayerId: "2",
+        actorRoleId: "hunter",
+        eligibleTargetPlayerIds: ["1", "3", "4"],
+        kind: "hunter_retaliate",
+        targetKind: "single_player",
+      }),
+    ]);
+  });
+
+  it("resolves the hunter retaliation action as retaliation death", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: false, playerId: "2", roleId: "hunter" },
+      { alive: true, playerId: "3", roleId: "villager" },
+      { alive: true, playerId: "4", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "2", kind: "hunter_retaliate", targetPlayerId: "1" }],
+      currentPhase: "execution",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+
+    expect(resolution.deaths).toEqual([{ playerId: "1", reason: "retaliation" }]);
+    expect(resolution.events.map((event) => event.kind)).toContain("player_died");
+    expect(resolution.finalOutcome?.winnerTeam).toBe("villagers");
+  });
+
+  it("continues without retaliation death when the hunter action times out", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: false, playerId: "2", roleId: "hunter" },
+      { alive: true, playerId: "3", roleId: "villager" },
+      { alive: true, playerId: "4", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [],
+      currentPhase: "execution",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+
+    expect(resolution.deaths).toEqual([]);
+    expect(resolution.nextPhase).toBe("night");
+    expect(resolution.actionsToOpen.every((action) => action.kind !== "hunter_retaliate")).toBe(
+      true,
+    );
+  });
+
+  it("does not open hunter retaliation after a night attack", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "hunter" },
+      { alive: true, playerId: "3", roleId: "villager" },
+      { alive: true, playerId: "4", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "1", kind: "attack", targetPlayerId: "2" }],
+      currentPhase: "night",
+      dayNumber: 1,
+      nightNumber: 2,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(4),
+    });
+
+    expect(resolution.deaths).toEqual([{ playerId: "2", reason: "attack" }]);
+    expect(resolution.actionsToOpen.every((action) => action.kind !== "hunter_retaliate")).toBe(
+      true,
+    );
+  });
+
   it("evaluates fox as a high-priority winner", () => {
     expect(
       evaluateWinner([
