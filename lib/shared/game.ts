@@ -56,6 +56,7 @@ export type RoomSummary = {
   currentPlayerId: string | null;
   isHost: boolean;
   players: PublicPlayer[];
+  defaultRoleCounts: RoleCounts;
   roleCatalog: RoleCatalogItem[];
   game: PublicGameView | null;
   self: SelfPrivateView | null;

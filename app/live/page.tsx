@@ -9,19 +9,19 @@ import {
   DEFAULT_RULE_SET,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
-  makeDefaultRuleSetForPlayers,
-  type BuiltInRoleId,
   type NightConversationView,
   type PublicAction,
   type PublicPlayer,
   type RealtimeSubscription,
   type RoleCounts,
   type RoleCatalogItem,
+  type RoleId,
   type RoleSpecificOptionItem,
   type RoomSummary,
   type RuleSetInput,
 } from "@/lib/shared/game";
 import {
+  expandRolePresetCounts,
   getMatchingRolePreset,
   getRolePresetsForPlayerCount,
   type RolePreset,
@@ -147,10 +147,6 @@ type RuleSetNumberLimit = {
 
 type StartSettingsTab = "general" | "roles" | "timers";
 
-type StartRoleCatalogItem = RoleCatalogItem & {
-  readonly id: BuiltInRoleId;
-};
-
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
@@ -208,17 +204,6 @@ const START_SETTINGS_TABS: readonly {
   { id: "timers", label: "Timers" },
   { id: "roles", label: "Roles" },
 ];
-
-const START_SETTINGS_ROLE_IDS: readonly BuiltInRoleId[] = [
-  "werewolf",
-  "madman",
-  "seer",
-  "guard",
-  "spiritist",
-  "hunter",
-  "fox",
-  "villager",
-] as const;
 
 export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
   const isDevMode = devFixtures.length > 0;
@@ -1243,6 +1228,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
       {canConfigureStartSettings && isStartSettingsOpen ? (
         <StartSettingsDialog
+          defaultRoleCounts={roomSummary.defaultRoleCounts}
           playerCount={roomSummary.targetPlayerCount}
           roleCatalog={roomSummary.roleCatalog}
           settings={startRuleSetSettings}
@@ -1290,12 +1276,14 @@ function DevLiveToolbar({
 }
 
 function StartSettingsDialog({
+  defaultRoleCounts,
   playerCount,
   roleCatalog,
   settings,
   onClose,
   onApplySettings,
 }: {
+  readonly defaultRoleCounts: Readonly<RoleCounts>;
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
@@ -1308,7 +1296,8 @@ function StartSettingsDialog({
     roleCounts: { ...settings.roleCounts },
   }));
   const canApplySettings =
-    getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog).length === 0;
+    getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts)
+      .length === 0;
 
   function handleDraftSettingsChange<Key extends keyof StartRuleSetSettings>(
     key: Key,
@@ -1331,7 +1320,7 @@ function StartSettingsDialog({
     }));
   }
 
-  function handleDraftRoleCountChange(roleId: BuiltInRoleId, value: number): void {
+  function handleDraftRoleCountChange(roleId: RoleId, value: number): void {
     if (!Number.isFinite(value)) {
       return;
     }
@@ -1339,7 +1328,7 @@ function StartSettingsDialog({
     setDraftSettings((currentSettings) => ({
       ...currentSettings,
       roleCounts: {
-        ...getEffectiveStartRoleCounts(currentSettings, playerCount),
+        ...getEffectiveStartRoleCounts(currentSettings, roleCatalog, defaultRoleCounts),
         [roleId]: clampRoleCount(roleId, value, playerCount, roleCatalog),
       },
     }));
@@ -1348,7 +1337,7 @@ function StartSettingsDialog({
   function handleDraftRolePresetSelect(preset: RolePreset): void {
     setDraftSettings((currentSettings) => ({
       ...currentSettings,
-      roleCounts: { ...preset.roleCounts },
+      roleCounts: expandRolePresetCounts(preset, getRoleIdsFromCatalog(roleCatalog)),
     }));
   }
 
@@ -1416,6 +1405,7 @@ function StartSettingsDialog({
         <div className="liveSettingsBody">
           <StartRuleSetPanel
             activeTab={activeTab}
+            defaultRoleCounts={defaultRoleCounts}
             playerCount={playerCount}
             roleCatalog={roleCatalog}
             settings={draftSettings}
@@ -2092,6 +2082,7 @@ function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
 
 function StartRuleSetPanel({
   activeTab,
+  defaultRoleCounts,
   playerCount,
   roleCatalog,
   settings,
@@ -2101,11 +2092,12 @@ function StartRuleSetPanel({
   onSettingsChange,
 }: {
   readonly activeTab: StartSettingsTab;
+  readonly defaultRoleCounts: Readonly<RoleCounts>;
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
   readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
-  readonly onRoleCountChange: (roleId: BuiltInRoleId, value: number) => void;
+  readonly onRoleCountChange: (roleId: RoleId, value: number) => void;
   readonly onRolePresetSelect: (preset: RolePreset) => void;
   readonly onSettingsChange: <Key extends keyof StartRuleSetSettings>(
     key: Key,
@@ -2114,18 +2106,22 @@ function StartRuleSetPanel({
 }) {
   const canPreviewRoleMix = playerCount >= MIN_ROOM_PLAYERS && playerCount <= MAX_ROOM_PLAYERS;
   const startRoleCatalog = getStartRoleCatalog(roleCatalog);
-  const roleCounts = canPreviewRoleMix ? getEffectiveStartRoleCounts(settings, playerCount) : null;
-  const rolePresets = getRolePresetsForPlayerCount(playerCount);
+  const startRoleIds = startRoleCatalog.map((role) => role.id);
+  const roleCounts = canPreviewRoleMix
+    ? getEffectiveStartRoleCounts(settings, roleCatalog, defaultRoleCounts)
+    : null;
+  const rolePresets = getRolePresetsForPlayerCount(playerCount, startRoleIds);
   const selectedRolePreset =
-    roleCounts === null ? null : getMatchingRolePreset(playerCount, roleCounts);
+    roleCounts === null ? null : getMatchingRolePreset(playerCount, roleCounts, startRoleIds);
   const assignedRoleCount =
     roleCounts === null
       ? 0
-      : startRoleCatalog.reduce((total, role) => total + roleCounts[role.id], 0);
+      : startRoleCatalog.reduce((total, role) => total + getRoleCount(roleCounts, role.id), 0);
   const roleValidationMessages = getStartRuleSetValidationMessages(
     settings,
     playerCount,
     roleCatalog,
+    defaultRoleCounts,
   );
   const activeRoleOptions =
     roleCounts === null ? [] : getActiveRoleSpecificOptions(roleCatalog, roleCounts);
@@ -2398,8 +2394,8 @@ function StartRuleSetPanel({
                 </div>
               ) : (
                 startRoleCatalog.map((role) => {
-                  const roleId = role.id as BuiltInRoleId;
-                  const count = roleCounts[roleId];
+                  const roleId = role.id;
+                  const count = getRoleCount(roleCounts, roleId);
                   const roleName = role.name;
                   const canDecrease = canChangeRoleCount(
                     roleCounts,
@@ -2949,30 +2945,32 @@ function buildStartRuleSetInput(settings: StartRuleSetSettings): RuleSetInput {
 
 function getEffectiveStartRoleCounts(
   settings: StartRuleSetSettings,
-  playerCount: number,
+  roleCatalog: readonly RoleCatalogItem[],
+  defaultRoleCounts: Readonly<RoleCounts>,
 ): RoleCounts {
-  const specifiedRoleCount = START_SETTINGS_ROLE_IDS.reduce(
-    (total, roleId) => total + (settings.roleCounts[roleId] ?? 0),
+  const roleIds = getRoleIdsFromCatalog(roleCatalog);
+  const specifiedRoleCount = roleIds.reduce(
+    (total, roleId) => total + getRoleCount(settings.roleCounts, roleId),
     0,
   );
 
   if (specifiedRoleCount === 0) {
-    return makeDefaultRuleSetForPlayers(playerCount).roleCounts;
+    return buildCatalogRoleCounts(defaultRoleCounts, roleCatalog);
   }
 
-  return Object.fromEntries(
-    START_SETTINGS_ROLE_IDS.map((roleId) => [roleId, settings.roleCounts[roleId] ?? 0]),
-  ) as RoleCounts;
+  return buildCatalogRoleCounts(settings.roleCounts, roleCatalog);
 }
 
 function getStartRuleSetValidationMessages(
   settings: StartRuleSetSettings,
   playerCount: number,
   roleCatalog: readonly RoleCatalogItem[],
+  defaultRoleCounts: Readonly<RoleCounts>,
 ): readonly string[] {
-  const roleCounts = getEffectiveStartRoleCounts(settings, playerCount);
+  const startRoleCatalog = getStartRoleCatalog(roleCatalog);
+  const roleCounts = getEffectiveStartRoleCounts(settings, roleCatalog, defaultRoleCounts);
   const messages: string[] = [];
-  const totalRoles = getRoleCountTotal(roleCounts);
+  const totalRoles = getRoleCountTotal(roleCounts, startRoleCatalog);
 
   if (playerCount < MIN_ROOM_PLAYERS || playerCount > MAX_ROOM_PLAYERS) {
     messages.push(`Role counts are available for ${MIN_ROOM_PLAYERS}-${MAX_ROOM_PLAYERS} players.`);
@@ -2987,10 +2985,9 @@ function getStartRuleSetValidationMessages(
     );
   }
 
-  for (const roleId of START_SETTINGS_ROLE_IDS) {
-    const definition = getStartRoleCatalogItem(roleCatalog, roleId);
-    const count = roleCounts[roleId];
-    const maxCount = getRoleMaxCount(roleId, playerCount, roleCatalog);
+  for (const definition of startRoleCatalog) {
+    const count = getRoleCount(roleCounts, definition.id);
+    const maxCount = getRoleMaxCount(definition.id, playerCount, roleCatalog);
 
     if (!Number.isInteger(count) || count < 0) {
       messages.push(`${definition.name} count must be a non-negative integer.`);
@@ -3008,18 +3005,21 @@ function getStartRuleSetValidationMessages(
   return messages;
 }
 
-function getRoleCountTotal(roleCounts: Readonly<RoleCounts>): number {
-  return START_SETTINGS_ROLE_IDS.reduce((total, roleId) => total + roleCounts[roleId], 0);
+function getRoleCountTotal(
+  roleCounts: Readonly<Partial<Record<RoleId, number>>>,
+  roleCatalog: readonly RoleCatalogItem[],
+): number {
+  return roleCatalog.reduce((total, role) => total + getRoleCount(roleCounts, role.id), 0);
 }
 
 function canChangeRoleCount(
-  roleCounts: Readonly<RoleCounts>,
-  roleId: BuiltInRoleId,
+  roleCounts: Readonly<Partial<Record<RoleId, number>>>,
+  roleId: RoleId,
   delta: -1 | 1,
   playerCount: number,
   roleCatalog: readonly RoleCatalogItem[],
 ): boolean {
-  const currentCount = roleCounts[roleId];
+  const currentCount = getRoleCount(roleCounts, roleId);
   const nextCount = currentCount + delta;
 
   if (
@@ -3029,7 +3029,7 @@ function canChangeRoleCount(
     return false;
   }
 
-  if (delta > 0 && getRoleCountTotal(roleCounts) >= playerCount) {
+  if (delta > 0 && getRoleCountTotal(roleCounts, roleCatalog) >= playerCount) {
     return false;
   }
 
@@ -3037,7 +3037,7 @@ function canChangeRoleCount(
 }
 
 function clampRoleCount(
-  roleId: BuiltInRoleId,
+  roleId: RoleId,
   value: number,
   playerCount: number,
   roleCatalog: readonly RoleCatalogItem[],
@@ -3051,7 +3051,7 @@ function clampRoleCount(
 }
 
 function getRoleMaxCount(
-  roleId: BuiltInRoleId,
+  roleId: RoleId,
   playerCount: number,
   roleCatalog: readonly RoleCatalogItem[],
 ): number {
@@ -3062,30 +3062,26 @@ function getRoleMaxCount(
 }
 
 function getPresetRoleEntries(
-  roleCounts: Readonly<RoleCounts>,
-  startRoleCatalog: readonly StartRoleCatalogItem[],
-): readonly { readonly count: number; readonly role: StartRoleCatalogItem }[] {
+  roleCounts: Readonly<Partial<Record<RoleId, number>>>,
+  startRoleCatalog: readonly RoleCatalogItem[],
+): readonly { readonly count: number; readonly role: RoleCatalogItem }[] {
   return startRoleCatalog.flatMap((role) => {
-    const count = roleCounts[role.id];
+    const count = getRoleCount(roleCounts, role.id);
 
     return count > 0 ? [{ count, role }] : [];
   });
 }
 
-function getStartRoleCatalog(
-  roleCatalog: readonly RoleCatalogItem[],
-): readonly StartRoleCatalogItem[] {
-  return roleCatalog
-    .filter((role): role is StartRoleCatalogItem => isStartSettingsRoleId(role.id))
-    .sort(compareStartRoleCatalogItems);
+function getStartRoleCatalog(roleCatalog: readonly RoleCatalogItem[]): readonly RoleCatalogItem[] {
+  return [...roleCatalog].sort(compareStartRoleCatalogItems);
 }
 
 function getActiveRoleSpecificOptions(
   roleCatalog: readonly RoleCatalogItem[],
-  roleCounts: Readonly<RoleCounts>,
+  roleCounts: Readonly<Partial<Record<RoleId, number>>>,
 ): { readonly option: RoleSpecificOptionItem; readonly role: RoleCatalogItem }[] {
   return getStartRoleCatalog(roleCatalog).flatMap((role) => {
-    if (roleCounts[role.id] <= 0) {
+    if (getRoleCount(roleCounts, role.id) <= 0) {
       return [];
     }
 
@@ -3154,25 +3150,38 @@ function renderRoleSpecificOptionControl(
 
 function getStartRoleCatalogItem(
   roleCatalog: readonly RoleCatalogItem[],
-  roleId: BuiltInRoleId,
-): StartRoleCatalogItem {
+  roleId: RoleId,
+): RoleCatalogItem {
   const role = roleCatalog.find((candidate) => candidate.id === roleId);
 
-  if (role === undefined || !isStartSettingsRoleId(role.id)) {
+  if (role === undefined) {
     throw new Error(`Role catalog is missing ${roleId}.`);
   }
 
-  return role as StartRoleCatalogItem;
+  return role;
 }
 
-function isStartSettingsRoleId(roleId: string): roleId is BuiltInRoleId {
-  return (START_SETTINGS_ROLE_IDS as readonly string[]).includes(roleId);
+function getRoleIdsFromCatalog(roleCatalog: readonly RoleCatalogItem[]): readonly RoleId[] {
+  return getStartRoleCatalog(roleCatalog).map((role) => role.id);
 }
 
-function compareStartRoleCatalogItems(
-  left: StartRoleCatalogItem,
-  right: StartRoleCatalogItem,
+function buildCatalogRoleCounts(
+  roleCounts: Readonly<Partial<Record<RoleId, number>>>,
+  roleCatalog: readonly RoleCatalogItem[],
+): RoleCounts {
+  return Object.fromEntries(
+    getRoleIdsFromCatalog(roleCatalog).map((roleId) => [roleId, getRoleCount(roleCounts, roleId)]),
+  ) as RoleCounts;
+}
+
+function getRoleCount(
+  roleCounts: Readonly<Partial<Record<RoleId, number>>>,
+  roleId: RoleId,
 ): number {
+  return roleCounts[roleId] ?? 0;
+}
+
+function compareStartRoleCatalogItems(left: RoleCatalogItem, right: RoleCatalogItem): number {
   if (left.order !== right.order) {
     return left.order - right.order;
   }

@@ -1,4 +1,4 @@
-import { ROLE_DEFINITIONS, ROLE_IDS } from "@/lib/shared/game";
+import { ROLE_DEFINITIONS, ROLE_IDS, makeDefaultRuleSetForPlayers } from "@/lib/shared/game";
 
 import type {
   ActionKind,
@@ -271,6 +271,7 @@ function createFixture(params: {
         status: params.status ?? "playing",
         winnerTeam: params.winnerTeam ?? null,
       },
+      defaultRoleCounts: makeDefaultRuleSetForPlayers(players.length).roleCounts,
       hostPlayerId: CURRENT_PLAYER_ID,
       isHost: true,
       lobbyExpiresAt: createFutureIso(Date.now(), 86_400),

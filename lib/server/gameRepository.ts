@@ -35,6 +35,7 @@ import {
 } from "./accountToken";
 import { getRoleCatalog, getRoleIds } from "./game/roles";
 import {
+  makeDefaultRoleCounts,
   resolveRoleSetup as resolveRegisteredRoleSetup,
   type RuleSet as RegisteredRuleSet,
 } from "./game/ruleset";
@@ -726,6 +727,9 @@ async function getRoomViewByRoom(
   return {
     code: currentRoom.public_room_code,
     currentPlayerId: currentPlayer?.public_player_id ?? null,
+    defaultRoleCounts: makeDefaultRoleCounts(
+      currentRoom.target_player_count,
+    ) as RoomSummary["defaultRoleCounts"],
     game: publicGame,
     hostPlayerId:
       players.find((player) => player.account_id === currentRoom.host_account_id)
