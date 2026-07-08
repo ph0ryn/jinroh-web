@@ -1588,6 +1588,337 @@ a {
   gap: 0;
 }
 
+.liveSetupSurface {
+  align-self: center;
+  display: grid;
+  gap: 18px;
+  width: min(100%, 1180px);
+}
+
+.liveSetupHero {
+  align-items: end;
+  background:
+    linear-gradient(120deg, rgba(15, 18, 14, 0.96), rgba(14, 16, 12, 0.74)),
+    radial-gradient(circle at 100% 0%, rgba(var(--live-accent-rgb), 0.18), transparent 36%);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.36);
+  border-radius: 22px;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(235px, 300px);
+  overflow: hidden;
+  padding: clamp(20px, 2.4vw, 28px);
+  position: relative;
+}
+
+.liveSetupHero::before {
+  background: linear-gradient(
+    120deg,
+    rgba(var(--live-accent-rgb), 0.38),
+    transparent 28%,
+    rgba(255, 255, 255, 0.08)
+  );
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.liveSetupEyebrow {
+  align-items: center;
+  color: var(--live-accent);
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 900;
+  gap: 8px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.liveSetupEyebrow::before {
+  background: var(--live-accent);
+  border-radius: 999px;
+  box-shadow: 0 0 12px rgba(var(--live-accent-rgb), 0.46);
+  content: "";
+  height: 2px;
+  width: 26px;
+}
+
+.liveSetupHero h2 {
+  font-size: clamp(2.1rem, 4.2vw, 3.6rem);
+  letter-spacing: -0.055em;
+  line-height: 0.94;
+  margin: 12px 0 10px;
+  max-width: 650px;
+}
+
+.liveSetupHero p {
+  color: var(--live-muted);
+  font-size: 1rem;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 680px;
+}
+
+.liveSetupMeter {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.18);
+  border-radius: 16px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.liveSetupMeterLabel {
+  color: var(--live-muted);
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  gap: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.liveSetupMeterTrack {
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  height: 10px;
+  margin: 13px 0 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.liveSetupMeterTrack::before {
+  background: linear-gradient(90deg, var(--forest-700), var(--live-accent));
+  border-radius: inherit;
+  box-shadow: 0 0 18px rgba(var(--live-accent-rgb), 0.28);
+  content: "";
+  inset: 0 42% 0 0;
+  position: absolute;
+}
+
+.liveSetupHero .liveSetupMeterCopy,
+.liveSetupHero .liveSetupStatus {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.liveSetupHero .liveSetupStatus {
+  border-top: 1px solid rgba(var(--live-accent-rgb), 0.15);
+  color: var(--paper-200);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.liveSetupActionGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 0.86fr 1.07fr 1.07fr;
+}
+
+.liveSetupPanel {
+  background: linear-gradient(180deg, rgba(19, 21, 16, 0.94), rgba(12, 15, 12, 0.84));
+  border: 1px solid rgba(var(--live-accent-rgb), 0.34);
+  border-radius: 16px;
+  box-shadow:
+    var(--shadow-tight),
+    0 0 42px rgba(var(--live-accent-rgb), 0.04);
+  min-width: 0;
+  position: relative;
+}
+
+.liveSetupPanelHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 18px 18px 0;
+}
+
+.liveSetupPanelKicker {
+  color: var(--live-accent);
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.liveSetupPanel h3 {
+  font-size: 1.25rem;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.liveSetupPanelIcon {
+  align-items: center;
+  background: rgba(var(--live-accent-rgb), 0.09);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.18);
+  border-radius: 13px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  color: var(--live-accent);
+  display: flex;
+  flex: 0 0 auto;
+  font-weight: 950;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.liveSetupPanelBody {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.liveSetupField {
+  color: var(--live-muted);
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 900;
+  gap: 7px;
+}
+
+.liveSetupField input,
+.liveSetupField select {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.28);
+  border-radius: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  color: var(--paper-100);
+  height: 48px;
+  outline: none;
+  padding: 0 14px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+  width: 100%;
+}
+
+.liveSetupField select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--live-muted) 50%),
+    linear-gradient(135deg, var(--live-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 20px,
+    calc(100% - 12px) 20px;
+  background-repeat: no-repeat;
+  background-size:
+    6px 6px,
+    6px 6px;
+}
+
+.liveSetupField input:focus,
+.liveSetupField select:focus {
+  background: rgba(255, 255, 255, 0.066);
+  border-color: rgba(var(--live-accent-rgb), 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 4px rgba(var(--live-accent-rgb), 0.13);
+}
+
+.liveSetupProfileCard {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.16);
+  border-radius: 12px;
+  display: grid;
+  gap: 13px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 13px;
+}
+
+.liveSetupAvatar {
+  align-items: center;
+  background: linear-gradient(145deg, #1c3a2a, #182116);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.62);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(var(--live-accent-rgb), 0.07);
+  color: var(--live-accent);
+  display: flex;
+  font-weight: 950;
+  height: 48px;
+  justify-content: center;
+  width: 48px;
+}
+
+.liveSetupProfileName {
+  color: var(--paper-100);
+  font-weight: 900;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.liveSetupProfileNote,
+.liveSetupHint {
+  color: var(--live-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.liveSetupProfileNote {
+  margin-top: 3px;
+}
+
+.liveSetupHint {
+  color: color-mix(in srgb, var(--live-muted) 78%, transparent);
+}
+
+.liveSetupButtonRow {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.liveShell .liveSetupButton {
+  border-radius: 9px;
+  flex: 1;
+  font-weight: 900;
+  min-height: 48px;
+}
+
+.liveShell .liveSetupButtonPrimary {
+  background: linear-gradient(135deg, rgba(28, 77, 55, 0.9), rgba(108, 84, 45, 0.9));
+  border-color: rgba(var(--live-accent-rgb), 0.46);
+  box-shadow: 0 12px 32px rgba(29, 79, 47, 0.26);
+  color: #fff7e8;
+}
+
+.liveShell .liveSetupButtonPrimary:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(79, 128, 82, 0.94), rgba(128, 101, 58, 0.94));
+  box-shadow: 0 16px 36px rgba(29, 79, 47, 0.34);
+}
+
+.liveShell .liveSetupButtonSecondary {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(var(--live-accent-rgb), 0.3);
+}
+
+.liveSetupCodeGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.liveSetupField .liveSetupCodeCell {
+  font-size: 1.25rem;
+  font-weight: 950;
+  padding: 0;
+  text-align: center;
+}
+
 .liveEntryPanel {
   align-items: end;
   display: grid;
@@ -2831,6 +3162,18 @@ a {
     grid-template-columns: minmax(0, 1fr) minmax(160px, 0.6fr);
   }
 
+  .liveSetupHero {
+    grid-template-columns: 1fr;
+  }
+
+  .liveSetupActionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .liveSetupProfilePanel {
+    grid-column: 1 / -1;
+  }
+
   .liveEntryActions {
     grid-column: 1 / -1;
     justify-content: stretch;
@@ -2867,6 +3210,43 @@ a {
   .liveRuleSetGrid,
   .liveControlStack {
     grid-template-columns: 1fr;
+  }
+
+  .liveSetupSurface {
+    gap: 14px;
+  }
+
+  .liveSetupHero {
+    border-radius: 18px;
+  }
+
+  .liveSetupPanel {
+    background: linear-gradient(180deg, #131510, #0c0f0c);
+  }
+
+  .liveSetupHero h2 {
+    font-size: 2.3rem;
+  }
+
+  .liveSetupActionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .liveSetupProfilePanel {
+    grid-column: auto;
+  }
+
+  .liveSetupCodeGrid {
+    gap: 6px;
+  }
+
+  .liveSetupField .liveSetupCodeCell {
+    font-size: 1.1rem;
+    height: 46px;
+  }
+
+  .liveSetupButtonRow {
+    align-items: stretch;
   }
 
   .livePlayTablePanel .liveTableBoard {

@@ -106,6 +106,19 @@ type LivePlaySurfaceProps = {
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
 };
 
+type LiveSetupSurfaceProps = {
+  readonly displayName: string;
+  readonly isBusy: boolean;
+  readonly roomCodeInput: string;
+  readonly statusMessage: string;
+  readonly targetPlayerCount: number;
+  readonly onCreateRoom: () => void;
+  readonly onDisplayNameChange: (displayName: string) => void;
+  readonly onJoinRoom: () => void;
+  readonly onRoomCodeChange: (roomCode: string) => void;
+  readonly onTargetPlayerCountChange: (targetPlayerCount: number) => void;
+};
+
 type RuleSetNumberField =
   | "dayReadyCheckSecondsPerPlayer"
   | "daySpeechSeconds"
@@ -167,21 +180,6 @@ const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
   normalDaySpeechRounds: { max: 5, min: 1 },
   votingSeconds: { max: 300, min: 1 },
 };
-
-const EMPTY_ROOM_STEPS = [
-  {
-    description: "Start a lobby from this browser and keep host controls here.",
-    label: "Create",
-  },
-  {
-    description: "Share the six-digit code with players on separate browsers.",
-    label: "Invite",
-  },
-  {
-    description: "Start the game when the table is ready and private views are assigned.",
-    label: "Run",
-  },
-] as const;
 
 export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
   const isDevMode = devFixtures.length > 0;
@@ -1010,204 +1008,170 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       ) : null}
 
       {isGameSurface ? null : (
-        <div className={isRoomEntryAvailable ? "liveTopStack" : "liveTopStack liveTopStackCompact"}>
+        <>
           {isRoomEntryAvailable ? (
-            <section className="liveEntryPanel" aria-label="Room entry">
-              <label>
-                Display name
-                <input
-                  autoComplete="nickname"
-                  maxLength={32}
-                  value={displayName}
-                  onChange={(event) => handleDisplayNameChange(event.target.value)}
-                />
-              </label>
-              <label>
-                Room code
-                <input
-                  autoComplete="one-time-code"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="123456"
-                  value={roomCodeInput}
-                  onChange={(event) => handleRoomCodeChange(event.target.value)}
-                />
-              </label>
-              <label>
-                Players
-                <select
-                  value={targetPlayerCount}
-                  onChange={(event) => handleTargetPlayerCountChange(Number(event.target.value))}
-                >
-                  {PLAYER_COUNT_OPTIONS.map((playerCount) => (
-                    <option key={playerCount} value={playerCount}>
-                      {playerCount}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="liveEntryActions">
-                <button type="button" onClick={handleCreateRoom} disabled={isBusy}>
-                  Create room
-                </button>
-                <button
-                  className="secondaryButton"
-                  type="button"
-                  onClick={handleJoinRoom}
-                  disabled={isBusy}
-                >
-                  Join
-                </button>
+            <LiveSetupSurface
+              displayName={displayName}
+              isBusy={isBusy}
+              roomCodeInput={roomCodeInput}
+              statusMessage={statusMessage}
+              targetPlayerCount={targetPlayerCount}
+              onCreateRoom={handleCreateRoom}
+              onDisplayNameChange={handleDisplayNameChange}
+              onJoinRoom={handleJoinRoom}
+              onRoomCodeChange={handleRoomCodeChange}
+              onTargetPlayerCountChange={handleTargetPlayerCountChange}
+            />
+          ) : (
+            <div className="liveTopStack liveTopStackCompact">
+              <section className="liveStatusBar" aria-live="polite">
+                <span>{liveGuidance.label}</span>
+                <strong>{liveGuidance.message}</strong>
+                <small>{statusMessage}</small>
+              </section>
+            </div>
+          )}
+        </>
+      )}
+
+      {isRoomEntryAvailable ? null : (
+        <div className={liveGridClassName}>
+          {roomSummary === null ? (
+            <section className="livePanel liveRoomPanel" aria-label="Room state">
+              <div className="livePanelHeading">
+                <span>Room</span>
+                <strong>{roomStatusLabel}</strong>
               </div>
+
+              {savedRoomCode === null ? null : (
+                <SavedRoomState isCompact roomCode={savedRoomCode} />
+              )}
             </section>
           ) : null}
 
-          <section className="liveStatusBar" aria-live="polite">
-            <span>{liveGuidance.label}</span>
-            <strong>{liveGuidance.message}</strong>
-            <small>{statusMessage}</small>
-          </section>
-        </div>
-      )}
+          {roomSummary?.status === "lobby" ? (
+            <>
+              <section className="livePanel liveInvitePanel" aria-label="Invite">
+                <div className="livePanelHeading">
+                  <span>Invite</span>
+                  <div className="livePanelHeadingActions">
+                    <strong>{roomStatusLabel}</strong>
+                    <button
+                      className="secondaryButton liveCompactButton"
+                      type="button"
+                      onClick={handleRefreshRoom}
+                      disabled={isBusy}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
 
-      <div className={liveGridClassName}>
-        {roomSummary === null ? (
-          <section className="livePanel liveRoomPanel" aria-label="Room state">
-            <div className="livePanelHeading">
-              <span>Room</span>
-              <strong>{roomStatusLabel}</strong>
-            </div>
+                <RoomInviteTools
+                  copiedRoomCode={copiedInviteRoomCode}
+                  summary={roomSummary}
+                  onCopyRoomCode={handleCopyRoomCode}
+                  onShareRoom={handleShareRoom}
+                />
+                <LobbyRequirements summary={roomSummary} />
+              </section>
 
-            {savedRoomCode === null ? (
-              <EmptyRoomState />
-            ) : (
-              <SavedRoomState roomCode={savedRoomCode} />
-            )}
-          </section>
-        ) : null}
+              <section className="livePanel liveSeatPanel" aria-label="Lobby seats">
+                <div className="livePanelHeading">
+                  <span>Lobby</span>
+                  <strong>
+                    {countJoinedPlayers(roomSummary)} / {roomSummary.targetPlayerCount} seated
+                  </strong>
+                </div>
+                <PlayerSeatGrid summary={roomSummary} />
+              </section>
+            </>
+          ) : null}
 
-        {roomSummary?.status === "lobby" ? (
-          <>
-            <section className="livePanel liveInvitePanel" aria-label="Invite">
+          {roomSummary?.status === "lobby" ? (
+            <section className="livePanel liveControlPanel" aria-label="Lobby controls">
               <div className="livePanelHeading">
-                <span>Invite</span>
+                <span>{roomSummary.isHost ? "Host controls" : "Player controls"}</span>
                 <div className="livePanelHeadingActions">
-                  <strong>{roomStatusLabel}</strong>
-                  <button
-                    className="secondaryButton liveCompactButton"
-                    type="button"
-                    onClick={handleRefreshRoom}
-                    disabled={isBusy}
-                  >
-                    Refresh
-                  </button>
+                  <strong>{roomSummary.isHost ? "Host" : "Player"}</strong>
+                  {canConfigureStartSettings ? (
+                    <button
+                      className="secondaryButton liveCompactButton"
+                      aria-controls="start-settings-dialog"
+                      aria-expanded={isStartSettingsOpen}
+                      aria-haspopup="dialog"
+                      type="button"
+                      onClick={() => setIsStartSettingsOpen(true)}
+                    >
+                      Settings
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
-              <RoomInviteTools
-                copiedRoomCode={copiedInviteRoomCode}
-                summary={roomSummary}
-                onCopyRoomCode={handleCopyRoomCode}
-                onShareRoom={handleShareRoom}
-              />
-              <LobbyRequirements summary={roomSummary} />
-            </section>
-
-            <section className="livePanel liveSeatPanel" aria-label="Lobby seats">
-              <div className="livePanelHeading">
-                <span>Lobby</span>
+              <div className="liveLobbyPanel">
                 <strong>
-                  {countJoinedPlayers(roomSummary)} / {roomSummary.targetPlayerCount} seated
+                  {roomSummary.isHost ? "Start when everyone is seated" : "Waiting for host"}
                 </strong>
+                <p>{controlHint}</p>
               </div>
-              <PlayerSeatGrid summary={roomSummary} />
-            </section>
-          </>
-        ) : null}
 
-        {roomSummary?.status === "lobby" ? (
-          <section className="livePanel liveControlPanel" aria-label="Lobby controls">
-            <div className="livePanelHeading">
-              <span>{roomSummary.isHost ? "Host controls" : "Player controls"}</span>
-              <div className="livePanelHeadingActions">
-                <strong>{roomSummary.isHost ? "Host" : "Player"}</strong>
-                {canConfigureStartSettings ? (
+              <div className="liveLobbyActions">
+                {roomSummary.isHost ? (
                   <button
-                    className="secondaryButton liveCompactButton"
-                    aria-controls="start-settings-dialog"
-                    aria-expanded={isStartSettingsOpen}
-                    aria-haspopup="dialog"
+                    className="primaryLiveButton"
+                    aria-describedby="control-hint"
                     type="button"
-                    onClick={() => setIsStartSettingsOpen(true)}
+                    onClick={handleStartGame}
+                    disabled={!canStartGame}
                   >
-                    Settings
+                    Start game
                   </button>
                 ) : null}
-              </div>
-            </div>
-
-            <div className="liveLobbyPanel">
-              <strong>
-                {roomSummary.isHost ? "Start when everyone is seated" : "Waiting for host"}
-              </strong>
-              <p>{controlHint}</p>
-            </div>
-
-            <div className="liveLobbyActions">
-              {roomSummary.isHost ? (
                 <button
-                  className="primaryLiveButton"
+                  className="dangerButton"
                   aria-describedby="control-hint"
                   type="button"
-                  onClick={handleStartGame}
-                  disabled={!canStartGame}
+                  onClick={handleLeaveRoom}
+                  disabled={isBusy}
                 >
-                  Start game
+                  Leave room
                 </button>
-              ) : null}
-              <button
-                className="dangerButton"
-                aria-describedby="control-hint"
-                type="button"
-                onClick={handleLeaveRoom}
-                disabled={isBusy}
-              >
-                Leave room
-              </button>
-            </div>
-            <p className="srOnly" id="control-hint">
-              {controlHint}
-            </p>
-          </section>
-        ) : null}
+              </div>
+              <p className="srOnly" id="control-hint">
+                {controlHint}
+              </p>
+            </section>
+          ) : null}
 
-        {roomSummary !== null && roomSummary.status !== "lobby" ? (
-          <LivePlaySurface
-            canAdvancePhase={canAdvancePhase}
-            controlHint={controlHint}
-            isBusy={isBusy}
-            isNightConversationOpen={isNightConversationOpen}
-            isPublicLogOpen={isPublicLogOpen}
-            nightConversationDraft={nightConversationDraft}
-            roomStatusLabel={roomStatusLabel}
-            selfActions={selfActions}
-            statusMessage={statusMessage}
-            summary={roomSummary}
-            targetByActionKey={targetByActionKey}
-            onAdvancePhase={handleResolvePhase}
-            onCloseNightConversation={() => setIsNightConversationOpen(false)}
-            onClosePublicLog={() => setIsPublicLogOpen(false)}
-            onNightConversationDraftChange={setNightConversationDraft}
-            onOpenNightConversation={() => setIsNightConversationOpen(true)}
-            onOpenPublicLog={() => setIsPublicLogOpen(true)}
-            onSendNightConversation={handleSendNightConversation}
-            onSubmitAction={handleSubmitAction}
-            onTargetChange={(actionKey, playerId) =>
-              setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
-            }
-          />
-        ) : null}
-      </div>
+          {roomSummary !== null && roomSummary.status !== "lobby" ? (
+            <LivePlaySurface
+              canAdvancePhase={canAdvancePhase}
+              controlHint={controlHint}
+              isBusy={isBusy}
+              isNightConversationOpen={isNightConversationOpen}
+              isPublicLogOpen={isPublicLogOpen}
+              nightConversationDraft={nightConversationDraft}
+              roomStatusLabel={roomStatusLabel}
+              selfActions={selfActions}
+              statusMessage={statusMessage}
+              summary={roomSummary}
+              targetByActionKey={targetByActionKey}
+              onAdvancePhase={handleResolvePhase}
+              onCloseNightConversation={() => setIsNightConversationOpen(false)}
+              onClosePublicLog={() => setIsPublicLogOpen(false)}
+              onNightConversationDraftChange={setNightConversationDraft}
+              onOpenNightConversation={() => setIsNightConversationOpen(true)}
+              onOpenPublicLog={() => setIsPublicLogOpen(true)}
+              onSendNightConversation={handleSendNightConversation}
+              onSubmitAction={handleSubmitAction}
+              onTargetChange={(actionKey, playerId) =>
+                setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
+              }
+            />
+          ) : null}
+        </div>
+      )}
 
       {canConfigureStartSettings && isStartSettingsOpen ? (
         <StartSettingsDialog
@@ -1366,29 +1330,262 @@ function LivePopupDialog({
   );
 }
 
-function EmptyRoomState() {
+function LiveSetupSurface({
+  displayName,
+  isBusy,
+  roomCodeInput,
+  statusMessage,
+  targetPlayerCount,
+  onCreateRoom,
+  onDisplayNameChange,
+  onJoinRoom,
+  onRoomCodeChange,
+  onTargetPlayerCountChange,
+}: LiveSetupSurfaceProps) {
+  const roomCodeInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const roomCodeDigits = Array.from({ length: 6 }, (unusedValue, index) => {
+    void unusedValue;
+
+    return roomCodeInput[index] ?? "";
+  });
+  const normalizedDisplayName = displayName.trim() || "Player";
+  const isJoinDisabled = isBusy || roomCodeInput.length !== 6;
+
+  function focusRoomCodeInput(index: number): void {
+    roomCodeInputsRef.current[index]?.focus();
+  }
+
+  function handleRoomCodeDigitChange(index: number, value: string): void {
+    const pastedDigits = value.replace(/\D/g, "").slice(0, 6);
+    const nextDigits = [...roomCodeDigits];
+
+    if (pastedDigits.length > 1) {
+      pastedDigits.split("").forEach((digit, offset) => {
+        if (index + offset < nextDigits.length) {
+          nextDigits[index + offset] = digit;
+        }
+      });
+      onRoomCodeChange(nextDigits.join(""));
+      focusRoomCodeInput(Math.min(index + pastedDigits.length, nextDigits.length - 1));
+      return;
+    }
+
+    nextDigits[index] = pastedDigits;
+    onRoomCodeChange(nextDigits.join(""));
+
+    if (pastedDigits !== "" && index < nextDigits.length - 1) {
+      focusRoomCodeInput(index + 1);
+    }
+  }
+
+  function handleRoomCodeDigitKeyDown(index: number, key: string): void {
+    if (key === "Backspace" && roomCodeDigits[index] === "" && index > 0) {
+      focusRoomCodeInput(index - 1);
+      return;
+    }
+
+    if (key === "ArrowLeft" && index > 0) {
+      focusRoomCodeInput(index - 1);
+      return;
+    }
+
+    if (key === "ArrowRight" && index < roomCodeDigits.length - 1) {
+      focusRoomCodeInput(index + 1);
+    }
+  }
+
+  function handleRoomCodePaste(index: number, clipboardText: string): void {
+    const pastedDigits = clipboardText.replace(/\D/g, "").slice(0, 6);
+
+    if (pastedDigits === "") {
+      return;
+    }
+
+    const nextDigits = [...roomCodeDigits];
+    pastedDigits.split("").forEach((digit, offset) => {
+      if (index + offset < nextDigits.length) {
+        nextDigits[index + offset] = digit;
+      }
+    });
+
+    onRoomCodeChange(nextDigits.join(""));
+    focusRoomCodeInput(Math.min(index + pastedDigits.length, nextDigits.length - 1));
+  }
+
   return (
-    <div className="liveEmptyState">
-      <strong>No room loaded</strong>
-      <p>Create a room, or paste a six-digit code and join from a separate browser session.</p>
-      <ol className="liveEmptySteps" aria-label="Setup flow">
-        {EMPTY_ROOM_STEPS.map((step, index) => (
-          <li key={step.label}>
-            <span>{index + 1}</span>
+    <section className="liveSetupSurface" aria-label="Room setup">
+      <section className="liveSetupHero" aria-labelledby="setup-title">
+        <div>
+          <div className="liveSetupEyebrow">Setup</div>
+          <h2 id="setup-title">Create or join a private game room.</h2>
+          <p>
+            Keep the first screen focused on the decision players make here: host a new table, or
+            enter a six-digit code from the host.
+          </p>
+        </div>
+        <aside className="liveSetupMeter" aria-label="Setup progress">
+          <div className="liveSetupMeterLabel">
+            <span>Before room</span>
+            <span>1 / 3</span>
+          </div>
+          <div className="liveSetupMeterTrack" aria-hidden="true" />
+          <p className="liveSetupMeterCopy">
+            Name first, then choose either Create room or Join room.
+          </p>
+          <p className="liveSetupStatus" aria-live="polite">
+            {statusMessage}
+          </p>
+        </aside>
+      </section>
+
+      <section className="liveSetupActionGrid" aria-label="Room actions">
+        <article className="liveSetupPanel liveSetupProfilePanel">
+          <div className="liveSetupPanelHeader">
             <div>
-              <strong>{step.label}</strong>
-              <p>{step.description}</p>
+              <p className="liveSetupPanelKicker">Player</p>
+              <h3>Your seat</h3>
             </div>
-          </li>
-        ))}
-      </ol>
-    </div>
+          </div>
+          <div className="liveSetupPanelBody">
+            <label className="liveSetupField">
+              Display name
+              <input
+                autoComplete="nickname"
+                maxLength={32}
+                value={displayName}
+                onChange={(event) => onDisplayNameChange(event.target.value)}
+              />
+            </label>
+            <div className="liveSetupProfileCard">
+              <div className="liveSetupAvatar" aria-hidden="true">
+                {getPlayerInitial(displayName)}
+              </div>
+              <div>
+                <p className="liveSetupProfileName">{normalizedDisplayName}</p>
+                <p className="liveSetupProfileNote">This identity stays in this browser.</p>
+              </div>
+            </div>
+            <p className="liveSetupHint">
+              Use this as the single source for player identity across create and join flows.
+            </p>
+          </div>
+        </article>
+
+        <article className="liveSetupPanel">
+          <div className="liveSetupPanelHeader">
+            <div>
+              <p className="liveSetupPanelKicker">Host</p>
+              <h3>Create a room</h3>
+            </div>
+            <div className="liveSetupPanelIcon" aria-hidden="true">
+              +
+            </div>
+          </div>
+          <div className="liveSetupPanelBody">
+            <label className="liveSetupField">
+              Players
+              <select
+                value={targetPlayerCount}
+                onChange={(event) => onTargetPlayerCountChange(Number(event.target.value))}
+              >
+                {PLAYER_COUNT_OPTIONS.map((playerCount) => (
+                  <option key={playerCount} value={playerCount}>
+                    {playerCount} players
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="liveSetupHint">
+              Start a lobby from this browser. The host controls stay attached to this session.
+            </p>
+            <div className="liveSetupButtonRow">
+              <button
+                className="liveSetupButton liveSetupButtonPrimary"
+                type="button"
+                onClick={onCreateRoom}
+                disabled={isBusy}
+              >
+                Create room
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <article className="liveSetupPanel">
+          <div className="liveSetupPanelHeader">
+            <div>
+              <p className="liveSetupPanelKicker">Guest</p>
+              <h3>Join with code</h3>
+            </div>
+            <div className="liveSetupPanelIcon" aria-hidden="true">
+              -&gt;
+            </div>
+          </div>
+          <div className="liveSetupPanelBody">
+            <div className="liveSetupField">
+              <span id="live-room-code-label">Room code</span>
+              <div className="liveSetupCodeGrid" aria-labelledby="live-room-code-label">
+                {roomCodeDigits.map((digit, index) => (
+                  <input
+                    aria-label={`Room code digit ${index + 1}`}
+                    autoComplete={index === 0 ? "one-time-code" : "off"}
+                    className="liveSetupCodeCell"
+                    inputMode="numeric"
+                    key={index}
+                    maxLength={1}
+                    pattern="[0-9]*"
+                    ref={(element) => {
+                      roomCodeInputsRef.current[index] = element;
+                    }}
+                    value={digit}
+                    onChange={(event) => handleRoomCodeDigitChange(index, event.target.value)}
+                    onKeyDown={(event) => handleRoomCodeDigitKeyDown(index, event.key)}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      handleRoomCodePaste(index, event.clipboardData.getData("text"));
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="liveSetupHint">
+              Paste or type the six-digit code. The join button becomes active once all digits are
+              filled.
+            </p>
+            <div className="liveSetupButtonRow">
+              <button
+                className="liveSetupButton liveSetupButtonSecondary"
+                type="button"
+                onClick={() => onRoomCodeChange("")}
+                disabled={isBusy || roomCodeInput.length === 0}
+              >
+                Clear
+              </button>
+              <button
+                className="liveSetupButton liveSetupButtonPrimary"
+                type="button"
+                onClick={onJoinRoom}
+                disabled={isJoinDisabled}
+              >
+                Join room
+              </button>
+            </div>
+          </div>
+        </article>
+      </section>
+    </section>
   );
 }
 
-function SavedRoomState({ roomCode }: { readonly roomCode: string }) {
+function SavedRoomState({
+  isCompact = false,
+  roomCode,
+}: {
+  readonly isCompact?: boolean;
+  readonly roomCode: string;
+}) {
   return (
-    <div className="liveEmptyState">
+    <div className={isCompact ? "liveEmptyState compact" : "liveEmptyState"}>
       <strong>Restoring room {roomCode}</strong>
       <p>This browser already has a room. Leave that room before creating or joining another.</p>
     </div>
