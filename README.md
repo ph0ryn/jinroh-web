@@ -48,15 +48,10 @@ Install dependencies:
 pnpm install
 ```
 
-Create `.env.local`:
+Start the local Supabase stack:
 
 ```sh
-ACCOUNT_TOKEN_HASH_SECRET=
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NEXT_PUBLIC_SITE_URL=
+pnpm exec supabase start
 ```
 
 Generate the token hash secret with:
@@ -65,15 +60,33 @@ Generate the token hash secret with:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
+Create `.env.local` with the local values printed by `supabase start`:
+
+```sh
+ACCOUNT_TOKEN_HASH_SECRET=<generated 32-byte base64 secret>
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY>
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY>
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+To print the local Supabase values again, run:
+
+```sh
+pnpm exec supabase status -o env
+```
+
 `NEXT_PUBLIC_SUPABASE_URL` should match `SUPABASE_URL`. Add
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` to enable Supabase Realtime invalidation in the
 browser. Without the public key, the live table still works through polling.
-`NEXT_PUBLIC_SITE_URL` is optional locally. Set it to the deployed origin when
-you want Open Graph images to resolve to a canonical URL; Vercel deployment URL
-environment variables are used as a fallback. Never expose
+Keep production Supabase credentials out of local `.env.local`.
+`NEXT_PUBLIC_SITE_URL` is optional locally. Set it to the deployed origin in
+production when you want Open Graph images to resolve to a canonical URL; Vercel
+deployment URL environment variables are used as a fallback. Never expose
 `SUPABASE_SERVICE_ROLE_KEY` to the browser.
 
-## Database Setup
+## Remote Database Setup
 
 Log in and link the Supabase project:
 
