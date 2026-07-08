@@ -10,6 +10,7 @@ import { chromium } from "playwright";
 const DEFAULT_MANAGED_URL = `http://localhost:${process.env.E2E_PORT ?? "3010"}`;
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const IS_ORDERED_SPEECH_E2E = process.env.E2E_RULESET === "ordered_speech";
+const ROOM_CLOSED_STATUS_MESSAGE = "Room closed. Create or join a room.";
 const MOOD_BACKGROUND_BY_NAME = {
   day: "jinroh-day-same-angle.jpg",
   execution: "jinroh-voting-same-angle.jpg",
@@ -98,6 +99,12 @@ async function runLiveSmoke(baseUrl) {
   const warnings = [];
 
   try {
+    const lobbyDisbandRoomCode = await assertLobbyDisbandReturnsJoinedPlayerToSetup(
+      browser,
+      baseUrl,
+      errors,
+      warnings,
+    );
     const players = [
       await createPlayer(browser, baseUrl, "host", "Sora", errors, warnings),
       await createPlayer(browser, baseUrl, "player2", "Ren", errors, warnings),
@@ -210,6 +217,7 @@ async function runLiveSmoke(baseUrl) {
 
     return {
       evidence,
+      lobbyDisbandRoomCode,
       ok: true,
       nightConversationPlayer,
       resolutionPath,
@@ -249,6 +257,55 @@ async function createPlayer(browser, baseUrl, label, displayName, errors, warnin
   await page.getByLabel("Display name").fill(displayName);
 
   return { context, label, page };
+}
+
+async function assertLobbyDisbandReturnsJoinedPlayerToSetup(browser, baseUrl, errors, warnings) {
+  const host = await createPlayer(browser, baseUrl, "disband-host", "Aki", errors, warnings);
+  const guest = await createPlayer(browser, baseUrl, "disband-guest", "Nagi", errors, warnings);
+
+  try {
+    await host.page.getByLabel("Players").selectOption("3");
+    await clickAndWaitForMetric(host.page, "Create room", "Code");
+    const roomCode = await readMetric(host.page, "Code");
+
+    if (!/^\d{6}$/.test(roomCode ?? "")) {
+      throw new Error(`Expected disband room code to be six digits, got ${roomCode ?? "null"}.`);
+    }
+
+    await fillRoomCode(guest.page, roomCode);
+    await guest.page.getByRole("button", { name: "Join room" }).click();
+    await waitMetric(guest.page, "Code", roomCode);
+
+    await host.page.getByRole("button", { name: "Leave room" }).click();
+    await waitMood(host.page, "setup");
+
+    await refresh(guest.page);
+    await waitMood(guest.page, "setup");
+    await assertRoomClosedSetupState(guest.page);
+
+    return roomCode;
+  } finally {
+    await Promise.all([host.context.close(), guest.context.close()]);
+  }
+}
+
+async function assertRoomClosedSetupState(page) {
+  await page.getByLabel("Room setup").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Create room" }).waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Join room" }).waitFor({ timeout: 10000 });
+  await page.getByText(ROOM_CLOSED_STATUS_MESSAGE).waitFor({ timeout: 10000 });
+
+  const liveTableCount = await page.getByLabel("Live game table").count();
+
+  if (liveTableCount !== 0) {
+    throw new Error("Closed lobby rendered the live game table.");
+  }
+
+  const leaveButtonCount = await page.getByRole("button", { name: "Leave room" }).count();
+
+  if (leaveButtonCount !== 0) {
+    throw new Error("Closed lobby kept the Leave room button visible.");
+  }
 }
 
 async function fillRoomCode(page, roomCode) {

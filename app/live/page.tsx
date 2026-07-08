@@ -46,6 +46,10 @@ type RememberRoomOptions = {
   readonly resetActionTargets?: boolean;
 };
 
+type ClearCurrentRoomOptions = {
+  readonly ignoredRoomCode?: string | null;
+};
+
 type RealtimeInvalidationPayload = {
   readonly reason: string;
   readonly roomCode: string;
@@ -142,6 +146,7 @@ type StartSettingsTab = "general" | "roles" | "timers";
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
+const ROOM_CLOSED_STATUS_MESSAGE = "Room closed. Create or join a room.";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
 const PLAYER_COUNT_OPTIONS = Array.from(
@@ -404,10 +409,32 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     return identity.token;
   }
 
+  const clearCurrentRoom = useCallback(
+    (nextStatusMessage: string, options: ClearCurrentRoomOptions = {}) => {
+      ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
+      removeStorage(ROOM_CODE_STORAGE_KEY);
+      setSavedRoomCode(null);
+      setRoomSummary(null);
+      setRoomCodeInput("");
+      setTargetByActionKey({});
+      setIsNightConversationOpen(false);
+      setIsPublicLogOpen(false);
+      setNightConversationDraft("");
+      setIsStartSettingsOpen(false);
+      setStatusMessage(nextStatusMessage);
+    },
+    [],
+  );
+
   const rememberRoom = useCallback(
     (nextSummary: RoomSummary, options: RememberRoomOptions = {}) => {
       if (ignoredRoomCodeRef.current === nextSummary.code) {
-        return;
+        return false;
+      }
+
+      if (nextSummary.status === "disbanded") {
+        clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: nextSummary.code });
+        return false;
       }
 
       writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
@@ -419,8 +446,10 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       if (options.resetActionTargets ?? true) {
         setTargetByActionKey({});
       }
+
+      return true;
     },
-    [displayName],
+    [clearCurrentRoom, displayName],
   );
 
   useEffect(() => {
@@ -462,15 +491,20 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, { resetActionTargets: false });
-          setStatusMessage(`Room ${summary.code} restored.`);
+          if (rememberRoom(summary, { resetActionTargets: false })) {
+            setStatusMessage(`Room ${summary.code} restored.`);
+          }
         }
-      } catch {
+      } catch (error) {
         if (!isCancelled) {
-          removeStorage(ROOM_CODE_STORAGE_KEY);
-          setSavedRoomCode(null);
-          setRoomCodeInput("");
-          setStatusMessage("Saved room could not be restored. Create or join a room.");
+          if (isNotFoundRequestError(error)) {
+            clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: savedRoomCode });
+            return;
+          }
+
+          clearCurrentRoom("Saved room could not be restored. Create or join a room.", {
+            ignoredRoomCode: savedRoomCode,
+          });
         }
       }
     }
@@ -480,7 +514,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     return () => {
       isCancelled = true;
     };
-  }, [identityToken, isDevMode, rememberRoom, roomSummary, savedRoomCode]);
+  }, [clearCurrentRoom, identityToken, isDevMode, rememberRoom, roomSummary, savedRoomCode]);
 
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
@@ -513,8 +547,13 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         if (!isCancelled) {
           rememberRoom(summary, { resetActionTargets: false });
         }
-      } catch {
+      } catch (error) {
         if (!isCancelled) {
+          if (isNotFoundRequestError(error)) {
+            clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: activeRoomCode });
+            return;
+          }
+
           setStatusMessage("Room sync failed. Use Refresh if the table looks stale.");
         }
       }
@@ -528,7 +567,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeRoomCode, identityToken, isDevMode, rememberRoom]);
+  }, [activeRoomCode, clearCurrentRoom, identityToken, isDevMode, rememberRoom]);
 
   useEffect(() => {
     if (isDevMode) {
@@ -618,8 +657,13 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         if (!isCancelled) {
           rememberRoom(summary, { resetActionTargets: false });
         }
-      } catch {
+      } catch (error) {
         if (!isCancelled) {
+          if (isNotFoundRequestError(error)) {
+            clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: activeRoomCode });
+            return;
+          }
+
           setStatusMessage("Realtime update failed. Polling is still active.");
         }
       } finally {
@@ -646,7 +690,14 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         void realtimeClient.removeChannel(channel);
       }
     };
-  }, [activeRealtimeSubscriptionKey, activeRoomCode, identityToken, isDevMode, rememberRoom]);
+  }, [
+    activeRealtimeSubscriptionKey,
+    activeRoomCode,
+    clearCurrentRoom,
+    identityToken,
+    isDevMode,
+    rememberRoom,
+  ]);
 
   useEffect(() => {
     if (isDevMode) {
@@ -808,13 +859,24 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
-      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}`, {
-        method: "GET",
-        token,
-      });
 
-      rememberRoom(summary);
-      setStatusMessage(`Room ${summary.code} synced.`);
+      try {
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}`, {
+          method: "GET",
+          token,
+        });
+
+        if (rememberRoom(summary)) {
+          setStatusMessage(`Room ${summary.code} synced.`);
+        }
+      } catch (error) {
+        if (isNotFoundRequestError(error)) {
+          clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: roomCode });
+          return;
+        }
+
+        throw error;
+      }
     });
   }
 
@@ -895,17 +957,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         token,
       });
 
-      ignoredRoomCodeRef.current = roomCode;
-      removeStorage(ROOM_CODE_STORAGE_KEY);
-      setSavedRoomCode(null);
-      setRoomSummary(null);
-      setRoomCodeInput("");
-      setTargetByActionKey({});
-      setIsNightConversationOpen(false);
-      setIsPublicLogOpen(false);
-      setNightConversationDraft("");
-      setIsStartSettingsOpen(false);
-      setStatusMessage("Left the room.");
+      clearCurrentRoom("Left the room.", { ignoredRoomCode: roomCode });
     });
   }
 
@@ -1042,7 +1094,10 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy);
   const canStartGame = !isBusy && canStartRoom(roomSummary);
   const canConfigureStartSettings = roomSummary?.isHost === true && roomSummary.status === "lobby";
-  const isGameSurface = roomSummary !== null && roomSummary.status !== "lobby";
+  const isGameSurface =
+    roomSummary !== null &&
+    roomSummary.game !== null &&
+    (roomSummary.status === "playing" || roomSummary.status === "ended");
   const canAdvancePhase =
     !isBusy &&
     roomSummary?.isHost === true &&
@@ -1207,7 +1262,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
             </section>
           ) : null}
 
-          {roomSummary !== null && roomSummary.status !== "lobby" ? (
+          {roomSummary !== null && isGameSurface ? (
             <LivePlaySurface
               canAdvancePhase={canAdvancePhase}
               controlHint={controlHint}
@@ -2670,6 +2725,16 @@ function EventLog({ summary }: { readonly summary: RoomSummary | null }) {
   );
 }
 
+class ApiRequestError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 async function apiFetch<Body>(path: string, options: RequestOptions): Promise<Body> {
   const headers = new Headers();
 
@@ -2689,10 +2754,14 @@ async function apiFetch<Body>(path: string, options: RequestOptions): Promise<Bo
   const json = await parseJson(response);
 
   if (!response.ok) {
-    throw new Error(extractErrorMessage(json, response.status));
+    throw new ApiRequestError(extractErrorMessage(json, response.status), response.status);
   }
 
   return json as Body;
+}
+
+function isNotFoundRequestError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 404;
 }
 
 async function parseJson(response: Response): Promise<unknown> {
