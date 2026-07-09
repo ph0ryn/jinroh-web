@@ -996,7 +996,7 @@ export default function LivePage() {
           <h1>{getLivePageTitle(roomSummary, t)}</h1>
           <p>{roomStatusLabel}</p>
         </div>
-        <LanguageSwitcher className="liveLanguageSwitcher" />
+        <LanguageSwitcher />
       </section>
 
       {isGameSurface ? null : (
