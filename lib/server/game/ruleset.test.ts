@@ -149,6 +149,8 @@ describe("validateRuleSet", () => {
       throw new Error("Expected invalid rule set.");
     }
 
-    expect(result.issues.map((issue) => issue.code)).toContain("no_initial_inspection_candidate");
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      "role:seer:no_initial_inspection_candidate",
+    );
   });
 });

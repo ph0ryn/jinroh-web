@@ -1,20 +1,23 @@
 import "server-only";
 import {
   ActionScope,
+  EffectTag,
   GameActionKind,
+  GameEffectKind,
+  GameEffectLayer,
+  GameEventKind,
   GamePhase,
+  GuardConsecutiveTargetPolicy,
   ResolveTiming,
   RoleTargetKind,
   SubmitPolicy,
   Team,
 } from "../types";
 import { Role } from "./base";
-import { isGuardTargetAllowed } from "./guardTarget";
-import { createGuardProtectionEffect } from "./roleEffects";
-import { GUARD_ROLE_ID } from "./roleIds";
 
 import type {
   GameEffect,
+  PlayerId,
   RoleActionDefinition,
   RoleDefaultCountContext,
   RoleId,
@@ -24,7 +27,7 @@ import type { PlayerRoleContext, RoleActionResolvedContext } from "./base";
 
 export class GuardRole extends Role {
   override readonly description = "Protects one player from guardable night death effects.";
-  override readonly id: RoleId = GUARD_ROLE_ID;
+  override readonly id: RoleId = "guard";
   override readonly maxCount = 1;
   override readonly name = "Guard";
   override readonly order = 40;
@@ -74,14 +77,7 @@ export class GuardRole extends Role {
     }
 
     return context.state.alivePlayerIds.filter((playerId) => {
-      return (
-        playerId !== context.playerId &&
-        isGuardTargetAllowed({
-          context,
-          guardPlayerId: context.playerId,
-          targetPlayerId: playerId,
-        })
-      );
+      return playerId !== context.playerId && this.isTargetAllowed(context, playerId);
     });
   }
 
@@ -91,11 +87,46 @@ export class GuardRole extends Role {
     }
 
     return [
-      createGuardProtectionEffect({
+      {
         emitterRoleId: this.id,
+        id: `protection:guard:${context.targetId}`,
+        kind: GameEffectKind.Protection,
+        layer: GameEffectLayer.Prevention,
         playerId: context.targetId,
+        prevents: [EffectTag.Guardable],
+        priority: 10,
+        reason: "guard",
         sourceActionId: null,
-      }),
+        tags: [],
+      },
     ];
+  }
+
+  private isTargetAllowed(context: PlayerRoleContext, targetPlayerId: PlayerId): boolean {
+    if (
+      context.state.ruleOptions.guardConsecutiveTargetPolicy === GuardConsecutiveTargetPolicy.Allow
+    ) {
+      return true;
+    }
+
+    const previousGuardEvent = [...context.state.events].reverse().find((event) => {
+      return (
+        event.kind === GameEventKind.ActionResolved &&
+        event.actorPlayerId === context.playerId &&
+        event.payload["actionKind"] === GameActionKind.Guard
+      );
+    });
+
+    if (previousGuardEvent === undefined) {
+      return true;
+    }
+
+    const previousTargetIds = previousGuardEvent.payload["targetPlayerIds"];
+
+    if (!Array.isArray(previousTargetIds)) {
+      return true;
+    }
+
+    return previousTargetIds[0] !== targetPlayerId;
   }
 }

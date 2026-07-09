@@ -1,5 +1,4 @@
 import "server-only";
-import { createGuardProtectionEffect } from "./roles";
 import { GameEffectKind, GameEffectLayer } from "./types";
 
 import type { RoleContext } from "./roles";
@@ -227,19 +226,6 @@ export function collectRoleActionEffects(params: {
         sourceActionId: params.sourceActionId,
       };
     });
-}
-
-export function collectGuardEffects(params: {
-  context: RoleContext;
-  sourceActionId: string | null;
-  targetId: PlayerId;
-}): readonly GameEffect[] {
-  return [
-    createGuardProtectionEffect({
-      playerId: params.targetId,
-      sourceActionId: params.sourceActionId,
-    }),
-  ];
 }
 
 function compareEffects(left: GameEffect, right: GameEffect): number {

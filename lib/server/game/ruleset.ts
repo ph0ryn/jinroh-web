@@ -2,7 +2,6 @@ import "server-only";
 import {
   getCoreSetupContributions,
   getRoleIds,
-  hasInitialInspectionHumanCandidate,
   makeDefaultRoleCounts as makeDefaultRoleCountsFromRoles,
   roleRegistry,
 } from "./roles";
@@ -14,7 +13,7 @@ import {
   VoteResultVisibility,
 } from "./types";
 
-import type { RoleContext } from "./roles";
+import type { RoleContext, RoleRuleValidationIssueCode } from "./roles";
 import type {
   NightConversationGroup,
   ReadonlyGameState,
@@ -42,7 +41,7 @@ export type RuleSetValidationIssueCode =
   | "invalid_option"
   | "invalid_role_count"
   | "missing_required_role"
-  | "no_initial_inspection_candidate"
+  | RoleRuleValidationIssueCode
   | "player_count_too_large"
   | "player_count_too_small"
   | "role_count_mismatch"
@@ -178,19 +177,15 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
     }
   }
 
-  if (
-    ruleSet.options.initialInspectionPolicy === InitialInspectionPolicy.Enabled &&
-    !hasInitialInspectionHumanCandidate({
-      roleCounts: ruleSet.roleCounts,
-      seerCount: ruleSet.roleCounts["seer"] ?? 0,
-    })
-  ) {
-    issues.push({
-      code: "no_initial_inspection_candidate",
-      message: "Initial inspection requires at least one non-seer human inspection candidate.",
-      roleId: "seer",
-    });
-  }
+  issues.push(
+    ...roleRegistry.getAll().flatMap((role) =>
+      role.validateRuleSet({
+        options: ruleSet.options,
+        roleCounts: ruleSet.roleCounts,
+        roles: roleRegistry,
+      }),
+    ),
+  );
 
   if (issues.length > 0) {
     return {

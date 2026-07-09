@@ -4,26 +4,13 @@ import { FoxRole } from "./roles/fox";
 import { GuardRole } from "./roles/guard";
 import { HunterRole } from "./roles/hunter";
 import { MadmanRole } from "./roles/madman";
-import { SEER_ROLE_ID } from "./roles/roleIds";
 import { SeerRole } from "./roles/seer";
 import { SpiritistRole } from "./roles/spiritist";
 import { VillagerRole } from "./roles/villager";
 import { WerewolfRole } from "./roles/werewolf";
-import {
-  DayDiscussionMode,
-  GameEndReason,
-  GamePhase,
-  GameStatus,
-  GuardConsecutiveTargetPolicy,
-  InitialInspectionPolicy,
-  InspectionView,
-  PlayerResult,
-  RoleSetupContributionKind,
-  Team,
-  VoteResultVisibility,
-} from "./types";
+import { GameEndReason, PlayerResult, RoleSetupContributionKind, Team } from "./types";
 
-import type { InspectionContext, PlayerResultContext, WinnerJudgementContext } from "./roles/base";
+import type { PlayerResultContext, WinnerJudgementContext } from "./roles/base";
 import type {
   RoleCounts,
   RoleId,
@@ -41,15 +28,15 @@ export type {
   PlayerResultContext,
   PlayerRoleContext,
   RoleContext,
+  RoleRuleValidationContext,
+  RoleRuleValidationIssue,
+  RoleRuleValidationIssueCode,
   WinnerJudgementContext,
 } from "./roles/base";
 export { FoxRole } from "./roles/fox";
 export { GuardRole } from "./roles/guard";
 export { HunterRole } from "./roles/hunter";
-export { isGuardTargetAllowed } from "./roles/guardTarget";
-export { countAliveByGroup } from "./roles/helpers";
 export { MadmanRole } from "./roles/madman";
-export { createGuardProtectionEffect } from "./roles/roleEffects";
 export { SeerRole } from "./roles/seer";
 export { SpiritistRole } from "./roles/spiritist";
 export { VillagerRole } from "./roles/villager";
@@ -167,64 +154,4 @@ export function evaluatePlayerResult(context: PlayerResultContext): PlayerResult
   }
 
   return role.team === context.winnerTeam ? PlayerResult.Win : PlayerResult.Lose;
-}
-
-export function hasInitialInspectionHumanCandidate(params: {
-  roleCounts: Readonly<Record<RoleId, number>>;
-  seerCount: number;
-}): boolean {
-  if (params.seerCount <= 0) {
-    return true;
-  }
-
-  return roleRegistry.getAll().some((role) => {
-    const roleId = role.id;
-
-    if (roleId === SEER_ROLE_ID || (params.roleCounts[roleId] ?? 0) <= 0) {
-      return false;
-    }
-
-    return role.seenAs(createInspectionCandidateContext(roleId)) === InspectionView.Human;
-  });
-}
-
-function createInspectionCandidateContext(roleId: RoleId): InspectionContext {
-  return {
-    roles: roleRegistry,
-    state: {
-      alivePlayerIds: ["candidate"],
-      currentActions: [],
-      events: [],
-      finalOutcome: null,
-      nightNumber: 1,
-      pendingActions: [],
-      phase: GamePhase.Night,
-      phaseInstanceId: "setup",
-      resolvedRoleSetup: {
-        activeRoleIds: [roleId],
-        contributions: [],
-        nightConversationGroups: [],
-        winnerJudgements: [],
-      },
-      roleByPlayerId: new Map([["candidate", roleId]]),
-      ruleOptions: {
-        dayDiscussionMode: DayDiscussionMode.ReadyCheck,
-        dayReadyCheckSecondsPerPlayer: 90,
-        daySpeechSeconds: 90,
-        executionLastWordsSeconds: 60,
-        firstDaySpeechRounds: 2,
-        firstNightSeconds: 30,
-        guardConsecutiveTargetPolicy: GuardConsecutiveTargetPolicy.DenySameTarget,
-        initialInspectionPolicy: InitialInspectionPolicy.Enabled,
-        nightSeconds: 180,
-        normalDaySpeechRounds: 1,
-        voteResultVisibility: VoteResultVisibility.CountOnly,
-        votingSeconds: 30,
-      },
-      status: GameStatus.Playing,
-      nightConversationMessages: [],
-    },
-    targetId: "candidate",
-    viewerId: "seer",
-  };
 }

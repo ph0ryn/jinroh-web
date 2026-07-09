@@ -14,8 +14,6 @@ import {
   Team,
 } from "../types";
 import { Role } from "./base";
-import { countAliveByGroup } from "./helpers";
-import { WEREWOLF_ROLE_ID } from "./roleIds";
 
 import type {
   GameEndCandidate,
@@ -32,7 +30,7 @@ import type {
 
 export class WerewolfRole extends Role {
   override readonly description = "Attacks at night and wins when werewolves dominate.";
-  override readonly id: RoleId = WEREWOLF_ROLE_ID;
+  override readonly id: RoleId = "werewolf";
   override readonly minCount = 1;
   override readonly name = "Werewolf";
   override readonly nightConversation = {
@@ -94,8 +92,8 @@ export class WerewolfRole extends Role {
   }
 
   override checkEndCondition(context: RoleContext): GameEndCandidate | null {
-    const aliveWerewolves = countAliveByGroup(context, CountGroup.Werewolf);
-    const aliveOthers = countAliveByGroup(context, CountGroup.NonWerewolf);
+    const aliveWerewolves = this.countAliveByGroup(context, CountGroup.Werewolf);
+    const aliveOthers = this.countAliveByGroup(context, CountGroup.NonWerewolf);
 
     if (aliveWerewolves === 0) {
       return {
@@ -116,5 +114,25 @@ export class WerewolfRole extends Role {
 
   override evaluateResult(context: PlayerResultContext): PlayerResult | null {
     return context.winnerTeam === Team.Werewolf ? PlayerResult.Win : null;
+  }
+
+  private countAliveByGroup(context: RoleContext, group: CountGroup): number {
+    let count = 0;
+
+    for (const playerId of context.state.alivePlayerIds) {
+      const roleId = context.state.roleByPlayerId.get(playerId);
+
+      if (roleId === undefined) {
+        continue;
+      }
+
+      const role = context.roles.get(roleId);
+
+      if (role.countAs({ ...context, playerId }) === group) {
+        count += 1;
+      }
+    }
+
+    return count;
   }
 }

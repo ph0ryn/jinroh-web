@@ -8,8 +8,6 @@ import {
   Team,
 } from "../types";
 import { Role } from "./base";
-import { createDeathEffect } from "./roleEffects";
-import { FOX_ROLE_ID } from "./roleIds";
 
 import type {
   GameEffect,
@@ -30,7 +28,7 @@ import type {
 export class FoxRole extends Role {
   override readonly description =
     "Cannot be killed by attacks and can win alone if alive at game end.";
-  override readonly id: RoleId = FOX_ROLE_ID;
+  override readonly id: RoleId = "fox";
   override readonly maxCount = 1;
   override readonly name = "Fox";
   override readonly order = 70;
@@ -65,8 +63,7 @@ export class FoxRole extends Role {
 
   override onInspected(context: InspectionContext): readonly GameEffect[] {
     return [
-      createDeathEffect({
-        emitterRoleId: this.id,
+      this.createDeathEffect({
         id: `death:inspection:${context.targetId}`,
         playerId: context.targetId,
         reason: DeathReason.RuleEffect,

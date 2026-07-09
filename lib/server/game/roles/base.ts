@@ -1,6 +1,13 @@
 import "server-only";
-import { CountGroup, DeathReason, EffectTag, InspectionView, RoleTargetKind } from "../types";
-import { createDeathEffect } from "./roleEffects";
+import {
+  CountGroup,
+  DeathReason,
+  EffectTag,
+  GameEffectKind,
+  GameEffectLayer,
+  InspectionView,
+  RoleTargetKind,
+} from "../types";
 
 import type {
   CurrentAction,
@@ -17,6 +24,8 @@ import type {
   RoleId,
   RoleNightConversationDefinition,
   RolePublicMetadata,
+  RoleCounts,
+  RuleOptions,
   RoleSetupContribution,
   RoleSpecificOptionDefinition,
   Team,
@@ -70,6 +79,20 @@ export type WinnerJudgementContext = RoleContext & {
 export type PlayerResultContext = PlayerRoleContext & {
   endReasons: readonly GameEndReason[];
   winnerTeam: Team;
+};
+
+export type RoleRuleValidationIssueCode = `role:${string}`;
+
+export type RoleRuleValidationIssue = {
+  code: RoleRuleValidationIssueCode;
+  message: string;
+  roleId?: RoleId;
+};
+
+export type RoleRuleValidationContext = {
+  options: RuleOptions;
+  roleCounts: RoleCounts;
+  roles: RoleRegistry;
 };
 
 export abstract class Role {
@@ -145,6 +168,12 @@ export abstract class Role {
     return [];
   }
 
+  validateRuleSet(context: RoleRuleValidationContext): readonly RoleRuleValidationIssue[] {
+    void context;
+
+    return [];
+  }
+
   onInspected(context: InspectionContext): readonly GameEffect[] {
     void context;
 
@@ -159,8 +188,7 @@ export abstract class Role {
 
   onAttacked(context: AttackContext): readonly GameEffect[] {
     return [
-      createDeathEffect({
-        emitterRoleId: this.id,
+      this.createDeathEffect({
         id: `death:attack:${context.targetId}`,
         playerId: context.targetId,
         reason: DeathReason.Attack,
@@ -171,8 +199,7 @@ export abstract class Role {
 
   onExecuted(context: ExecutionContext): readonly GameEffect[] {
     return [
-      createDeathEffect({
-        emitterRoleId: this.id,
+      this.createDeathEffect({
         id: `death:execution:${context.targetId}`,
         playerId: context.targetId,
         reason: DeathReason.Execution,
@@ -226,6 +253,25 @@ export abstract class Role {
     void context;
 
     return null;
+  }
+
+  protected createDeathEffect(params: {
+    id: string;
+    playerId: PlayerId;
+    reason: DeathReason;
+    tags: readonly EffectTag[];
+  }): GameEffect {
+    return {
+      emitterRoleId: this.id,
+      id: params.id,
+      kind: GameEffectKind.Death,
+      layer: GameEffectLayer.Death,
+      playerId: params.playerId,
+      priority: 100,
+      reason: params.reason,
+      sourceActionId: null,
+      tags: params.tags,
+    };
   }
 }
 

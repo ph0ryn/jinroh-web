@@ -9,15 +9,13 @@ import {
   Team,
 } from "../types";
 import { Role } from "./base";
-import { createDeathEffect } from "./roleEffects";
-import { HUNTER_ROLE_ID } from "./roleIds";
 
 import type { GameEffect, RoleId } from "../types";
 import type { ExecutionContext, RoleActionResolvedContext } from "./base";
 
 export class HunterRole extends Role {
   override readonly description = "Retaliates once when executed.";
-  override readonly id: RoleId = HUNTER_ROLE_ID;
+  override readonly id: RoleId = "hunter";
   override readonly maxCount = 1;
   override readonly name = "Hunter";
   override readonly order = 60;
@@ -59,8 +57,7 @@ export class HunterRole extends Role {
     }
 
     return [
-      createDeathEffect({
-        emitterRoleId: this.id,
+      this.createDeathEffect({
         id: `death:retaliation:${context.actorId}:${context.targetId}`,
         playerId: context.targetId,
         reason: DeathReason.Retaliation,

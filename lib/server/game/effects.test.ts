@@ -4,8 +4,8 @@ import {
   collectAttackEffects,
   collectDeathResolvedEffects,
   collectExecutionEffects,
-  collectGuardEffects,
   collectInspectionEffects,
+  collectRoleActionEffects,
   resolveEffects,
 } from "./effects";
 import { roleRegistry } from "./roles";
@@ -29,7 +29,9 @@ describe("resolveEffects", () => {
         sourceActionId: "attack-action",
         targetId: "target",
       }),
-      ...collectGuardEffects({
+      ...collectRoleActionEffects({
+        actionKind: GameActionKind.Guard,
+        actorId: "guard",
         context,
         sourceActionId: "guard-action",
         targetId: "target",
@@ -54,7 +56,9 @@ describe("resolveEffects", () => {
         sourceActionId: "execution-action",
         targetId: "target",
       }),
-      ...collectGuardEffects({
+      ...collectRoleActionEffects({
+        actionKind: GameActionKind.Guard,
+        actorId: "guard",
         context,
         sourceActionId: "guard-action",
         targetId: "target",

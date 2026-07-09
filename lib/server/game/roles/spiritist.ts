@@ -1,14 +1,13 @@
 import "server-only";
 import { DeathReason, GameEffectKind, GameEffectLayer, InspectionView, Team } from "../types";
 import { Role } from "./base";
-import { SPIRITIST_ROLE_ID } from "./roleIds";
 
 import type { GameEffect, RoleId } from "../types";
 import type { DeathResolvedContext } from "./base";
 
 export class SpiritistRole extends Role {
   override readonly description = "Learns whether the executed player was a werewolf.";
-  override readonly id: RoleId = SPIRITIST_ROLE_ID;
+  override readonly id: RoleId = "spiritist";
   override readonly maxCount = 1;
   override readonly name = "Spiritist";
   override readonly order = 50;

@@ -7,6 +7,7 @@ import {
   GameEffectKind,
   GameEffectLayer,
   GamePhase,
+  GameStatus,
   InitialInspectionPolicy,
   InspectionView,
   ResolveTiming,
@@ -15,21 +16,26 @@ import {
   Team,
 } from "../types";
 import { Role } from "./base";
-import { SEER_ROLE_ID } from "./roleIds";
 
 import type {
   GameEffect,
+  ReadonlyGameState,
   RoleActionDefinition,
   RoleDefaultCountContext,
   RoleId,
   RoleSpecificOptionDefinition,
 } from "../types";
-import type { PlayerRoleContext } from "./base";
+import type {
+  InspectionContext,
+  PlayerRoleContext,
+  RoleRuleValidationContext,
+  RoleRuleValidationIssue,
+} from "./base";
 
 export class SeerRole extends Role {
   override readonly description =
     "Inspects one player at night and receives their inspection view.";
-  override readonly id: RoleId = SEER_ROLE_ID;
+  override readonly id: RoleId = "seer";
   override readonly maxCount = 1;
   override readonly name = "Seer";
   override readonly order = 30;
@@ -66,6 +72,24 @@ export class SeerRole extends Role {
         scope: ActionScope.Player,
         submitPolicy: SubmitPolicy.FirstSubmitWins,
         target: RoleTargetKind.SinglePlayer,
+      },
+    ];
+  }
+
+  override validateRuleSet(context: RoleRuleValidationContext): readonly RoleRuleValidationIssue[] {
+    if (
+      context.options.initialInspectionPolicy !== InitialInspectionPolicy.Enabled ||
+      (context.roleCounts[this.id] ?? 0) <= 0 ||
+      this.hasInitialInspectionHumanCandidate(context)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        code: "role:seer:no_initial_inspection_candidate",
+        message: "Initial inspection requires at least one non-seer human inspection candidate.",
+        roleId: this.id,
       },
     ];
   }
@@ -120,4 +144,60 @@ export class SeerRole extends Role {
       },
     ];
   }
+
+  private hasInitialInspectionHumanCandidate(context: RoleRuleValidationContext): boolean {
+    return context.roles.getAll().some((role) => {
+      if (role.id === this.id || (context.roleCounts[role.id] ?? 0) <= 0) {
+        return false;
+      }
+
+      return (
+        role.seenAs(createInspectionCandidateContext(context, this.id, role.id)) ===
+        InspectionView.Human
+      );
+    });
+  }
+}
+
+function createInspectionCandidateContext(
+  context: RoleRuleValidationContext,
+  viewerRoleId: RoleId,
+  roleId: RoleId,
+): InspectionContext {
+  return {
+    roles: context.roles,
+    state: createInspectionCandidateState(context, viewerRoleId, roleId),
+    targetId: "candidate",
+    viewerId: "viewer",
+  };
+}
+
+function createInspectionCandidateState(
+  context: RoleRuleValidationContext,
+  viewerRoleId: RoleId,
+  roleId: RoleId,
+): ReadonlyGameState {
+  return {
+    alivePlayerIds: ["viewer", "candidate"],
+    currentActions: [],
+    events: [],
+    finalOutcome: null,
+    nightConversationMessages: [],
+    nightNumber: 1,
+    pendingActions: [],
+    phase: GamePhase.Night,
+    phaseInstanceId: "setup",
+    resolvedRoleSetup: {
+      activeRoleIds: [...new Set([viewerRoleId, roleId])],
+      contributions: [],
+      nightConversationGroups: [],
+      winnerJudgements: [],
+    },
+    roleByPlayerId: new Map([
+      ["viewer", viewerRoleId],
+      ["candidate", roleId],
+    ]),
+    ruleOptions: context.options,
+    status: GameStatus.Playing,
+  };
 }
