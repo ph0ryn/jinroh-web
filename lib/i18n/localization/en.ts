@@ -326,6 +326,7 @@ export const enLocalization = {
       lobbyControls: "Lobby controls",
       lobbySeats: "Lobby seats",
       nightConversation: "Night conversation",
+      notifications: "Notifications",
       popupPanels: "Popup panels",
       publicLog: "Public log",
       roleCounts: "Automatic role counts",
@@ -347,6 +348,7 @@ export const enLocalization = {
       copyCode: "Copy code",
       copied: "Copied!",
       createRoom: "Create room",
+      dismissNotification: "Dismiss notification",
       joinRoom: "Join room",
       leaveRoom: "Leave room",
       nightChat: "Night chat",
@@ -414,20 +416,14 @@ export const enLocalization = {
     },
     invite: {
       allSeatsFilled: "All seats are filled.",
-      copyUnavailable: (roomCode: string) => `Copy is unavailable. Use room code ${roomCode}.`,
-      codeCopied: (roomCode: string) => `Room code ${roomCode} copied.`,
       codeLabel: "Invite code",
-      inviteCopied: (roomCode: string) => `Invite text copied for room ${roomCode}.`,
       inviteText: (roomCode: string, roomUrl: string) =>
         `Jinroh Web room ${roomCode}\nOpen ${roomUrl} and join with this code.`,
       morePlayersNeeded: (count: number) => `${count} more player${count === 1 ? "" : "s"} needed.`,
       openSeats: (count: number) => `${count} seats open`,
       progressLabel: (joined: number, target: number) => `${joined} of ${target} seats filled`,
       requirement: "Start requirement",
-      shareCancelled: "Share cancelled.",
-      shareSheetOpened: (roomCode: string) => `Share sheet opened for room ${roomCode}.`,
       shareText: (roomCode: string) => `Join Jinroh Web room ${roomCode}.`,
-      shareUnavailable: (roomCode: string) => `Share is unavailable. Use room code ${roomCode}.`,
       tableFull: "Table full",
       tips: {
         settings: "Settings stay behind the host Settings button.",
@@ -630,16 +626,8 @@ export const enLocalization = {
     },
     status: {
       actionWindowClosed: "Action window is not open.",
-      actionSubmitted: (label: string) => `${label} submitted. Waiting for the table to catch up.`,
-      advancedTo: (status: string) => `Advanced to ${status}.`,
-      gameStarted: "Game started. Each player can check their private action card.",
       nightChatClosed: "Night chat is not open.",
-      nightMessageSent: (label: string) => `${label} message sent.`,
-      phaseStillWaiting: "Still waiting for pending actions or the phase timer.",
       realtimeFailed: "Realtime update failed. Polling is still active.",
-      tableStatus: (suffix: string) => `Table ${suffix.trimStart()}`,
-      timerAdvanceChecked: "Phase timer elapsed; the room checked whether it can advance.",
-      timerAdvanceFailed: "Phase timer elapsed, but the room could not advance yet.",
     },
     table: {
       closed: "Closed",
@@ -658,6 +646,14 @@ export const enLocalization = {
       durationMinutesSeconds: (minutes: number, seconds: number) => `${minutes}m ${seconds}s`,
       durationSeconds: (seconds: number) => `${seconds}s`,
       unknown: "unknown",
+    },
+    toast: {
+      tones: {
+        error: "Error",
+        info: "Notice",
+        success: "Done",
+        warning: "Warning",
+      },
     },
   },
 } as const;

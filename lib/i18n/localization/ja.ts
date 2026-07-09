@@ -319,6 +319,7 @@ export const jaLocalization = {
       lobbyControls: "ロビー操作",
       lobbySeats: "ロビー席",
       nightConversation: "夜会話",
+      notifications: "通知",
       popupPanels: "ポップアップパネル",
       publicLog: "公開ログ",
       roleCounts: "自動役職数",
@@ -340,6 +341,7 @@ export const jaLocalization = {
       copyCode: "コードをコピー",
       copied: "コピー済み",
       createRoom: "部屋を作る",
+      dismissNotification: "通知を閉じる",
       joinRoom: "部屋に参加",
       leaveRoom: "部屋を退出",
       nightChat: "夜会話",
@@ -410,11 +412,7 @@ export const jaLocalization = {
     },
     invite: {
       allSeatsFilled: "すべての席が埋まっています。",
-      copyUnavailable: (roomCode: string) =>
-        `コピーできません。部屋コード ${roomCode} を使ってください。`,
-      codeCopied: (roomCode: string) => `部屋コード ${roomCode} をコピーしました。`,
       codeLabel: "招待コード",
-      inviteCopied: (roomCode: string) => `部屋 ${roomCode} の招待文をコピーしました。`,
       inviteText: (roomCode: string, roomUrl: string) =>
         `Jinroh Web 部屋 ${roomCode}\n${roomUrl} を開いてこのコードで参加してください。`,
       morePlayersNeeded: (count: number) => `あと ${count}人 必要です。`,
@@ -422,11 +420,7 @@ export const jaLocalization = {
       progressLabel: (joined: number, target: number) =>
         `${target}席中 ${joined}席が埋まっています`,
       requirement: "開始条件",
-      shareCancelled: "共有をキャンセルしました。",
-      shareSheetOpened: (roomCode: string) => `部屋 ${roomCode} の共有シートを開きました。`,
       shareText: (roomCode: string) => `Jinroh Web 部屋 ${roomCode} に参加してください。`,
-      shareUnavailable: (roomCode: string) =>
-        `共有できません。部屋コード ${roomCode} を使ってください。`,
       tableFull: "満席",
       tips: {
         settings: "設定はホストの設定ボタンから変更できます。",
@@ -628,17 +622,8 @@ export const jaLocalization = {
     },
     status: {
       actionWindowClosed: "アクション受付は開いていません。",
-      actionSubmitted: (label: string) => `${label} を送信しました。テーブルの同期を待っています。`,
-      advancedTo: (status: string) => `${status} に進みました。`,
-      gameStarted:
-        "ゲームを開始しました。各プレイヤーは自分の非公開アクションカードを確認できます。",
       nightChatClosed: "夜会話は開いていません。",
-      nightMessageSent: (label: string) => `${label} にメッセージを送信しました。`,
-      phaseStillWaiting: "未完了アクションまたはフェーズタイマーを待っています。",
       realtimeFailed: "リアルタイム更新に失敗しました。ポーリングは継続中です。",
-      tableStatus: (suffix: string) => `テーブル${suffix.trimStart()}`,
-      timerAdvanceChecked: "フェーズタイマーが経過したため、進行可能か確認しました。",
-      timerAdvanceFailed: "フェーズタイマーは経過しましたが、まだ進行できませんでした。",
     },
     table: {
       closed: "終了済み",
@@ -657,6 +642,14 @@ export const jaLocalization = {
       durationMinutesSeconds: (minutes: number, seconds: number) => `${minutes}分 ${seconds}秒`,
       durationSeconds: (seconds: number) => `${seconds}秒`,
       unknown: "不明",
+    },
+    toast: {
+      tones: {
+        error: "エラー",
+        info: "通知",
+        success: "完了",
+        warning: "注意",
+      },
     },
   },
 } satisfies Localization;

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
-import { localizations, type Locale, type Localization } from "@/lib/i18n/localization";
+import { type Locale, type Localization } from "@/lib/i18n/localization";
 import {
   DEFAULT_TARGET_PLAYER_COUNT,
   DEFAULT_RULE_SET_OPTIONS,
@@ -85,6 +85,13 @@ type LiveGuidance = {
   readonly message: string;
 };
 
+type LiveToastTone = "error" | "info" | "success" | "warning";
+
+type LiveToast = {
+  readonly message: string;
+  readonly tone: LiveToastTone;
+};
+
 type PublicEventDetail = {
   readonly label: string;
   readonly value: string;
@@ -100,7 +107,6 @@ type LivePlaySurfaceProps = {
   readonly nightConversationDraft: string;
   readonly roomStatusLabel: string;
   readonly selfActions: readonly PublicAction[];
-  readonly statusMessage: string;
   readonly summary: RoomSummary;
   readonly targetByActionKey: Record<string, string>;
   readonly t: Localization;
@@ -119,7 +125,6 @@ type LiveSetupSurfaceProps = {
   readonly displayName: string;
   readonly isBusy: boolean;
   readonly roomCodeInput: string;
-  readonly statusMessage: string;
   readonly t: Localization;
   readonly targetPlayerCount: number;
   readonly onCreateRoom: () => void;
@@ -151,6 +156,8 @@ const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
+const TOAST_DEFAULT_DURATION_MS = 4_800;
+const TOAST_IMPORTANT_DURATION_MS = 7_000;
 const PLAYER_COUNT_OPTIONS = Array.from(
   { length: MAX_ROOM_PLAYERS - MIN_ROOM_PLAYERS + 1 },
   (unusedValue, index) => {
@@ -212,14 +219,44 @@ export default function LivePage() {
   const [isStartSettingsOpen, setIsStartSettingsOpen] = useState(false);
   const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
   const [isPublicLogOpen, setIsPublicLogOpen] = useState(false);
+  const [toast, setToast] = useState<LiveToast | null>(null);
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
+  const toastDismissTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
-  const [statusMessage, setStatusMessage] = useState(t.live.room.initialStatus);
   const [isBusy, setIsBusy] = useState(false);
-  const localizedStatusMessage = localizeStatusMessage(statusMessage, t);
+
+  const dismissToast = useCallback(() => {
+    if (toastDismissTimerRef.current !== null) {
+      window.clearTimeout(toastDismissTimerRef.current);
+      toastDismissTimerRef.current = null;
+    }
+
+    setToast(null);
+  }, []);
+
+  const showToast = useCallback(
+    (message: string, tone: LiveToastTone = "info", durationMs = TOAST_DEFAULT_DURATION_MS) => {
+      if (toastDismissTimerRef.current !== null) {
+        window.clearTimeout(toastDismissTimerRef.current);
+      }
+
+      setToast({ message, tone });
+
+      if (durationMs <= 0) {
+        toastDismissTimerRef.current = null;
+        return;
+      }
+
+      toastDismissTimerRef.current = window.setTimeout(() => {
+        toastDismissTimerRef.current = null;
+        setToast(null);
+      }, durationMs);
+    },
+    [setToast],
+  );
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -267,6 +304,10 @@ export default function LivePage() {
       if (copiedInviteResetTimerRef.current !== null) {
         window.clearTimeout(copiedInviteResetTimerRef.current);
       }
+
+      if (toastDismissTimerRef.current !== null) {
+        window.clearTimeout(toastDismissTimerRef.current);
+      }
     },
     [],
   );
@@ -293,12 +334,11 @@ export default function LivePage() {
     };
   }, [isStartSettingsOpen]);
 
-  async function createIdentityToken(nextStatusMessage: string): Promise<string> {
+  async function createIdentityToken(): Promise<string> {
     const identity = await apiFetch<IdentityResponse>("/api/identity", { method: "POST" });
 
     writeStorage(IDENTITY_STORAGE_KEY, identity.token);
     setIdentityToken(identity.token);
-    setStatusMessage(nextStatusMessage);
 
     return identity.token;
   }
@@ -308,33 +348,30 @@ export default function LivePage() {
       return identityToken;
     }
 
-    return createIdentityToken(t.live.room.readyToJoin);
+    return createIdentityToken();
   }
 
-  const clearCurrentRoom = useCallback(
-    (nextStatusMessage: string, options: ClearCurrentRoomOptions = {}) => {
-      ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
-      removeStorage(ROOM_CODE_STORAGE_KEY);
-      setSavedRoomCode(null);
-      setRoomSummary(null);
-      setRoomCodeInput("");
-      setTargetByActionKey({});
-      setIsNightConversationOpen(false);
-      setIsPublicLogOpen(false);
-      setNightConversationDraft("");
-      setIsStartSettingsOpen(false);
-      setStatusMessage(nextStatusMessage);
-    },
-    [],
-  );
+  const clearCurrentRoom = useCallback((options: ClearCurrentRoomOptions = {}) => {
+    ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
+    removeStorage(ROOM_CODE_STORAGE_KEY);
+    setSavedRoomCode(null);
+    setRoomSummary(null);
+    setRoomCodeInput("");
+    setTargetByActionKey({});
+    setIsNightConversationOpen(false);
+    setIsPublicLogOpen(false);
+    setNightConversationDraft("");
+    setIsStartSettingsOpen(false);
+  }, []);
 
   const resetInvalidIdentity = useCallback(
     (nextStatusMessage = invalidIdentityStatusMessage) => {
       removeStorage(IDENTITY_STORAGE_KEY);
       setIdentityToken(null);
-      clearCurrentRoom(nextStatusMessage);
+      showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
+      clearCurrentRoom();
     },
-    [clearCurrentRoom, invalidIdentityStatusMessage],
+    [clearCurrentRoom, invalidIdentityStatusMessage, showToast],
   );
 
   async function withBusy(work: () => Promise<void>): Promise<void> {
@@ -348,7 +385,9 @@ export default function LivePage() {
         return;
       }
 
-      setStatusMessage(toRequestFailureMessage(error, t));
+      const failureMessage = toRequestFailureMessage(error, t);
+
+      showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS);
     } finally {
       setIsBusy(false);
     }
@@ -367,7 +406,7 @@ export default function LivePage() {
       }
 
       resetInvalidIdentity(t.live.room.identityResetting);
-      const nextToken = await createIdentityToken(t.live.room.identityReset);
+      const nextToken = await createIdentityToken();
 
       return request(nextToken);
     }
@@ -380,7 +419,8 @@ export default function LivePage() {
       }
 
       if (nextSummary.status === "disbanded") {
-        clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: nextSummary.code });
+        clearCurrentRoom({ ignoredRoomCode: nextSummary.code });
+        showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
         return false;
       }
 
@@ -396,17 +436,19 @@ export default function LivePage() {
 
       return true;
     },
-    [clearCurrentRoom, displayName, roomClosedStatusMessage],
+    [clearCurrentRoom, displayName, roomClosedStatusMessage, showToast],
   );
 
   useEffect(() => {
     if (identityToken === null && savedRoomCode !== null) {
+      const nextStatusMessage = t.live.room.savedExpired;
+
       removeStorage(ROOM_CODE_STORAGE_KEY);
       setSavedRoomCode(null);
       setRoomCodeInput("");
-      setStatusMessage(t.live.room.savedExpired);
+      showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
     }
-  }, [identityToken, savedRoomCode, t]);
+  }, [identityToken, savedRoomCode, showToast, t]);
 
   useEffect(() => {
     if (identityToken === null || roomSummary !== null || savedRoomCode === null) {
@@ -420,8 +462,6 @@ export default function LivePage() {
     let isCancelled = false;
     const activeToken = identityToken;
 
-    setStatusMessage(t.live.room.restoring(savedRoomCode));
-
     async function restoreSavedRoom(): Promise<void> {
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${savedRoomCode}`, {
@@ -430,9 +470,7 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          if (rememberRoom(summary, { resetActionTargets: false })) {
-            setStatusMessage(t.live.room.restored(summary.code));
-          }
+          rememberRoom(summary, { resetActionTargets: false });
         }
       } catch (error) {
         if (!isCancelled) {
@@ -442,13 +480,17 @@ export default function LivePage() {
           }
 
           if (isNotFoundRequestError(error)) {
-            clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: savedRoomCode });
+            clearCurrentRoom({ ignoredRoomCode: savedRoomCode });
+            showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
             return;
           }
 
-          clearCurrentRoom(t.live.room.savedCouldNotRestore, {
+          const nextStatusMessage = t.live.room.savedCouldNotRestore;
+
+          clearCurrentRoom({
             ignoredRoomCode: savedRoomCode,
           });
+          showToast(nextStatusMessage, "error", TOAST_IMPORTANT_DURATION_MS);
         }
       }
     }
@@ -466,6 +508,7 @@ export default function LivePage() {
     roomClosedStatusMessage,
     roomSummary,
     savedRoomCode,
+    showToast,
     t,
   ]);
 
@@ -504,11 +547,14 @@ export default function LivePage() {
           }
 
           if (isNotFoundRequestError(error)) {
-            clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: activeRoomCode });
+            clearCurrentRoom({ ignoredRoomCode: activeRoomCode });
+            showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
             return;
           }
 
-          setStatusMessage(t.live.room.syncFailed);
+          const nextStatusMessage = t.live.room.syncFailed;
+
+          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
         }
       }
     }
@@ -528,6 +574,7 @@ export default function LivePage() {
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
+    showToast,
     t,
   ]);
 
@@ -627,11 +674,14 @@ export default function LivePage() {
           }
 
           if (isNotFoundRequestError(error)) {
-            clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: activeRoomCode });
+            clearCurrentRoom({ ignoredRoomCode: activeRoomCode });
+            showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
             return;
           }
 
-          setStatusMessage(t.live.status.realtimeFailed);
+          const nextStatusMessage = t.live.status.realtimeFailed;
+
+          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
         }
       } finally {
         isSyncing = false;
@@ -665,6 +715,7 @@ export default function LivePage() {
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
+    showToast,
     t,
   ]);
 
@@ -690,7 +741,6 @@ export default function LivePage() {
 
           if (!isCancelled) {
             rememberRoom(summary, { resetActionTargets: false });
-            setStatusMessage(t.live.status.timerAdvanceChecked);
           }
         } catch (error) {
           if (!isCancelled) {
@@ -698,8 +748,6 @@ export default function LivePage() {
               resetInvalidIdentity();
               return;
             }
-
-            setStatusMessage(t.live.status.timerAdvanceFailed);
           }
         }
       })();
@@ -744,7 +792,9 @@ export default function LivePage() {
   function handleCreateRoom(): void {
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
-        setStatusMessage(t.live.room.currentAlreadyExistsCreate);
+        const nextStatusMessage = t.live.room.currentAlreadyExistsCreate;
+
+        showToast(nextStatusMessage, "warning");
         return;
       }
 
@@ -758,14 +808,15 @@ export default function LivePage() {
 
       ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
-      setStatusMessage(t.live.room.created(summary.code));
     });
   }
 
   function handleJoinRoom(): void {
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
-        setStatusMessage(t.live.room.currentAlreadyExistsJoin);
+        const nextStatusMessage = t.live.room.currentAlreadyExistsJoin;
+
+        showToast(nextStatusMessage, "warning");
         return;
       }
 
@@ -780,7 +831,6 @@ export default function LivePage() {
 
       ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
-      setStatusMessage(t.live.room.joined(summary.code));
     });
   }
 
@@ -795,12 +845,11 @@ export default function LivePage() {
           token,
         });
 
-        if (rememberRoom(summary)) {
-          setStatusMessage(t.live.room.synced(summary.code));
-        }
+        rememberRoom(summary);
       } catch (error) {
         if (isNotFoundRequestError(error)) {
-          clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: roomCode });
+          clearCurrentRoom({ ignoredRoomCode: roomCode });
+          showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
           return;
         }
 
@@ -820,7 +869,6 @@ export default function LivePage() {
       });
 
       rememberRoom(summary);
-      setStatusMessage(t.live.status.gameStarted);
     });
   }
 
@@ -828,19 +876,12 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
-      const previousStatus = formatRoomStatus(roomSummary, t);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/resolve`, {
         method: "POST",
         token,
       });
-      const nextStatus = formatRoomStatus(summary, t);
 
       rememberRoom(summary);
-      setStatusMessage(
-        previousStatus === nextStatus
-          ? t.live.status.phaseStillWaiting
-          : t.live.status.advancedTo(nextStatus),
-      );
     });
   }
 
@@ -853,7 +894,7 @@ export default function LivePage() {
         token,
       });
 
-      clearCurrentRoom(t.live.room.left, { ignoredRoomCode: roomCode });
+      clearCurrentRoom({ ignoredRoomCode: roomCode });
     });
   }
 
@@ -880,7 +921,6 @@ export default function LivePage() {
       });
 
       rememberRoom(summary);
-      setStatusMessage(t.live.status.actionSubmitted(action.label));
     });
   }
 
@@ -907,7 +947,6 @@ export default function LivePage() {
 
       setNightConversationDraft("");
       rememberRoom(summary, { resetActionTargets: false });
-      setStatusMessage(t.live.status.nightMessageSent(conversation.label));
     });
   }
 
@@ -920,7 +959,6 @@ export default function LivePage() {
       }
 
       setCopiedInviteRoomCode(roomCode);
-      setStatusMessage(t.live.invite.codeCopied(roomCode));
       copiedInviteResetTimerRef.current = window.setTimeout(() => {
         setCopiedInviteRoomCode((currentRoomCode) =>
           currentRoomCode === roomCode ? null : currentRoomCode,
@@ -931,7 +969,6 @@ export default function LivePage() {
     }
 
     setRoomCodeInput(roomCode);
-    setStatusMessage(t.live.invite.copyUnavailable(roomCode));
   }
 
   async function handleShareRoom(roomCode: string): Promise<void> {
@@ -945,11 +982,9 @@ export default function LivePage() {
           title: "Jinroh Web",
           url: roomUrl,
         });
-        setStatusMessage(t.live.invite.shareSheetOpened(roomCode));
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
-          setStatusMessage(t.live.invite.shareCancelled);
           return;
         }
       }
@@ -958,12 +993,10 @@ export default function LivePage() {
     const didCopy = await writeClipboardText(inviteText);
 
     if (didCopy) {
-      setStatusMessage(t.live.invite.inviteCopied(roomCode));
       return;
     }
 
     setRoomCodeInput(roomCode);
-    setStatusMessage(t.live.invite.shareUnavailable(roomCode));
   }
 
   function getActionTarget(action: PublicAction): string {
@@ -1006,7 +1039,6 @@ export default function LivePage() {
               displayName={displayName}
               isBusy={isBusy}
               roomCodeInput={roomCodeInput}
-              statusMessage={localizedStatusMessage}
               t={t}
               targetPlayerCount={targetPlayerCount}
               onCreateRoom={handleCreateRoom}
@@ -1020,7 +1052,6 @@ export default function LivePage() {
               <section className="liveStatusBar" aria-live="polite">
                 <span>{liveGuidance.label}</span>
                 <strong>{liveGuidance.message}</strong>
-                <small>{localizedStatusMessage}</small>
               </section>
             </div>
           )}
@@ -1155,7 +1186,6 @@ export default function LivePage() {
               nightConversationDraft={nightConversationDraft}
               roomStatusLabel={roomStatusLabel}
               selfActions={selfActions}
-              statusMessage={localizedStatusMessage}
               summary={roomSummary}
               targetByActionKey={targetByActionKey}
               locale={locale}
@@ -1187,7 +1217,48 @@ export default function LivePage() {
           onApplySettings={(nextSettings) => setStartRuleSetSettings(nextSettings)}
         />
       ) : null}
+
+      <LiveToastRegion toast={toast} t={t} onDismiss={dismissToast} />
     </main>
+  );
+}
+
+function LiveToastRegion({
+  toast,
+  t,
+  onDismiss,
+}: {
+  readonly toast: LiveToast | null;
+  readonly t: Localization;
+  readonly onDismiss: () => void;
+}) {
+  if (toast === null) {
+    return null;
+  }
+
+  return (
+    <div
+      className="liveToastViewport"
+      aria-label={t.live.aria.notifications}
+      aria-live={toast.tone === "error" ? "assertive" : "polite"}
+    >
+      <section
+        className="liveToast"
+        data-tone={toast.tone}
+        role={toast.tone === "error" ? "alert" : "status"}
+      >
+        <span className="liveToastTone">{t.live.toast.tones[toast.tone]}</span>
+        <p>{toast.message}</p>
+        <button
+          className="secondaryButton liveIconButton liveToastClose"
+          aria-label={t.live.buttons.dismissNotification}
+          type="button"
+          onClick={onDismiss}
+        >
+          <span aria-hidden="true">X</span>
+        </button>
+      </section>
+    </div>
   );
 }
 
@@ -1414,7 +1485,6 @@ function LiveSetupSurface({
   displayName,
   isBusy,
   roomCodeInput,
-  statusMessage,
   t,
   targetPlayerCount,
   onCreateRoom,
@@ -1508,9 +1578,6 @@ function LiveSetupSurface({
           </div>
           <div className="liveSetupMeterTrack" aria-hidden="true" />
           <p className="liveSetupMeterCopy">{t.live.setup.meterCopy}</p>
-          <p className="liveSetupStatus" aria-live="polite">
-            {statusMessage}
-          </p>
         </aside>
       </section>
 
@@ -1753,7 +1820,6 @@ function LivePlaySurface({
   nightConversationDraft,
   roomStatusLabel,
   selfActions,
-  statusMessage,
   summary,
   targetByActionKey,
   t,
@@ -1770,7 +1836,6 @@ function LivePlaySurface({
   const actionProgress = summary.game?.actionProgress ?? null;
   const phaseEndsAt = summary.game?.phaseEndsAt ?? null;
   const phaseGuidance = getPlayPhaseGuidance(summary, isBusy, t);
-  const playStatusMessage = getPlayStatusMessage(statusMessage, summary, t);
   const nightConversation = summary.rolePrivate?.nightConversation ?? null;
   const publicEventCount = summary.game?.events.length ?? 0;
 
@@ -1791,7 +1856,6 @@ function LivePlaySurface({
             <div>
               <span>{phaseGuidance.label}</span>
               <strong>{phaseGuidance.message}</strong>
-              {playStatusMessage === "" ? null : <small>{playStatusMessage}</small>}
             </div>
             {phaseEndsAt === null ? null : (
               <time dateTime={phaseEndsAt}>
@@ -3387,94 +3451,6 @@ function getActionPanelTitle(summary: RoomSummary, t: Localization): string {
   }
 
   return t.game.actions.action;
-}
-
-function localizeStatusMessage(statusMessage: string, t: Localization): string {
-  for (const localization of Object.values(localizations)) {
-    if (statusMessage === localization.live.room.initialStatus) {
-      return t.live.room.initialStatus;
-    }
-
-    if (statusMessage === localization.live.room.readyToJoin) {
-      return t.live.room.readyToJoin;
-    }
-
-    if (statusMessage === localization.live.room.savedExpired) {
-      return t.live.room.savedExpired;
-    }
-
-    if (statusMessage === localization.live.room.savedCouldNotRestore) {
-      return t.live.room.savedCouldNotRestore;
-    }
-
-    if (statusMessage === localization.live.room.closed) {
-      return t.live.room.closed;
-    }
-
-    if (statusMessage === localization.live.room.identityExpired) {
-      return t.live.room.identityExpired;
-    }
-
-    if (statusMessage === localization.live.room.identityReset) {
-      return t.live.room.identityReset;
-    }
-
-    if (statusMessage === localization.live.room.identityResetting) {
-      return t.live.room.identityResetting;
-    }
-
-    if (statusMessage === localization.live.room.left) {
-      return t.live.room.left;
-    }
-
-    if (statusMessage === localization.live.room.syncFailed) {
-      return t.live.room.syncFailed;
-    }
-
-    if (statusMessage === localization.live.status.gameStarted) {
-      return t.live.status.gameStarted;
-    }
-
-    if (statusMessage === localization.live.status.phaseStillWaiting) {
-      return t.live.status.phaseStillWaiting;
-    }
-
-    if (statusMessage === localization.live.status.realtimeFailed) {
-      return t.live.status.realtimeFailed;
-    }
-
-    if (statusMessage === localization.live.status.timerAdvanceChecked) {
-      return t.live.status.timerAdvanceChecked;
-    }
-
-    if (statusMessage === localization.live.status.timerAdvanceFailed) {
-      return t.live.status.timerAdvanceFailed;
-    }
-
-    if (statusMessage === localization.live.invite.shareCancelled) {
-      return t.live.invite.shareCancelled;
-    }
-  }
-
-  return statusMessage;
-}
-
-function getPlayStatusMessage(
-  statusMessage: string,
-  summary: RoomSummary,
-  t: Localization,
-): string {
-  if (statusMessage === t.live.room.initialStatus) {
-    return "";
-  }
-
-  const roomPrefix = t.live.page.room(summary.code);
-
-  if (statusMessage.startsWith(roomPrefix)) {
-    return t.live.status.tableStatus(statusMessage.slice(roomPrefix.length));
-  }
-
-  return statusMessage;
 }
 
 function formatPhaseTitle(phase: string | null, t: Localization): string {
