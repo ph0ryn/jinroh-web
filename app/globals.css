@@ -1617,6 +1617,10 @@ a {
   text-align: right;
 }
 
+.liveHeroUtility {
+  min-height: 0;
+}
+
 .liveKicker {
   color: var(--live-accent);
   font-size: 0.8rem;
@@ -2104,7 +2108,6 @@ a {
   align-content: start;
   display: grid;
   gap: 14px;
-  grid-template-rows: auto auto auto;
   min-height: 0;
 }
 
@@ -2128,10 +2131,6 @@ a {
 
 .liveTableCenter strong {
   font-size: 1.28rem;
-}
-
-.liveTableCenter > span:last-child {
-  max-width: 220px;
 }
 
 .liveTablePhaseIcon {
@@ -2226,8 +2225,21 @@ a {
   width: 98px;
 }
 
-.liveTableSeat.observing .seatLabel small {
+.liveTableSeat.disconnected .seatLabel small,
+.liveTableSeat.left .seatLabel small {
   color: var(--live-muted);
+}
+
+.liveTableSeat.disconnected .avatar,
+.liveTableSeat.left .avatar {
+  filter: grayscale(0.7);
+  opacity: 0.68;
+}
+
+.liveTableSeat.execution .avatar,
+.liveTableSeat.speaking .avatar {
+  border-color: var(--live-accent);
+  box-shadow: 0 0 0 3px rgba(var(--live-accent-rgb), 0.14);
 }
 
 .livePlayPhaseCard,
@@ -2316,10 +2328,30 @@ a {
   min-width: 0;
 }
 
+.liveSelfRolePanel {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.liveSelfRolePanel span {
+  color: var(--live-muted);
+  font-size: 0.78rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.liveSelfRolePanel strong {
+  color: var(--live-accent);
+  font-size: 1rem;
+}
+
 .livePopupActions {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .livePopupActions button {
@@ -2527,16 +2559,6 @@ a {
   color: var(--paper-100);
   font-size: 0.96rem;
   line-height: 1.3;
-}
-
-.liveLobbyRequirements ul {
-  color: var(--live-muted);
-  display: grid;
-  gap: 6px;
-  font-size: 0.82rem;
-  line-height: 1.35;
-  margin: 0;
-  padding-left: 18px;
 }
 
 .liveProgressTrack {
@@ -4181,11 +4203,5 @@ a {
 
   .liveEventDetails {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 520px) {
-  .liveTableCenter > span:last-child {
-    display: none;
   }
 }
