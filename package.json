@@ -21,6 +21,7 @@
   "dependencies": {
     "@supabase/supabase-js": "catalog:",
     "next": "catalog:",
+    "qrcode.react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },

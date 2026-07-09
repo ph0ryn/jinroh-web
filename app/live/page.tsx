@@ -1,5 +1,6 @@
 "use client";
 
+import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
@@ -227,6 +228,7 @@ export default function LivePage() {
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
+  const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
 
   const dismissToast = useCallback(() => {
     if (toastDismissTimerRef.current !== null) {
@@ -260,9 +262,12 @@ export default function LivePage() {
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
+      const requestedRoomCode = getRoomCodeSearchParam(window.location.search);
       const savedIdentityToken = readStorage(IDENTITY_STORAGE_KEY);
       const savedDisplayName = readStorage(DISPLAY_NAME_STORAGE_KEY);
       const savedRoomCode = readStorage(ROOM_CODE_STORAGE_KEY);
+
+      setLiveOrigin(window.location.origin);
 
       if (savedIdentityToken !== null) {
         setIdentityToken(savedIdentityToken);
@@ -270,6 +275,12 @@ export default function LivePage() {
 
       if (savedDisplayName !== null) {
         setDisplayName(savedDisplayName);
+      }
+
+      if (requestedRoomCode !== null) {
+        setSavedRoomCode(null);
+        setRoomCodeInput(requestedRoomCode);
+        return;
       }
 
       if (savedRoomCode !== null) {
@@ -972,7 +983,7 @@ export default function LivePage() {
   }
 
   async function handleShareRoom(roomCode: string): Promise<void> {
-    const roomUrl = getLiveRoomUrl();
+    const roomUrl = getLiveRoomUrl(roomCode, window.location.origin);
     const inviteText = t.live.invite.inviteText(roomCode, roomUrl);
 
     if (typeof navigator.share === "function") {
@@ -1021,6 +1032,10 @@ export default function LivePage() {
   const liveMood = getLiveMood(roomSummary);
   const isRoomEntryAvailable = roomSummary === null && savedRoomCode === null;
   const liveGridClassName = getLiveGridClassName(roomSummary);
+  const roomInviteUrl =
+    liveOrigin === null || roomSummary === null
+      ? null
+      : getLiveRoomUrl(roomSummary.code, liveOrigin);
 
   return (
     <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
@@ -1093,6 +1108,7 @@ export default function LivePage() {
 
                 <RoomInviteTools
                   copiedRoomCode={copiedInviteRoomCode}
+                  roomUrl={roomInviteUrl}
                   summary={roomSummary}
                   t={t}
                   onCopyRoomCode={handleCopyRoomCode}
@@ -1732,19 +1748,19 @@ function SavedRoomState({
 
 function RoomInviteTools({
   copiedRoomCode,
+  roomUrl,
   summary,
   t,
   onCopyRoomCode,
   onShareRoom,
 }: {
   readonly copiedRoomCode: string | null;
+  readonly roomUrl: string | null;
   readonly summary: RoomSummary;
   readonly t: Localization;
   readonly onCopyRoomCode: (roomCode: string) => void;
   readonly onShareRoom: (roomCode: string) => void;
 }) {
-  const joinedPlayerCount = countJoinedPlayers(summary);
-  const openSeats = Math.max(summary.targetPlayerCount - joinedPlayerCount, 0);
   const didCopyCurrentRoom = copiedRoomCode === summary.code;
 
   return (
@@ -1752,9 +1768,18 @@ function RoomInviteTools({
       <div>
         <span>{t.live.invite.codeLabel}</span>
         <strong>{summary.code}</strong>
-        <small>
-          {openSeats === 0 ? t.live.invite.tableFull : t.live.invite.openSeats(openSeats)}
-        </small>
+        {roomUrl === null ? null : (
+          <div className="liveInviteQrCode" aria-hidden="true">
+            <QRCodeSVG
+              bgColor="#ffffff"
+              fgColor="#000000"
+              level="M"
+              marginSize={4}
+              size={136}
+              value={roomUrl}
+            />
+          </div>
+        )}
       </div>
       <div>
         <button
@@ -2862,8 +2887,18 @@ async function writeClipboardText(text: string): Promise<boolean> {
   }
 }
 
-function getLiveRoomUrl(): string {
-  return `${window.location.origin}/live`;
+function getLiveRoomUrl(roomCode: string, origin: string): string {
+  const url = new URL("/live", origin);
+
+  url.searchParams.set("roomCode", roomCode);
+
+  return url.toString();
+}
+
+function getRoomCodeSearchParam(search: string): string | null {
+  const roomCode = new URLSearchParams(search).get("roomCode");
+
+  return roomCode !== null && /^\d{6}$/.test(roomCode) ? roomCode : null;
 }
 
 function extractApiError(

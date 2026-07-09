@@ -2564,6 +2564,11 @@ a {
   min-width: 0;
 }
 
+.liveInviteTools > div:first-child {
+  display: grid;
+  justify-items: start;
+}
+
 .liveInviteTools > div:last-child {
   display: flex;
   flex-wrap: wrap;
@@ -2575,8 +2580,7 @@ a {
   flex: 1 1 126px;
 }
 
-.liveInviteTools span,
-.liveInviteTools small {
+.liveInviteTools span {
   color: var(--live-muted);
   display: block;
   font-size: 0.76rem;
@@ -2593,6 +2597,22 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.liveInviteQrCode {
+  background: #ffffff;
+  border-radius: 6px;
+  display: grid;
+  height: 146px;
+  justify-self: center;
+  margin: 12px 0 6px;
+  padding: 5px;
+  place-items: center;
+  width: 146px;
+}
+
+.liveInviteQrCode svg {
+  display: block;
 }
 
 .liveLobbyRequirements {
