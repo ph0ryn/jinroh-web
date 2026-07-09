@@ -150,6 +150,7 @@ type StartSettingsTab = "general" | "roles" | "timers";
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
+const INVALID_IDENTITY_STATUS_MESSAGE = "Browser identity expired. Create or join a room.";
 const ROOM_CLOSED_STATUS_MESSAGE = "Room closed. Create or join a room.";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
@@ -318,16 +319,14 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     };
   }, [isStartSettingsOpen]);
 
-  async function withBusy(work: () => Promise<void>): Promise<void> {
-    setIsBusy(true);
+  async function createIdentityToken(nextStatusMessage: string): Promise<string> {
+    const identity = await apiFetch<IdentityResponse>("/api/identity", { method: "POST" });
 
-    try {
-      await work();
-    } catch (error) {
-      setStatusMessage(toRequestFailureMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
+    writeStorage(IDENTITY_STORAGE_KEY, identity.token);
+    setIdentityToken(identity.token);
+    setStatusMessage(nextStatusMessage);
+
+    return identity.token;
   }
 
   async function ensureIdentityToken(): Promise<string> {
@@ -335,13 +334,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       return identityToken;
     }
 
-    const identity = await apiFetch<IdentityResponse>("/api/identity", { method: "POST" });
-
-    writeStorage(IDENTITY_STORAGE_KEY, identity.token);
-    setIdentityToken(identity.token);
-    setStatusMessage("This browser is ready to join a table.");
-
-    return identity.token;
+    return createIdentityToken("This browser is ready to join a table.");
   }
 
   const clearCurrentRoom = useCallback(
@@ -360,6 +353,51 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     },
     [],
   );
+
+  const resetInvalidIdentity = useCallback(
+    (nextStatusMessage = INVALID_IDENTITY_STATUS_MESSAGE) => {
+      removeStorage(IDENTITY_STORAGE_KEY);
+      setIdentityToken(null);
+      clearCurrentRoom(nextStatusMessage);
+    },
+    [clearCurrentRoom],
+  );
+
+  async function withBusy(work: () => Promise<void>): Promise<void> {
+    setIsBusy(true);
+
+    try {
+      await work();
+    } catch (error) {
+      if (isUnauthorizedRequestError(error)) {
+        resetInvalidIdentity();
+        return;
+      }
+
+      setStatusMessage(toRequestFailureMessage(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function withFreshIdentityToken<Body>(
+    request: (token: string) => Promise<Body>,
+  ): Promise<Body> {
+    const token = await ensureIdentityToken();
+
+    try {
+      return await request(token);
+    } catch (error) {
+      if (!isUnauthorizedRequestError(error)) {
+        throw error;
+      }
+
+      resetInvalidIdentity("Browser identity expired. Creating a new identity.");
+      const nextToken = await createIdentityToken("This browser identity was reset.");
+
+      return request(nextToken);
+    }
+  }
 
   const rememberRoom = useCallback(
     (nextSummary: RoomSummary, options: RememberRoomOptions = {}) => {
@@ -432,6 +470,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         }
       } catch (error) {
         if (!isCancelled) {
+          if (isUnauthorizedRequestError(error)) {
+            resetInvalidIdentity();
+            return;
+          }
+
           if (isNotFoundRequestError(error)) {
             clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: savedRoomCode });
             return;
@@ -449,7 +492,15 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     return () => {
       isCancelled = true;
     };
-  }, [clearCurrentRoom, identityToken, isDevMode, rememberRoom, roomSummary, savedRoomCode]);
+  }, [
+    clearCurrentRoom,
+    identityToken,
+    isDevMode,
+    rememberRoom,
+    resetInvalidIdentity,
+    roomSummary,
+    savedRoomCode,
+  ]);
 
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
@@ -484,6 +535,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         }
       } catch (error) {
         if (!isCancelled) {
+          if (isUnauthorizedRequestError(error)) {
+            resetInvalidIdentity();
+            return;
+          }
+
           if (isNotFoundRequestError(error)) {
             clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: activeRoomCode });
             return;
@@ -502,7 +558,14 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeRoomCode, clearCurrentRoom, identityToken, isDevMode, rememberRoom]);
+  }, [
+    activeRoomCode,
+    clearCurrentRoom,
+    identityToken,
+    isDevMode,
+    rememberRoom,
+    resetInvalidIdentity,
+  ]);
 
   useEffect(() => {
     if (isDevMode) {
@@ -530,8 +593,10 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         if (!isCancelled) {
           rememberRoom(summary, { resetActionTargets: false });
         }
-      } catch {
-        // Heartbeat is presence maintenance; explicit room actions surface request errors.
+      } catch (error) {
+        if (!isCancelled && isUnauthorizedRequestError(error)) {
+          resetInvalidIdentity();
+        }
       }
     }
 
@@ -545,7 +610,14 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeRoomCode, identityToken, isDevMode, rememberRoom, roomSummary?.currentPlayerId]);
+  }, [
+    activeRoomCode,
+    identityToken,
+    isDevMode,
+    rememberRoom,
+    resetInvalidIdentity,
+    roomSummary?.currentPlayerId,
+  ]);
 
   useEffect(() => {
     if (isDevMode) {
@@ -594,6 +666,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         }
       } catch (error) {
         if (!isCancelled) {
+          if (isUnauthorizedRequestError(error)) {
+            resetInvalidIdentity();
+            return;
+          }
+
           if (isNotFoundRequestError(error)) {
             clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: activeRoomCode });
             return;
@@ -632,6 +709,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     identityToken,
     isDevMode,
     rememberRoom,
+    resetInvalidIdentity,
   ]);
 
   useEffect(() => {
@@ -662,8 +740,13 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
             rememberRoom(summary, { resetActionTargets: false });
             setStatusMessage("Phase timer elapsed; the room checked whether it can advance.");
           }
-        } catch {
+        } catch (error) {
           if (!isCancelled) {
+            if (isUnauthorizedRequestError(error)) {
+              resetInvalidIdentity();
+              return;
+            }
+
             setStatusMessage("Phase timer elapsed, but the room could not advance yet.");
           }
         }
@@ -682,6 +765,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     isDevMode,
     isHostInPlayingRoom,
     rememberRoom,
+    resetInvalidIdentity,
   ]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
@@ -735,12 +819,13 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         return;
       }
 
-      const token = await ensureIdentityToken();
-      const summary = await apiFetch<RoomSummary>("/api/rooms", {
-        body: { displayName, targetPlayerCount },
-        method: "POST",
-        token,
-      });
+      const summary = await withFreshIdentityToken((token) =>
+        apiFetch<RoomSummary>("/api/rooms", {
+          body: { displayName, targetPlayerCount },
+          method: "POST",
+          token,
+        }),
+      );
 
       ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
@@ -766,12 +851,13 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       }
 
       const roomCode = requireRoomCode(roomCodeInput);
-      const token = await ensureIdentityToken();
-      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
-        body: { displayName },
-        method: "POST",
-        token,
-      });
+      const summary = await withFreshIdentityToken((token) =>
+        apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
+          body: { displayName },
+          method: "POST",
+          token,
+        }),
+      );
 
       ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
@@ -2779,6 +2865,10 @@ async function apiFetch<Body>(path: string, options: RequestOptions): Promise<Bo
 
 function isNotFoundRequestError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status === 404;
+}
+
+function isUnauthorizedRequestError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 401;
 }
 
 async function parseJson(response: Response): Promise<unknown> {
