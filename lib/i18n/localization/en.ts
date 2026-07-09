@@ -336,7 +336,6 @@ export const enLocalization = {
       roomSetup: "Room setup",
       roomState: "Room state",
       settingsSections: "Settings sections",
-      setupProgress: "Setup progress",
     },
     buttons: {
       advancePhase: "Advance phase",
@@ -495,25 +494,20 @@ export const enLocalization = {
       value: (status: string, phase: string) => `${status} / ${phase}`,
     },
     setup: {
-      beforeRoom: "Before room",
       createHint:
         "Start a lobby from this browser. The host controls stay attached to this session.",
       createTitle: "Create a room",
-      decisionCopy:
-        "Keep the first screen focused on the decision players make here: host a new table, or enter a six-digit code from the host.",
       displayName: "Display name",
       guest: "Guest",
       host: "Host",
       joinHint:
         "Paste or type the six-digit code. The join button becomes active once all digits are filled.",
       joinTitle: "Join with code",
-      meterCopy: "Name first, then choose either Create room or Join room.",
       player: "Player",
       players: "Players",
       profileNote: "This identity stays in this browser.",
       roomCode: "Room code",
       roomCodeDigit: (index: number) => `Room code digit ${index}`,
-      title: "Create or join a private game room.",
       useIdentityHint:
         "Use this as the single source for player identity across create and join flows.",
       yourSeat: "Your seat",

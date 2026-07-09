@@ -1657,119 +1657,6 @@ a {
   width: min(100%, 1180px);
 }
 
-.liveSetupHero {
-  align-items: end;
-  background:
-    linear-gradient(120deg, rgba(15, 18, 14, 0.96), rgba(14, 16, 12, 0.74)),
-    radial-gradient(circle at 100% 0%, rgba(var(--live-accent-rgb), 0.18), transparent 36%);
-  border: 1px solid rgba(var(--live-accent-rgb), 0.36);
-  border-radius: 22px;
-  box-shadow: var(--shadow-soft);
-  display: grid;
-  gap: 24px;
-  grid-template-columns: minmax(0, 1.1fr) minmax(235px, 300px);
-  overflow: hidden;
-  padding: clamp(20px, 2.4vw, 28px);
-  position: relative;
-}
-
-.liveSetupHero::before {
-  background: linear-gradient(
-    120deg,
-    rgba(var(--live-accent-rgb), 0.38),
-    transparent 28%,
-    rgba(255, 255, 255, 0.08)
-  );
-  border-radius: inherit;
-  content: "";
-  inset: 0;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  padding: 1px;
-  pointer-events: none;
-  position: absolute;
-}
-
-.liveSetupEyebrow {
-  align-items: center;
-  color: var(--live-accent);
-  display: inline-flex;
-  font-size: 0.76rem;
-  font-weight: 900;
-  gap: 8px;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
-.liveSetupEyebrow::before {
-  background: var(--live-accent);
-  border-radius: 999px;
-  box-shadow: 0 0 12px rgba(var(--live-accent-rgb), 0.46);
-  content: "";
-  height: 2px;
-  width: 26px;
-}
-
-.liveSetupHero h2 {
-  font-size: clamp(2.1rem, 4.2vw, 3.6rem);
-  letter-spacing: -0.055em;
-  line-height: 0.94;
-  margin: 12px 0 10px;
-  max-width: 650px;
-}
-
-.liveSetupHero p {
-  color: var(--live-muted);
-  font-size: 1rem;
-  line-height: 1.6;
-  margin: 0;
-  max-width: 680px;
-}
-
-.liveSetupMeter {
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(var(--live-accent-rgb), 0.18);
-  border-radius: 16px;
-  min-width: 0;
-  padding: 16px;
-}
-
-.liveSetupMeterLabel {
-  color: var(--live-muted);
-  display: flex;
-  font-size: 0.72rem;
-  font-weight: 900;
-  gap: 12px;
-  justify-content: space-between;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.liveSetupMeterTrack {
-  background: rgba(255, 255, 255, 0.07);
-  border-radius: 999px;
-  height: 10px;
-  margin: 13px 0 12px;
-  overflow: hidden;
-  position: relative;
-}
-
-.liveSetupMeterTrack::before {
-  background: linear-gradient(90deg, var(--forest-700), var(--live-accent));
-  border-radius: inherit;
-  box-shadow: 0 0 18px rgba(var(--live-accent-rgb), 0.28);
-  content: "";
-  inset: 0 42% 0 0;
-  position: absolute;
-}
-
-.liveSetupHero .liveSetupMeterCopy {
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
 .liveSetupActionGrid {
   display: grid;
   gap: 18px;
@@ -4041,10 +3928,6 @@ a {
     grid-template-columns: minmax(0, 1fr) minmax(160px, 0.6fr);
   }
 
-  .liveSetupHero {
-    grid-template-columns: 1fr;
-  }
-
   .liveSetupActionGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4111,16 +3994,8 @@ a {
     gap: 14px;
   }
 
-  .liveSetupHero {
-    border-radius: 18px;
-  }
-
   .liveSetupPanel {
     background: linear-gradient(180deg, #131510, #0c0f0c);
-  }
-
-  .liveSetupHero h2 {
-    font-size: 2.3rem;
   }
 
   .liveSetupActionGrid {

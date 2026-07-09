@@ -329,7 +329,6 @@ export const jaLocalization = {
       roomSetup: "部屋準備",
       roomState: "部屋状態",
       settingsSections: "設定セクション",
-      setupProgress: "準備進捗",
     },
     buttons: {
       advancePhase: "フェーズを進める",
@@ -494,24 +493,19 @@ export const jaLocalization = {
       value: (status: string, phase: string) => `${status} / ${phase}`,
     },
     setup: {
-      beforeRoom: "部屋に入る前",
       createHint: "このブラウザからロビーを開始します。ホスト操作はこのセッションに紐づきます。",
       createTitle: "部屋を作る",
-      decisionCopy:
-        "ここでは、ホストとして新しいテーブルを作るか、ホストから受け取った6桁コードを入力するかに集中します。",
       displayName: "表示名",
       guest: "ゲスト",
       host: "ホスト",
       joinHint:
         "6桁コードを貼り付けるか入力してください。全桁が埋まると参加ボタンが有効になります。",
       joinTitle: "コードで参加",
-      meterCopy: "まず名前を入力し、部屋を作るか参加するかを選びます。",
       player: "プレイヤー",
       players: "プレイヤー数",
       profileNote: "この識別情報はこのブラウザに保持されます。",
       roomCode: "部屋コード",
       roomCodeDigit: (index: number) => `部屋コード ${index} 桁目`,
-      title: "非公開ゲーム部屋を作成または参加します。",
       useIdentityHint: "作成と参加の両方で使うプレイヤー識別情報です。",
       yourSeat: "あなたの席",
     },

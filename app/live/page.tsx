@@ -1581,22 +1581,6 @@ function LiveSetupSurface({
 
   return (
     <section className="liveSetupSurface" aria-label={t.live.aria.roomSetup}>
-      <section className="liveSetupHero" aria-labelledby="setup-title">
-        <div>
-          <div className="liveSetupEyebrow">{t.game.phase.setup}</div>
-          <h2 id="setup-title">{t.live.setup.title}</h2>
-          <p>{t.live.setup.decisionCopy}</p>
-        </div>
-        <aside className="liveSetupMeter" aria-label={t.live.aria.setupProgress}>
-          <div className="liveSetupMeterLabel">
-            <span>{t.live.setup.beforeRoom}</span>
-            <span>1 / 3</span>
-          </div>
-          <div className="liveSetupMeterTrack" aria-hidden="true" />
-          <p className="liveSetupMeterCopy">{t.live.setup.meterCopy}</p>
-        </aside>
-      </section>
-
       <section className="liveSetupActionGrid" aria-label={t.live.aria.roomActions}>
         <article className="liveSetupPanel liveSetupProfilePanel">
           <div className="liveSetupPanelHeader">
