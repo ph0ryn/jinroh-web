@@ -67,8 +67,19 @@ export type PublicGameView = {
   revision: number;
   winnerTeam: Team | null;
   actionProgress: PublicActionProgress | null;
+  phaseFocus: PublicPhaseFocus | null;
   events: PublicGameEvent[];
 };
+
+export type PublicPhaseFocus =
+  | {
+      kind: "current_speaker";
+      playerId: string;
+    }
+  | {
+      kind: "execution_candidate";
+      playerId: string;
+    };
 
 export type PublicGameEvent = {
   kind: string;
@@ -76,14 +87,24 @@ export type PublicGameEvent = {
   createdAt: string;
 };
 
+export type PublicActionProgressKind =
+  | "current_speech_turn"
+  | "day_ready"
+  | "execution_last_words"
+  | "first_night_ready"
+  | "night_actions_hidden"
+  | "votes_submitted";
+
 export type PublicActionProgress =
   | {
+      kind: Exclude<PublicActionProgressKind, "night_actions_hidden">;
       visibility: "public";
       required: number;
       submitted: number;
       label: string;
     }
   | {
+      kind: "night_actions_hidden";
       visibility: "hidden";
       label: string;
     };
@@ -122,6 +143,7 @@ export type NightConversationView = {
   canSend: boolean;
   groupId: string;
   label: string;
+  labelKey: string;
   maxMessageLength: number;
   messages: NightConversationMessage[];
   nightNumber: number;

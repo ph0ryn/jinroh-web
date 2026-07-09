@@ -10,6 +10,7 @@ import {
   type PublicActionProgress,
   type PublicGameEvent,
   type PublicGameView,
+  type PublicPhaseFocus,
   type PublicPlayer,
   type PublicSubmittedAction,
   type RealtimeScope,
@@ -692,6 +693,7 @@ async function getRoomViewByRoom(
           nightNumber: state.night_number,
           phase: state.phase,
           phaseEndsAt: state.phase_ends_at,
+          phaseFocus: toPublicPhaseFocus(state, actions, players),
           phaseInstanceId: state.phase_instance_id,
           revision: state.revision,
           status: state.status,
@@ -843,7 +845,7 @@ function isActionVisibleToPlayer(
   return action.actor_role_id === currentRoleId;
 }
 
-function toPublicActionProgress(
+export function toPublicActionProgress(
   state: GameStateRecord,
   actions: readonly CurrentActionRecord[],
   pendingActions: readonly PendingActionRecord[],
@@ -854,6 +856,7 @@ function toPublicActionProgress(
 
   if (state.phase === "night" && state.night_number > 1) {
     return {
+      kind: "night_actions_hidden",
       label: "Night actions are private until dawn.",
       visibility: "hidden",
     };
@@ -867,6 +870,10 @@ function toPublicActionProgress(
   );
 
   return {
+    kind:
+      state.phase === "day" && actions.some((action) => action.action_kind === "end_speech")
+        ? "current_speech_turn"
+        : getPublicActionProgressKind(state.phase),
     label:
       state.phase === "day" && actions.some((action) => action.action_kind === "end_speech")
         ? "Current speech turn."
@@ -875,6 +882,54 @@ function toPublicActionProgress(
     submitted: submittedActionIds.size,
     visibility: "public",
   };
+}
+
+function getPublicActionProgressKind(
+  phase: NonNullable<GameStateRecord["phase"]>,
+): Extract<PublicActionProgress, { visibility: "public" }>["kind"] {
+  switch (phase) {
+    case "day":
+      return "day_ready";
+    case "execution":
+      return "execution_last_words";
+    case "night":
+      return "first_night_ready";
+    case "voting":
+      return "votes_submitted";
+  }
+}
+
+export function toPublicPhaseFocus(
+  state: GameStateRecord,
+  actions: readonly CurrentActionRecord[],
+  players: readonly PlayerRecord[],
+): PublicPhaseFocus | null {
+  let focusKind:
+    | { actionKind: "end_speech"; kind: "current_speaker" }
+    | { actionKind: "execution_skip"; kind: "execution_candidate" }
+    | null = null;
+
+  if (state.phase === "day") {
+    focusKind = { actionKind: "end_speech", kind: "current_speaker" };
+  } else if (state.phase === "execution") {
+    focusKind = { actionKind: "execution_skip", kind: "execution_candidate" };
+  }
+
+  if (state.status !== "playing" || focusKind === null) {
+    return null;
+  }
+
+  const actorPlayerId = actions.find(
+    (action) => action.action_kind === focusKind.actionKind && action.actor_player_id !== null,
+  )?.actor_player_id;
+  const publicPlayerId = players.find((player) => player.id === actorPlayerId)?.public_player_id;
+
+  return publicPlayerId === undefined
+    ? null
+    : {
+        kind: focusKind.kind,
+        playerId: publicPlayerId,
+      };
 }
 
 function toRolePrivateView(
@@ -964,6 +1019,7 @@ function toNightConversationView({
     canSend: state.status === "playing" && state.phase === "night",
     groupId: group.groupId,
     label: labelNightConversationGroup(group.labelKey),
+    labelKey: group.labelKey,
     maxMessageLength: NIGHT_CONVERSATION_MESSAGE_MAX_LENGTH,
     messages: visibleMessages,
     nightNumber: state.night_number,

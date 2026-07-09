@@ -10,7 +10,6 @@ import { chromium } from "playwright";
 const DEFAULT_MANAGED_URL = `http://localhost:${process.env.E2E_PORT ?? "3010"}`;
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const IS_ORDERED_SPEECH_E2E = process.env.E2E_RULESET === "ordered_speech";
-const ROOM_CLOSED_STATUS_MESSAGE = "Room closed. Create or join a room.";
 const MOOD_BACKGROUND_BY_NAME = {
   day: "jinroh-day-same-angle.jpg",
   execution: "jinroh-voting-same-angle.jpg",
@@ -143,6 +142,8 @@ async function runLiveSmoke(baseUrl) {
     await waitPhase(player2.page, "night");
     await waitPhase(player3.page, "night");
     const nightConversationPlayer = await assertNightConversationUi(players);
+    await switchToJapanese(player3.page);
+    await assertJapaneseLocalization(player3.page, "night");
 
     await submitAll(players);
     await advance(host);
@@ -153,6 +154,7 @@ async function runLiveSmoke(baseUrl) {
     await refreshAll([player2, player3]);
     await waitPhase(player2.page, "day");
     await waitPhase(player3.page, "day");
+    await assertJapaneseLocalization(player3.page, "day");
 
     if (IS_ORDERED_SPEECH_E2E) {
       await resolveOrderedSpeechDay(players, host);
@@ -166,6 +168,7 @@ async function runLiveSmoke(baseUrl) {
       await refreshAll([player2, player3]);
       await waitPhase(player2.page, "voting");
       await waitPhase(player3.page, "voting");
+      await assertJapaneseLocalization(player3.page, "voting");
     }
 
     await submitAll(players);
@@ -174,6 +177,9 @@ async function runLiveSmoke(baseUrl) {
     await waitMood(host.page, "execution");
     await assertMoodVisual(host.page, "execution");
     await assertPhaseTimerOpen(host.page);
+    await refresh(player3.page);
+    await waitPhase(player3.page, "execution");
+    await assertJapaneseLocalization(player3.page, "execution");
     await host.page.waitForTimeout(EXECUTION_TIMEOUT_WAIT_MS);
     const resolutionPath = await resolveAfterTimeout(host);
     await waitMood(host.page, "result");
@@ -181,6 +187,7 @@ async function runLiveSmoke(baseUrl) {
     await refreshAll([player2, player3]);
     await waitEnded(player2.page);
     await waitEnded(player3.page);
+    await assertJapaneseLocalization(player3.page, "result");
 
     const desktopScreenshot = join(SCREENSHOT_DIR, "live-result-desktop.png");
     await host.page.screenshot({ fullPage: false, path: desktopScreenshot });
@@ -198,12 +205,7 @@ async function runLiveSmoke(baseUrl) {
     const evidence = await readEvidence(host.page);
     const visualCheck = await readVisualCheck(host.page);
 
-    if (
-      !evidence.hasResult ||
-      evidence.liveMood !== "result" ||
-      evidence.roomStatus !== "Ended" ||
-      evidence.winner === "none"
-    ) {
+    if (!evidence.hasResult || evidence.liveMood !== "result" || evidence.winner === null) {
       throw new Error(`Game did not end cleanly: ${JSON.stringify(evidence)}`);
     }
 
@@ -293,8 +295,6 @@ async function assertRoomClosedSetupState(page) {
   await page.getByLabel("Room setup").waitFor({ timeout: 10000 });
   await page.getByRole("button", { name: "Create room" }).waitFor({ timeout: 10000 });
   await page.getByRole("button", { name: "Join room" }).waitFor({ timeout: 10000 });
-  await page.getByText(ROOM_CLOSED_STATUS_MESSAGE).waitFor({ timeout: 10000 });
-
   const liveTableCount = await page.getByLabel("Live game table").count();
 
   if (liveTableCount !== 0) {
@@ -420,7 +420,7 @@ async function readMetric(page, label) {
     }
 
     if (metricLabel === "Timer") {
-      return textOf(document.querySelector('[aria-label="Current phase"] time'));
+      return textOf(document.querySelector(".livePlayPhasePanel time"));
     }
 
     for (const row of document.querySelectorAll(".liveMetrics div")) {
@@ -453,12 +453,6 @@ async function assertInviteTools(page, roomCode) {
 
 async function assertCopyRoomCode(page, roomCode) {
   await page.getByRole("button", { name: "Copy code" }).click();
-  await page.waitForFunction(
-    (expectedRoomCode) =>
-      document.body.textContent.includes(`Room code ${expectedRoomCode} copied.`),
-    roomCode,
-    { timeout: 5000 },
-  );
   await page.getByRole("button", { name: "Copied!" }).waitFor({ timeout: 5000 });
 
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
@@ -500,13 +494,46 @@ async function waitMetric(page, label, expected) {
 }
 
 async function waitPhase(page, phase) {
-  await page
-    .getByText(new RegExp(`playing / ${phase}`, "i"))
-    .first()
-    .waitFor({ timeout: 10000 });
+  await page.locator(`.liveShell[data-live-mood="${phase}"]`).waitFor({ timeout: 10000 });
+}
+
+async function switchToJapanese(page) {
+  await page.getByRole("button", { name: "Language" }).click();
+  await page.getByRole("menuitemradio", { name: "Japanese" }).click();
+  await page.getByLabel("進行中ゲームテーブル").waitFor({ timeout: 10000 });
+}
+
+async function assertJapaneseLocalization(page, mood) {
+  const bodyText = await page.locator("body").innerText();
+  const expectedPhase = {
+    day: "昼",
+    night: "夜",
+    result: "結果",
+    execution: "処刑",
+    voting: "投票",
+  }[mood];
+  const forbiddenCopy = [
+    "Villager",
+    "Vote",
+    "Ready for voting",
+    "Players ready for voting",
+    "Votes submitted",
+    "Night actions are private until dawn",
+  ];
+
+  if (expectedPhase !== undefined && !bodyText.includes(expectedPhase)) {
+    throw new Error(`Japanese ${mood} view is missing ${expectedPhase}.`);
+  }
+
+  const leakedCopy = forbiddenCopy.filter((copy) => bodyText.includes(copy));
+
+  if (leakedCopy.length > 0) {
+    throw new Error(`Japanese ${mood} view leaked English copy: ${leakedCopy.join(", ")}`);
+  }
 }
 
 async function assertPhaseTimerOpen(page) {
+  await page.locator(".livePlayPhasePanel time").waitFor({ timeout: 10000 });
   const timer = await readMetric(page, "Timer");
 
   if (timer === null || timer === "closed" || timer === "unknown") {
@@ -656,7 +683,7 @@ async function resolveOrderedSpeechDay(players, host) {
     await advance(host);
     await refreshAll(players);
 
-    const hostPhase = await readMetric(host.page, "Phase");
+    const hostPhase = await host.page.locator(".liveShell").getAttribute("data-live-mood");
 
     if (hostPhase === "voting") {
       await waitMood(host.page, "voting");
@@ -664,6 +691,7 @@ async function resolveOrderedSpeechDay(players, host) {
       await assertPhaseTimerOpen(host.page);
       await waitPhase(players[1].page, "voting");
       await waitPhase(players[2].page, "voting");
+      await assertJapaneseLocalization(players[2].page, "voting");
 
       return;
     }
@@ -697,7 +725,7 @@ async function submitVisibleActions(player) {
 }
 
 async function advance(host) {
-  await host.page.getByRole("button", { name: "Advance phase" }).click();
+  await host.page.getByRole("button", { name: "Continue game" }).click();
 }
 
 async function resolveAfterTimeout(host) {
@@ -705,7 +733,7 @@ async function resolveAfterTimeout(host) {
     return "auto";
   }
 
-  const advanceButton = host.page.getByRole("button", { name: "Advance phase" });
+  const advanceButton = host.page.getByRole("button", { name: "Continue game" });
 
   if ((await advanceButton.count()) > 0 && (await advanceButton.first().isEnabled())) {
     await advanceButton.first().click();
@@ -727,7 +755,7 @@ async function resolveAfterTimeout(host) {
       .catch(() => "");
 
     throw new Error(
-      `Advance phase button was not available before the game ended.\n${bodyText.slice(0, 2000)}`,
+      `Continue game button was not available before the game ended.\n${bodyText.slice(0, 2000)}`,
     );
   }
 
@@ -737,26 +765,14 @@ async function resolveAfterTimeout(host) {
 }
 
 async function isEnded(page) {
-  return page.evaluate(() => {
-    if (/\bwon\./.test(document.body.textContent)) {
-      return true;
-    }
-
-    const textOf = (element) => (element === null ? null : element.textContent.trim());
-    const roomStatus = textOf(document.querySelector(".liveRoomPanel .livePanelHeading strong"));
-    const winnerRow = [...document.querySelectorAll(".liveMetrics div")].find(
-      (row) => textOf(row.querySelector("dt")) === "Winner",
-    );
-    const winner = winnerRow === undefined ? null : textOf(winnerRow.querySelector("dd"));
-
-    return roomStatus === "Ended" && winner !== null && winner !== "none";
-  });
+  return page
+    .locator('.liveShell[data-live-mood="result"]')
+    .count()
+    .then((count) => count > 0);
 }
 
 async function waitEnded(page) {
-  await page.waitForFunction(() => /\bwon\./.test(document.body.textContent), null, {
-    timeout: 20000,
-  });
+  await page.locator('.liveShell[data-live-mood="result"]').waitFor({ timeout: 20000 });
 }
 
 async function readEvidence(page) {
@@ -770,7 +786,10 @@ async function readEvidence(page) {
       return row === undefined ? null : textOf(row.querySelector("dd"));
     };
     const bodyText = document.body.textContent;
-    const winnerMatch = /\b(?<winner>Villagers|Werewolves|Fox|Neutral) won\./.exec(bodyText);
+    const resultText = textOf(document.querySelector(".livePlayPhaseCard strong"));
+    const winnerMatch = /^(?<winner>Villagers|Werewolves|Fox|Neutral) won\.$/.exec(
+      resultText ?? "",
+    );
 
     return {
       hasLiveTable: document.querySelector(".liveShell") !== null,
@@ -786,7 +805,7 @@ async function readEvidence(page) {
       status: textOf(document.querySelector(".liveStatusBar strong")),
       title: document.title,
       url: location.href,
-      winner: metric("Winner") ?? winnerMatch?.groups?.winner ?? null,
+      winner: winnerMatch?.groups?.winner ?? null,
     };
   });
 }

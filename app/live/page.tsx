@@ -5,8 +5,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
+import { getLiveSeatPresentation } from "@/app/live/liveSeatPresentation";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
-import { type Locale, type Localization } from "@/lib/i18n/localization";
+import {
+  getLocalizedActionButtonLabel,
+  getLocalizedActionLabel,
+  getLocalizedActionProgressLabel,
+  getLocalizedNightConversationLabel,
+  getLocalizedRole,
+  getLocalizedRoleOptionLabel,
+  getLocalizedRolePreset,
+  type Locale,
+  type Localization,
+} from "@/lib/i18n/localization";
 import {
   DEFAULT_TARGET_PLAYER_COUNT,
   DEFAULT_RULE_SET_OPTIONS,
@@ -74,8 +85,6 @@ type StartRuleSetSettings = RuleSetInput;
 
 type LiveMood = "closed" | "day" | "execution" | "lobby" | "night" | "result" | "setup" | "voting";
 
-type LiveSeatState = "eliminated" | "observing" | "pending" | "ready" | "speaking" | "voted";
-
 type RoundTableSeatPosition = {
   readonly x: number;
   readonly y: number;
@@ -106,7 +115,6 @@ type LivePlaySurfaceProps = {
   readonly isPublicLogOpen: boolean;
   readonly locale: Locale;
   readonly nightConversationDraft: string;
-  readonly roomStatusLabel: string;
   readonly selfActions: readonly PublicAction[];
   readonly summary: RoomSummary;
   readonly targetByActionKey: Record<string, string>;
@@ -1039,10 +1047,12 @@ export default function LivePage() {
 
   return (
     <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
-      <section className="liveHero">
+      <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
         <div className="liveHeroTitle">
-          <h1>{getLivePageTitle(roomSummary, t)}</h1>
-          <p>{roomStatusLabel}</p>
+          <h1 className={isGameSurface ? "srOnly" : undefined}>
+            {getLivePageTitle(roomSummary, t)}
+          </h1>
+          {isGameSurface ? null : <p>{roomStatusLabel}</p>}
         </div>
         <LanguageSwitcher />
       </section>
@@ -1161,14 +1171,14 @@ export default function LivePage() {
                     ? t.live.lobby.startWhenEveryoneSeated
                     : t.live.lobby.waitingForHost}
                 </strong>
-                <p>{controlHint}</p>
+                {canStartGame ? null : <p>{controlHint}</p>}
               </div>
 
               <div className="liveLobbyActions">
                 {roomSummary.isHost ? (
                   <button
                     className="primaryLiveButton"
-                    aria-describedby="control-hint"
+                    aria-describedby={canStartGame ? undefined : "control-hint"}
                     type="button"
                     onClick={handleStartGame}
                     disabled={!canStartGame}
@@ -1178,7 +1188,6 @@ export default function LivePage() {
                 ) : null}
                 <button
                   className="dangerButton"
-                  aria-describedby="control-hint"
                   type="button"
                   onClick={handleLeaveRoom}
                   disabled={isBusy}
@@ -1186,9 +1195,11 @@ export default function LivePage() {
                   {t.live.buttons.leaveRoom}
                 </button>
               </div>
-              <p className="srOnly" id="control-hint">
-                {controlHint}
-              </p>
+              {canStartGame ? null : (
+                <p className="srOnly" id="control-hint">
+                  {controlHint}
+                </p>
+              )}
             </section>
           ) : null}
 
@@ -1200,7 +1211,6 @@ export default function LivePage() {
               isNightConversationOpen={isNightConversationOpen}
               isPublicLogOpen={isPublicLogOpen}
               nightConversationDraft={nightConversationDraft}
-              roomStatusLabel={roomStatusLabel}
               selfActions={selfActions}
               summary={roomSummary}
               targetByActionKey={targetByActionKey}
@@ -1725,7 +1735,6 @@ function SavedRoomState({
   return (
     <div className={isCompact ? "liveEmptyState compact" : "liveEmptyState"}>
       <strong>{t.live.room.restoring(roomCode)}</strong>
-      <p>{t.live.room.currentAlreadyExistsCreate}</p>
     </div>
   );
 }
@@ -1811,10 +1820,6 @@ function LobbyRequirements({
       >
         <span style={{ width: `${progressPercent}%` }} />
       </div>
-      <ul>
-        <li>{t.live.invite.tips.share}</li>
-        <li>{t.live.invite.tips.settings}</li>
-      </ul>
     </div>
   );
 }
@@ -1827,7 +1832,6 @@ function LivePlaySurface({
   isPublicLogOpen,
   locale,
   nightConversationDraft,
-  roomStatusLabel,
   selfActions,
   summary,
   targetByActionKey,
@@ -1858,12 +1862,11 @@ function LivePlaySurface({
         <section className="livePanel livePlayPhasePanel" aria-label={t.live.aria.currentPhase}>
           <div className="livePanelHeading">
             <span>{t.live.aria.currentPhase}</span>
-            <strong>{roomStatusLabel}</strong>
           </div>
 
           <div className="livePlayPhaseCard" aria-live="polite">
             <div>
-              <span>{phaseGuidance.label}</span>
+              <span className="srOnly">{phaseGuidance.label}</span>
               <strong>{phaseGuidance.message}</strong>
             </div>
             {phaseEndsAt === null ? null : (
@@ -1873,63 +1876,69 @@ function LivePlaySurface({
             )}
             {actionProgress === null ? null : (
               <em>
-                {actionProgress.label}: {formatActionProgress(actionProgress, t)}
+                {getLocalizedActionProgressLabel(t, actionProgress.kind)}:{" "}
+                {formatActionProgress(actionProgress, t)}
               </em>
             )}
           </div>
 
           {summary.isHost && summary.game?.status === "playing" ? (
             <div className="livePlayHostTools">
-              <span>{t.live.table.operation}</span>
               <div>
                 <button
                   className="secondaryButton"
-                  aria-describedby="play-control-hint"
+                  aria-describedby={canAdvancePhase ? undefined : "play-control-hint"}
                   type="button"
                   onClick={onAdvancePhase}
                   disabled={!canAdvancePhase}
                 >
                   {t.live.buttons.advancePhase}
                 </button>
-                <p id="play-control-hint">{controlHint}</p>
+                {canAdvancePhase ? null : <p id="play-control-hint">{controlHint}</p>}
               </div>
             </div>
           ) : null}
         </section>
 
-        <section
-          className="livePanel liveNightActionPanel"
-          aria-label={getActionPanelTitle(summary, t)}
-        >
-          <div className="livePanelHeading">
-            <span>{getActionPanelTitle(summary, t)}</span>
-            <strong>{summary.self?.roleName ?? t.game.actions.action}</strong>
-          </div>
+        {summary.self?.roleId === null || summary.self?.roleId === undefined ? null : (
+          <section
+            className="livePanel liveSelfRolePanel"
+            aria-label={`${t.live.player.yourRole}: ${getLocalizedRole(t, summary.self.roleId).name}`}
+          >
+            <span>{t.live.player.yourRole}</span>
+            <strong>{getLocalizedRole(t, summary.self.roleId).name}</strong>
+          </section>
+        )}
 
-          <div className="liveNightActionStack">
-            <ActionList
-              actions={selfActions}
-              isBusy={isBusy}
-              players={summary.players}
-              summary={summary}
-              targetByActionKey={targetByActionKey}
-              locale={locale}
-              t={t}
-              onSubmitAction={onSubmitAction}
-              onTargetChange={onTargetChange}
-            />
-          </div>
-        </section>
+        {selfActions.length === 0 ? null : (
+          <section
+            className="livePanel liveNightActionPanel"
+            aria-label={getActionPanelTitle(summary, t)}
+          >
+            <div className="livePanelHeading">
+              <span>{getActionPanelTitle(summary, t)}</span>
+            </div>
+
+            <div className="liveNightActionStack">
+              <ActionList
+                actions={selfActions}
+                isBusy={isBusy}
+                players={summary.players}
+                targetByActionKey={targetByActionKey}
+                t={t}
+                onSubmitAction={onSubmitAction}
+                onTargetChange={onTargetChange}
+              />
+            </div>
+          </section>
+        )}
 
         <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
-          <button
-            className="secondaryButton"
-            type="button"
-            onClick={onOpenNightConversation}
-            disabled={nightConversation === null}
-          >
-            {t.live.buttons.nightChat}
-          </button>
+          {nightConversation === null ? null : (
+            <button className="secondaryButton" type="button" onClick={onOpenNightConversation}>
+              {t.live.buttons.nightChat}
+            </button>
+          )}
           <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
             {t.live.buttons.publicLog}
             <em>{publicEventCount}</em>
@@ -1942,7 +1951,7 @@ function LivePlaySurface({
           id="night-chat-dialog"
           meta={nightConversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}
           t={t}
-          title={nightConversation.label}
+          title={getLocalizedNightConversationLabel(t, nightConversation.labelKey)}
           onClose={onCloseNightConversation}
         >
           <NightConversationPanel
@@ -1987,13 +1996,11 @@ function LiveRoundTable({
         <div className="tableCenter liveTableCenter">
           <span className={`liveTablePhaseIcon ${getLiveMood(summary)}`} aria-hidden="true" />
           <strong>{getLiveTableTitle(summary, t)}</strong>
-          <span>{getLiveTableNotice(summary, t)}</span>
         </div>
 
         {summary.players.map((player, index) => {
           const position = getRoundTableSeatPosition(index, playerCount);
-          const seatState = getLiveSeatState(player, index, summary);
-          const seatStatusLabel = getLiveSeatStatusLabel(player, index, summary, t);
+          const seatPresentation = getLiveSeatPresentation(player, summary, t);
           const seatStyle: CSSProperties & {
             readonly "--seat-x": string;
             readonly "--seat-y": string;
@@ -2005,7 +2012,8 @@ function LiveRoundTable({
           const seatClassName = [
             "seat",
             "liveTableSeat",
-            seatState,
+            seatPresentation.state,
+            player.isHost ? "host" : "",
             player.isCurrent ? "selected" : "",
           ]
             .filter(Boolean)
@@ -2016,7 +2024,7 @@ function LiveRoundTable({
               className={seatClassName}
               key={player.id}
               style={seatStyle}
-              aria-label={`${player.displayName}, ${seatStatusLabel}`}
+              aria-label={[player.displayName, ...seatPresentation.ariaLabels].join(", ")}
             >
               <span className="seatNumber">{index + 1}</span>
               <span className="avatar" aria-hidden="true">
@@ -2024,7 +2032,9 @@ function LiveRoundTable({
               </span>
               <span className="seatLabel">
                 <strong>{player.displayName}</strong>
-                <small>{seatStatusLabel}</small>
+                {seatPresentation.visibleLabel === null ? null : (
+                  <small>{seatPresentation.visibleLabel}</small>
+                )}
               </span>
             </div>
           );
@@ -2368,13 +2378,16 @@ function StartRuleSetPanel({
                       : "liveRolePresetStatus is-selected"
                   }
                 >
-                  {selectedRolePreset?.name ?? t.live.settings.roles.custom}
+                  {selectedRolePreset === null
+                    ? t.live.settings.roles.custom
+                    : getLocalizedRolePreset(t, selectedRolePreset.id).name}
                 </span>
               </div>
 
               <div className="liveRolePresetGrid" aria-label={t.live.aria.rolePresets}>
                 {rolePresets.map((preset) => {
                   const isSelected = selectedRolePreset?.id === preset.id;
+                  const localizedPreset = getLocalizedRolePreset(t, preset.id);
                   const presetRoleEntries = getPresetRoleEntries(
                     preset.roleCounts,
                     startRoleCatalog,
@@ -2391,22 +2404,30 @@ function StartRuleSetPanel({
                       onClick={() => onRolePresetSelect(preset)}
                     >
                       <span className="liveRolePresetMark" aria-hidden="true">
-                        {preset.shortLabel}
+                        {localizedPreset.shortLabel}
                       </span>
                       <span className="liveRolePresetCopy">
-                        <strong>{preset.name}</strong>
-                        <em>{preset.description}</em>
+                        <strong>{localizedPreset.name}</strong>
+                        <em>{localizedPreset.description}</em>
                       </span>
                       <span
                         className="liveRolePresetChips"
-                        aria-label={t.live.settings.roles.presetRoleMix(preset.name)}
+                        aria-label={t.live.settings.roles.presetRoleMix(localizedPreset.name)}
                       >
-                        {presetRoleEntries.map(({ count, role }) => (
-                          <span className="liveRolePresetChip" key={role.id} title={role.name}>
-                            <strong>{count}</strong>
-                            {role.shortLabel}
-                          </span>
-                        ))}
+                        {presetRoleEntries.map(({ count, role }) => {
+                          const localizedRole = getLocalizedRole(t, role.id);
+
+                          return (
+                            <span
+                              className="liveRolePresetChip"
+                              key={role.id}
+                              title={localizedRole.name}
+                            >
+                              <strong>{count}</strong>
+                              {localizedRole.shortLabel}
+                            </span>
+                          );
+                        })}
                       </span>
                     </button>
                   );
@@ -2439,7 +2460,8 @@ function StartRuleSetPanel({
                 startRoleCatalog.map((role) => {
                   const roleId = role.id;
                   const count = getRoleCount(roleCounts, roleId);
-                  const roleName = role.name;
+                  const localizedRole = getLocalizedRole(t, roleId);
+                  const roleName = localizedRole.name;
                   const canDecrease = canChangeRoleCount(
                     roleCounts,
                     roleId,
@@ -2461,11 +2483,11 @@ function StartRuleSetPanel({
                       key={roleId}
                     >
                       <span className="liveRoleIcon" aria-hidden="true">
-                        {role.shortLabel}
+                        {localizedRole.shortLabel}
                       </span>
                       <div>
                         <div className="liveRoleName">{roleName}</div>
-                        <div className="liveRoleDescription">{role.description}</div>
+                        <div className="liveRoleDescription">{localizedRole.description}</div>
                       </div>
                       <div
                         className="liveRoleCounter"
@@ -2507,9 +2529,16 @@ function StartRuleSetPanel({
               {activeRoleOptions.map(({ option, role }) => (
                 <div className="liveSettingsOptionCard" key={`${role.id}:${option.key}`}>
                   <h4>
-                    {role.name} - {option.label}
+                    {getLocalizedRole(t, role.id).name} -{" "}
+                    {getLocalizedRoleOptionLabel(t, role.id, option.key)}
                   </h4>
-                  {renderRoleSpecificOptionControl(option, settings, onSettingsChange, t)}
+                  {renderRoleSpecificOptionControl(
+                    option,
+                    getLocalizedRoleOptionLabel(t, role.id, option.key),
+                    settings,
+                    onSettingsChange,
+                    t,
+                  )}
                 </div>
               ))}
 
@@ -2603,7 +2632,7 @@ function NightConversationPanel({
   return (
     <div className="liveNightChatPanel" aria-label={t.live.aria.nightConversation}>
       <div className="liveNightChatHeader">
-        <strong>{conversation.label}</strong>
+        <strong>{getLocalizedNightConversationLabel(t, conversation.labelKey)}</strong>
         <em>{conversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}</em>
       </div>
 
@@ -2653,9 +2682,7 @@ function NightConversationPanel({
 function ActionList({
   actions,
   isBusy,
-  locale,
   players,
-  summary,
   t,
   targetByActionKey,
   onTargetChange,
@@ -2663,23 +2690,14 @@ function ActionList({
 }: {
   readonly actions: readonly PublicAction[];
   readonly isBusy: boolean;
-  readonly locale: Locale;
   readonly players: readonly PublicPlayer[];
-  readonly summary: RoomSummary | null;
   readonly t: Localization;
   readonly targetByActionKey: Record<string, string>;
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
   readonly onSubmitAction: (action: PublicAction) => void;
 }) {
   if (actions.length === 0) {
-    const emptyCopy = getEmptyActionCopy(summary, t);
-
-    return (
-      <div className="liveEmptyState compact">
-        <strong>{emptyCopy.title}</strong>
-        <p>{emptyCopy.body}</p>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -2696,12 +2714,8 @@ function ActionList({
             key={action.key}
           >
             <div>
-              <strong>{action.label}</strong>
-              <span>
-                {action.status === "submitted"
-                  ? t.game.actionStatus.submitted
-                  : formatDateTime(action.closesAt, locale, t)}
-              </span>
+              <strong>{getLocalizedActionLabel(t, action.kind)}</strong>
+              {action.status === "submitted" ? <span>{t.game.actionStatus.submitted}</span> : null}
             </div>
 
             {action.targetKind === "single_player" && action.status === "open" ? (
@@ -2735,29 +2749,6 @@ function ActionList({
       })}
     </div>
   );
-}
-
-function getEmptyActionCopy(
-  summary: RoomSummary | null,
-  t: Localization,
-): { body: string; title: string } {
-  if (summary === null) {
-    return t.game.actions.empty.noRoom;
-  }
-
-  if (summary.status === "disbanded") {
-    return t.game.actions.empty.roomClosed;
-  }
-
-  if (summary.game?.status === "ended") {
-    return t.game.actions.empty.gameComplete;
-  }
-
-  if (summary.status === "lobby") {
-    return t.game.actions.empty.waitingForStart;
-  }
-
-  return t.game.actions.empty.noActions;
 }
 
 function EventLog({
@@ -3210,6 +3201,7 @@ function getActiveRoleSpecificOptions(
 
 function renderRoleSpecificOptionControl(
   option: RoleSpecificOptionItem,
+  optionLabel: string,
   settings: StartRuleSetSettings,
   onSettingsChange: <Key extends keyof StartRuleSetSettings>(
     key: Key,
@@ -3265,7 +3257,7 @@ function renderRoleSpecificOptionControl(
         </div>
       );
     default:
-      return <p>{t.live.settings.roleSpecific.notConfigurable(option.label)}</p>;
+      return <p>{t.live.settings.roleSpecific.notConfigurable(optionLabel)}</p>;
   }
 }
 
@@ -3424,34 +3416,6 @@ function getLiveTableTitle(summary: RoomSummary, t: Localization): string {
   return formatPhaseTitle(summary.game?.phase ?? null, t);
 }
 
-function getLiveTableNotice(summary: RoomSummary, t: Localization): string {
-  if (summary.status === "disbanded") {
-    return t.live.table.closed;
-  }
-
-  if (summary.game?.status === "ended") {
-    return t.live.table.noticeResult(formatWinner(summary.game.winnerTeam, t));
-  }
-
-  if (summary.game?.phase === "night") {
-    return t.live.table.noticeNight;
-  }
-
-  if (summary.game?.phase === "day") {
-    return t.live.table.noticeDay;
-  }
-
-  if (summary.game?.phase === "voting") {
-    return t.live.table.noticeVoting;
-  }
-
-  if (summary.game?.phase === "execution") {
-    return t.live.table.noticeExecution;
-  }
-
-  return t.live.table.gameStateLoading;
-}
-
 function getActionPanelTitle(summary: RoomSummary, t: Localization): string {
   if (summary.game?.phase === "night") {
     return t.game.actions.night;
@@ -3508,111 +3472,6 @@ function getRoundTableSeatPosition(index: number, totalPlayers: number): RoundTa
     x: Number((50 + Math.cos(angle) * radius).toFixed(3)),
     y: Number((50 + Math.sin(angle) * radius).toFixed(3)),
   };
-}
-
-function getLiveSeatState(
-  player: PublicPlayer,
-  index: number,
-  summary: RoomSummary,
-): LiveSeatState {
-  if (player.alive === false) {
-    return "eliminated";
-  }
-
-  if (player.status !== "joined") {
-    return "observing";
-  }
-
-  if (summary.game?.status === "ended") {
-    return "ready";
-  }
-
-  if (summary.game?.phase === "voting") {
-    const progress = summary.game.actionProgress;
-
-    if (progress?.visibility === "public") {
-      const livingSeatIndex = getLivingSeatIndex(player, summary);
-
-      return livingSeatIndex >= 0 && livingSeatIndex < progress.submitted ? "voted" : "pending";
-    }
-
-    return "pending";
-  }
-
-  if (summary.game?.phase === "execution") {
-    return index % 3 === 2 ? "pending" : "observing";
-  }
-
-  if (summary.game?.phase === "day") {
-    return index % 5 === 4 ? "speaking" : "ready";
-  }
-
-  if (summary.game?.phase === "night") {
-    if (index % 4 === 2) {
-      return "pending";
-    }
-
-    if (index % 5 === 4) {
-      return "speaking";
-    }
-
-    return index % 3 === 0 ? "observing" : "ready";
-  }
-
-  return "observing";
-}
-
-function getLiveSeatStatusLabel(
-  player: PublicPlayer,
-  index: number,
-  summary: RoomSummary,
-  t: Localization,
-): string {
-  if (player.alive === false) {
-    return t.game.seatStatus.out;
-  }
-
-  if (player.status === "disconnected") {
-    return t.game.seatStatus.disconnected;
-  }
-
-  if (player.status === "left") {
-    return t.game.seatStatus.left;
-  }
-
-  if (player.isHost) {
-    return t.game.seatStatus.host;
-  }
-
-  if (player.isCurrent) {
-    return t.game.seatStatus.you;
-  }
-
-  const seatState = getLiveSeatState(player, index, summary);
-
-  if (seatState === "voted") {
-    return t.game.seatStatus.voted;
-  }
-
-  if (seatState === "pending") {
-    return t.game.seatStatus.pending;
-  }
-
-  if (seatState === "speaking") {
-    return t.game.seatStatus.speaking;
-  }
-
-  if (seatState === "ready") {
-    return t.game.seatStatus.ready;
-  }
-
-  return t.game.seatStatus.watching;
-}
-
-function getLivingSeatIndex(player: PublicPlayer, summary: RoomSummary): number {
-  return summary.players
-    .filter((candidate) => candidate.status === "joined" && candidate.alive !== false)
-    .findIndex((candidate) => candidate.id === player.id);
 }
 
 function getPlayerInitial(displayName: string): string {
@@ -3708,12 +3567,14 @@ function getLiveGuidance(
     return t.live.guidance.progress(
       summary.game.actionProgress.submitted,
       summary.game.actionProgress.required,
-      summary.game.actionProgress.label,
+      getLocalizedActionProgressLabel(t, summary.game.actionProgress.kind),
     );
   }
 
   if (summary.game?.actionProgress?.visibility === "hidden") {
-    return t.live.guidance.privateNight(summary.game.actionProgress.label);
+    return t.live.guidance.privateNight(
+      getLocalizedActionProgressLabel(t, summary.game.actionProgress.kind),
+    );
   }
 
   if (summary.isHost) {
@@ -3816,7 +3677,7 @@ function getActionButtonLabel(action: PublicAction, isBusy: boolean, t: Localiza
     return t.game.actions.button.submitting;
   }
 
-  return t.game.actions.button.submit;
+  return getLocalizedActionButtonLabel(t, action.kind);
 }
 
 function formatRoomStatus(summary: RoomSummary | null, t: Localization): string {
