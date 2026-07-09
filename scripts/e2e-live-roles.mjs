@@ -760,10 +760,7 @@ async function waitMetric(page, label, expected) {
 }
 
 async function waitPhase(page, phase) {
-  await page
-    .getByText(new RegExp(`playing / ${phase}`, "i"))
-    .first()
-    .waitFor({ timeout: 10000 });
+  await page.locator(`.liveShell[data-live-mood="${phase}"]`).waitFor({ timeout: 10000 });
 }
 
 async function waitAllPhases(players, phase) {
@@ -783,7 +780,7 @@ async function refreshAll(players) {
 }
 
 async function advance(host) {
-  await host.page.getByRole("button", { name: "Advance phase" }).click();
+  await host.page.getByRole("button", { name: "Continue game" }).click();
 }
 
 function trimTrailingSlash(value) {
