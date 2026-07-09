@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useI18n } from "@/app/i18nProvider";
+import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
+import { localizations, type Locale, type Localization } from "@/lib/i18n/localization";
 import {
   DEFAULT_TARGET_PLAYER_COUNT,
   DEFAULT_RULE_SET_OPTIONS,
@@ -94,18 +97,25 @@ type LiveGuidance = {
   readonly message: string;
 };
 
+type PublicEventDetail = {
+  readonly label: string;
+  readonly value: string;
+};
+
 type LivePlaySurfaceProps = {
   readonly canAdvancePhase: boolean;
   readonly controlHint: string;
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
+  readonly locale: Locale;
   readonly nightConversationDraft: string;
   readonly roomStatusLabel: string;
   readonly selfActions: readonly PublicAction[];
   readonly statusMessage: string;
   readonly summary: RoomSummary;
   readonly targetByActionKey: Record<string, string>;
+  readonly t: Localization;
   readonly onAdvancePhase: () => void;
   readonly onCloseNightConversation: () => void;
   readonly onClosePublicLog: () => void;
@@ -122,6 +132,7 @@ type LiveSetupSurfaceProps = {
   readonly isBusy: boolean;
   readonly roomCodeInput: string;
   readonly statusMessage: string;
+  readonly t: Localization;
   readonly targetPlayerCount: number;
   readonly onCreateRoom: () => void;
   readonly onDisplayNameChange: (displayName: string) => void;
@@ -150,8 +161,6 @@ type StartSettingsTab = "general" | "roles" | "timers";
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
 const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
-const INVALID_IDENTITY_STATUS_MESSAGE = "Browser identity expired. Create or join a room.";
-const ROOM_CLOSED_STATUS_MESSAGE = "Room closed. Create or join a room.";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
 const PLAYER_COUNT_OPTIONS = Array.from(
@@ -197,18 +206,14 @@ const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
   votingSeconds: { max: 300, min: 1 },
 };
 
-const START_SETTINGS_TABS: readonly {
-  readonly id: StartSettingsTab;
-  readonly label: string;
-}[] = [
-  { id: "general", label: "General" },
-  { id: "timers", label: "Timers" },
-  { id: "roles", label: "Roles" },
-];
+const START_SETTINGS_TABS: readonly StartSettingsTab[] = ["general", "timers", "roles"];
 
 export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
+  const { locale, t } = useI18n();
   const isDevMode = devFixtures.length > 0;
   const initialDevFixture = getDevFixture(devFixtures, devInitialFixtureId);
+  const invalidIdentityStatusMessage = t.live.room.identityExpired;
+  const roomClosedStatusMessage = t.live.room.closed;
   const [identityToken, setIdentityToken] = useState<string | null>(() =>
     isDevMode ? "dev-token" : null,
   );
@@ -238,10 +243,9 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   const copiedInviteResetTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
-  const [statusMessage, setStatusMessage] = useState(
-    "Your browser identity stays local and can rejoin the room.",
-  );
+  const [statusMessage, setStatusMessage] = useState(t.live.room.initialStatus);
   const [isBusy, setIsBusy] = useState(false);
+  const localizedStatusMessage = localizeStatusMessage(statusMessage, t);
 
   useEffect(() => {
     if (isDevMode) {
@@ -334,7 +338,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       return identityToken;
     }
 
-    return createIdentityToken("This browser is ready to join a table.");
+    return createIdentityToken(t.live.room.readyToJoin);
   }
 
   const clearCurrentRoom = useCallback(
@@ -355,12 +359,12 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   );
 
   const resetInvalidIdentity = useCallback(
-    (nextStatusMessage = INVALID_IDENTITY_STATUS_MESSAGE) => {
+    (nextStatusMessage = invalidIdentityStatusMessage) => {
       removeStorage(IDENTITY_STORAGE_KEY);
       setIdentityToken(null);
       clearCurrentRoom(nextStatusMessage);
     },
-    [clearCurrentRoom],
+    [clearCurrentRoom, invalidIdentityStatusMessage],
   );
 
   async function withBusy(work: () => Promise<void>): Promise<void> {
@@ -374,7 +378,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         return;
       }
 
-      setStatusMessage(toRequestFailureMessage(error));
+      setStatusMessage(toRequestFailureMessage(error, t));
     } finally {
       setIsBusy(false);
     }
@@ -392,8 +396,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         throw error;
       }
 
-      resetInvalidIdentity("Browser identity expired. Creating a new identity.");
-      const nextToken = await createIdentityToken("This browser identity was reset.");
+      resetInvalidIdentity(t.live.room.identityResetting);
+      const nextToken = await createIdentityToken(t.live.room.identityReset);
 
       return request(nextToken);
     }
@@ -406,7 +410,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       }
 
       if (nextSummary.status === "disbanded") {
-        clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: nextSummary.code });
+        clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: nextSummary.code });
         return false;
       }
 
@@ -422,7 +426,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
       return true;
     },
-    [clearCurrentRoom, displayName],
+    [clearCurrentRoom, displayName, roomClosedStatusMessage],
   );
 
   useEffect(() => {
@@ -434,9 +438,9 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       removeStorage(ROOM_CODE_STORAGE_KEY);
       setSavedRoomCode(null);
       setRoomCodeInput("");
-      setStatusMessage("Saved room expired. Create or join a room.");
+      setStatusMessage(t.live.room.savedExpired);
     }
-  }, [identityToken, isDevMode, savedRoomCode]);
+  }, [identityToken, isDevMode, savedRoomCode, t]);
 
   useEffect(() => {
     if (isDevMode) {
@@ -454,7 +458,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     let isCancelled = false;
     const activeToken = identityToken;
 
-    setStatusMessage(`Restoring room ${savedRoomCode}.`);
+    setStatusMessage(t.live.room.restoring(savedRoomCode));
 
     async function restoreSavedRoom(): Promise<void> {
       try {
@@ -465,7 +469,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
         if (!isCancelled) {
           if (rememberRoom(summary, { resetActionTargets: false })) {
-            setStatusMessage(`Room ${summary.code} restored.`);
+            setStatusMessage(t.live.room.restored(summary.code));
           }
         }
       } catch (error) {
@@ -476,11 +480,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
           }
 
           if (isNotFoundRequestError(error)) {
-            clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: savedRoomCode });
+            clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: savedRoomCode });
             return;
           }
 
-          clearCurrentRoom("Saved room could not be restored. Create or join a room.", {
+          clearCurrentRoom(t.live.room.savedCouldNotRestore, {
             ignoredRoomCode: savedRoomCode,
           });
         }
@@ -498,8 +502,10 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     isDevMode,
     rememberRoom,
     resetInvalidIdentity,
+    roomClosedStatusMessage,
     roomSummary,
     savedRoomCode,
+    t,
   ]);
 
   const activeRoomCode = roomSummary?.code ?? null;
@@ -541,11 +547,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
           }
 
           if (isNotFoundRequestError(error)) {
-            clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: activeRoomCode });
+            clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: activeRoomCode });
             return;
           }
 
-          setStatusMessage("Room sync failed. Use Refresh if the table looks stale.");
+          setStatusMessage(t.live.room.syncFailed);
         }
       }
     }
@@ -565,6 +571,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     isDevMode,
     rememberRoom,
     resetInvalidIdentity,
+    roomClosedStatusMessage,
+    t,
   ]);
 
   useEffect(() => {
@@ -672,11 +680,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
           }
 
           if (isNotFoundRequestError(error)) {
-            clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: activeRoomCode });
+            clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: activeRoomCode });
             return;
           }
 
-          setStatusMessage("Realtime update failed. Polling is still active.");
+          setStatusMessage(t.live.status.realtimeFailed);
         }
       } finally {
         isSyncing = false;
@@ -710,6 +718,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     isDevMode,
     rememberRoom,
     resetInvalidIdentity,
+    roomClosedStatusMessage,
+    t,
   ]);
 
   useEffect(() => {
@@ -738,7 +748,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
           if (!isCancelled) {
             rememberRoom(summary, { resetActionTargets: false });
-            setStatusMessage("Phase timer elapsed; the room checked whether it can advance.");
+            setStatusMessage(t.live.status.timerAdvanceChecked);
           }
         } catch (error) {
           if (!isCancelled) {
@@ -747,7 +757,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
               return;
             }
 
-            setStatusMessage("Phase timer elapsed, but the room could not advance yet.");
+            setStatusMessage(t.live.status.timerAdvanceFailed);
           }
         }
       })();
@@ -766,6 +776,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     isHostInPlayingRoom,
     rememberRoom,
     resetInvalidIdentity,
+    t,
   ]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
@@ -799,7 +810,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     setIsPublicLogOpen(false);
     setNightConversationDraft("");
     setIsStartSettingsOpen(false);
-    setStatusMessage(`Loaded ${fixture.label} dev fixture. No API calls will be made.`);
+    setStatusMessage(t.live.dev.fixtureLoaded(fixture.label));
   }
 
   function handleCreateRoom(): void {
@@ -815,7 +826,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
-        setStatusMessage("Leave the current room before creating another room.");
+        setStatusMessage(t.live.room.currentAlreadyExistsCreate);
         return;
       }
 
@@ -829,7 +840,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
       ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
-      setStatusMessage(`Room ${summary.code} created. Share the code with players.`);
+      setStatusMessage(t.live.room.created(summary.code));
     });
   }
 
@@ -846,11 +857,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
-        setStatusMessage("Leave the current room before joining another room.");
+        setStatusMessage(t.live.room.currentAlreadyExistsJoin);
         return;
       }
 
-      const roomCode = requireRoomCode(roomCodeInput);
+      const roomCode = requireRoomCode(roomCodeInput, t);
       const summary = await withFreshIdentityToken((token) =>
         apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
           body: { displayName },
@@ -861,7 +872,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
       ignoredRoomCodeRef.current = null;
       rememberRoom(summary);
-      setStatusMessage(`Joined room ${summary.code}.`);
+      setStatusMessage(t.live.room.joined(summary.code));
     });
   }
 
@@ -871,7 +882,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
       if (fixture !== undefined) {
         handleDevFixtureChange(fixture);
-        setStatusMessage(`Dev fixture reset to ${fixture.label}.`);
+        setStatusMessage(t.live.dev.fixtureReset(fixture.label));
       }
 
       return;
@@ -879,7 +890,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
 
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}`, {
@@ -888,11 +899,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         });
 
         if (rememberRoom(summary)) {
-          setStatusMessage(`Room ${summary.code} synced.`);
+          setStatusMessage(t.live.room.synced(summary.code));
         }
       } catch (error) {
         if (isNotFoundRequestError(error)) {
-          clearCurrentRoom(ROOM_CLOSED_STATUS_MESSAGE, { ignoredRoomCode: roomCode });
+          clearCurrentRoom(roomClosedStatusMessage, { ignoredRoomCode: roomCode });
           return;
         }
 
@@ -914,7 +925,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/start`, {
         body: { ruleSet: buildStartRuleSetInput(startRuleSetSettings) },
         method: "POST",
@@ -922,7 +933,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       });
 
       rememberRoom(summary);
-      setStatusMessage("Game started. Each player can check their private action card.");
+      setStatusMessage(t.live.status.gameStarted);
     });
   }
 
@@ -939,19 +950,19 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
-      const previousStatus = formatRoomStatus(roomSummary);
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+      const previousStatus = formatRoomStatus(roomSummary, t);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/resolve`, {
         method: "POST",
         token,
       });
-      const nextStatus = formatRoomStatus(summary);
+      const nextStatus = formatRoomStatus(summary, t);
 
       rememberRoom(summary);
       setStatusMessage(
         previousStatus === nextStatus
-          ? "Still waiting for pending actions or the phase timer."
-          : `Advanced to ${nextStatus}.`,
+          ? t.live.status.phaseStillWaiting
+          : t.live.status.advancedTo(nextStatus),
       );
     });
   }
@@ -966,37 +977,37 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       setIsPublicLogOpen(false);
       setNightConversationDraft("");
       setIsStartSettingsOpen(false);
-      setStatusMessage("Dev fixture cleared. Use the dev toolbar to load a phase.");
+      setStatusMessage(t.live.dev.fixtureCleared);
       return;
     }
 
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
       await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/leave`, {
         method: "POST",
         token,
       });
 
-      clearCurrentRoom("Left the room.", { ignoredRoomCode: roomCode });
+      clearCurrentRoom(t.live.room.left, { ignoredRoomCode: roomCode });
     });
   }
 
   function handleSubmitAction(action: PublicAction): void {
     if (isDevMode) {
       setRoomSummary((currentSummary) => markDevActionSubmitted(currentSummary, action));
-      setStatusMessage(`${action.label} submitted in the local dev fixture.`);
+      setStatusMessage(t.live.status.actionSubmittedDev(action.label));
       return;
     }
 
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
       const expectedRevision = roomSummary?.game?.revision;
       const targetPlayerId = action.targetKind === "single_player" ? getActionTarget(action) : null;
 
       if (expectedRevision === undefined) {
-        throw new Error("Action window is not open.");
+        throw new Error(t.live.status.actionWindowClosed);
       }
 
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
@@ -1011,7 +1022,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       });
 
       rememberRoom(summary);
-      setStatusMessage(`${action.label} submitted. Waiting for the table to catch up.`);
+      setStatusMessage(t.live.status.actionSubmitted(action.label));
     });
   }
 
@@ -1021,17 +1032,17 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         appendDevNightConversationMessage(currentSummary, conversation, nightConversationDraft),
       );
       setNightConversationDraft("");
-      setStatusMessage(`${conversation.label} message added to the dev fixture.`);
+      setStatusMessage(t.live.status.nightMessageAddedDev(conversation.label));
       return;
     }
 
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput);
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
       const phaseInstanceId = roomSummary?.game?.phaseInstanceId;
 
       if (phaseInstanceId === null || phaseInstanceId === undefined) {
-        throw new Error("Night chat is not open.");
+        throw new Error(t.live.status.nightChatClosed);
       }
 
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/night-conversation`, {
@@ -1047,7 +1058,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
       setNightConversationDraft("");
       rememberRoom(summary, { resetActionTargets: false });
-      setStatusMessage(`${conversation.label} message sent.`);
+      setStatusMessage(t.live.status.nightMessageSent(conversation.label));
     });
   }
 
@@ -1060,7 +1071,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       }
 
       setCopiedInviteRoomCode(roomCode);
-      setStatusMessage(`Room code ${roomCode} copied.`);
+      setStatusMessage(t.live.invite.codeCopied(roomCode));
       copiedInviteResetTimerRef.current = window.setTimeout(() => {
         setCopiedInviteRoomCode((currentRoomCode) =>
           currentRoomCode === roomCode ? null : currentRoomCode,
@@ -1071,25 +1082,25 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     }
 
     setRoomCodeInput(roomCode);
-    setStatusMessage(`Copy is unavailable. Use room code ${roomCode}.`);
+    setStatusMessage(t.live.invite.copyUnavailable(roomCode));
   }
 
   async function handleShareRoom(roomCode: string): Promise<void> {
     const roomUrl = getLiveRoomUrl();
-    const inviteText = `Jinroh Web room ${roomCode}\nOpen ${roomUrl} and join with this code.`;
+    const inviteText = t.live.invite.inviteText(roomCode, roomUrl);
 
     if (typeof navigator.share === "function") {
       try {
         await navigator.share({
-          text: `Join Jinroh Web room ${roomCode}.`,
+          text: t.live.invite.shareText(roomCode),
           title: "Jinroh Web",
           url: roomUrl,
         });
-        setStatusMessage(`Share sheet opened for room ${roomCode}.`);
+        setStatusMessage(t.live.invite.shareSheetOpened(roomCode));
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
-          setStatusMessage("Share cancelled.");
+          setStatusMessage(t.live.invite.shareCancelled);
           return;
         }
       }
@@ -1098,12 +1109,12 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     const didCopy = await writeClipboardText(inviteText);
 
     if (didCopy) {
-      setStatusMessage(`Invite text copied for room ${roomCode}.`);
+      setStatusMessage(t.live.invite.inviteCopied(roomCode));
       return;
     }
 
     setRoomCodeInput(roomCode);
-    setStatusMessage(`Share is unavailable. Use room code ${roomCode}.`);
+    setStatusMessage(t.live.invite.shareUnavailable(roomCode));
   }
 
   function getActionTarget(action: PublicAction): string {
@@ -1111,8 +1122,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   const selfActions = roomSummary?.self?.actions ?? [];
-  const roomStatusLabel = formatRoomStatus(roomSummary);
-  const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy);
+  const roomStatusLabel = formatRoomStatus(roomSummary, t);
+  const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy, t);
   const canStartGame = !isBusy && canStartRoom(roomSummary);
   const canConfigureStartSettings = roomSummary?.isHost === true && roomSummary.status === "lobby";
   const isGameSurface =
@@ -1124,7 +1135,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     roomSummary?.isHost === true &&
     roomSummary.status === "playing" &&
     roomSummary.game?.status === "playing";
-  const controlHint = getControlHint(roomSummary, isBusy);
+  const controlHint = getControlHint(roomSummary, isBusy, t);
   const liveMood = getLiveMood(roomSummary);
   const isRoomEntryAvailable = roomSummary === null && savedRoomCode === null;
   const liveGridClassName = getLiveGridClassName(roomSummary);
@@ -1133,9 +1144,10 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
       <section className="liveHero">
         <div className="liveHeroTitle">
-          <h1>{getLivePageTitle(roomSummary)}</h1>
+          <h1>{getLivePageTitle(roomSummary, t)}</h1>
           <p>{roomStatusLabel}</p>
         </div>
+        <LanguageSwitcher className="liveLanguageSwitcher" />
       </section>
 
       {isDevMode ? (
@@ -1153,7 +1165,8 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
               displayName={displayName}
               isBusy={isBusy}
               roomCodeInput={roomCodeInput}
-              statusMessage={statusMessage}
+              statusMessage={localizedStatusMessage}
+              t={t}
               targetPlayerCount={targetPlayerCount}
               onCreateRoom={handleCreateRoom}
               onDisplayNameChange={handleDisplayNameChange}
@@ -1166,7 +1179,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
               <section className="liveStatusBar" aria-live="polite">
                 <span>{liveGuidance.label}</span>
                 <strong>{liveGuidance.message}</strong>
-                <small>{statusMessage}</small>
+                <small>{localizedStatusMessage}</small>
               </section>
             </div>
           )}
@@ -1176,23 +1189,23 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
       {isRoomEntryAvailable ? null : (
         <div className={liveGridClassName}>
           {roomSummary === null ? (
-            <section className="livePanel liveRoomPanel" aria-label="Room state">
+            <section className="livePanel liveRoomPanel" aria-label={t.live.aria.roomState}>
               <div className="livePanelHeading">
-                <span>Room</span>
+                <span>{t.live.page.roomSetup}</span>
                 <strong>{roomStatusLabel}</strong>
               </div>
 
               {savedRoomCode === null ? null : (
-                <SavedRoomState isCompact roomCode={savedRoomCode} />
+                <SavedRoomState isCompact roomCode={savedRoomCode} t={t} />
               )}
             </section>
           ) : null}
 
           {roomSummary?.status === "lobby" ? (
             <>
-              <section className="livePanel liveInvitePanel" aria-label="Invite">
+              <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
                 <div className="livePanelHeading">
-                  <span>Invite</span>
+                  <span>{t.live.aria.invite}</span>
                   <div className="livePanelHeadingActions">
                     <strong>{roomStatusLabel}</strong>
                     <button
@@ -1201,7 +1214,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
                       onClick={handleRefreshRoom}
                       disabled={isBusy}
                     >
-                      Refresh
+                      {t.live.buttons.refresh}
                     </button>
                   </div>
                 </div>
@@ -1209,30 +1222,36 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
                 <RoomInviteTools
                   copiedRoomCode={copiedInviteRoomCode}
                   summary={roomSummary}
+                  t={t}
                   onCopyRoomCode={handleCopyRoomCode}
                   onShareRoom={handleShareRoom}
                 />
-                <LobbyRequirements summary={roomSummary} />
+                <LobbyRequirements summary={roomSummary} t={t} />
               </section>
 
-              <section className="livePanel liveSeatPanel" aria-label="Lobby seats">
+              <section className="livePanel liveSeatPanel" aria-label={t.live.aria.lobbySeats}>
                 <div className="livePanelHeading">
-                  <span>Lobby</span>
+                  <span>{t.game.phase.lobby}</span>
                   <strong>
-                    {countJoinedPlayers(roomSummary)} / {roomSummary.targetPlayerCount} seated
+                    {t.live.lobby.seated(
+                      countJoinedPlayers(roomSummary),
+                      roomSummary.targetPlayerCount,
+                    )}
                   </strong>
                 </div>
-                <PlayerSeatGrid summary={roomSummary} />
+                <PlayerSeatGrid summary={roomSummary} t={t} />
               </section>
             </>
           ) : null}
 
           {roomSummary?.status === "lobby" ? (
-            <section className="livePanel liveControlPanel" aria-label="Lobby controls">
+            <section className="livePanel liveControlPanel" aria-label={t.live.aria.lobbyControls}>
               <div className="livePanelHeading">
-                <span>{roomSummary.isHost ? "Host controls" : "Player controls"}</span>
+                <span>
+                  {roomSummary.isHost ? t.live.lobby.hostControls : t.live.lobby.playerControls}
+                </span>
                 <div className="livePanelHeadingActions">
-                  <strong>{roomSummary.isHost ? "Host" : "Player"}</strong>
+                  <strong>{roomSummary.isHost ? t.live.lobby.host : t.live.lobby.player}</strong>
                   {canConfigureStartSettings ? (
                     <button
                       className="secondaryButton liveCompactButton"
@@ -1242,7 +1261,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
                       type="button"
                       onClick={() => setIsStartSettingsOpen(true)}
                     >
-                      Settings
+                      {t.live.buttons.settings}
                     </button>
                   ) : null}
                 </div>
@@ -1250,7 +1269,9 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
 
               <div className="liveLobbyPanel">
                 <strong>
-                  {roomSummary.isHost ? "Start when everyone is seated" : "Waiting for host"}
+                  {roomSummary.isHost
+                    ? t.live.lobby.startWhenEveryoneSeated
+                    : t.live.lobby.waitingForHost}
                 </strong>
                 <p>{controlHint}</p>
               </div>
@@ -1264,7 +1285,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
                     onClick={handleStartGame}
                     disabled={!canStartGame}
                   >
-                    Start game
+                    {t.live.buttons.startGame}
                   </button>
                 ) : null}
                 <button
@@ -1274,7 +1295,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
                   onClick={handleLeaveRoom}
                   disabled={isBusy}
                 >
-                  Leave room
+                  {t.live.buttons.leaveRoom}
                 </button>
               </div>
               <p className="srOnly" id="control-hint">
@@ -1293,9 +1314,11 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
               nightConversationDraft={nightConversationDraft}
               roomStatusLabel={roomStatusLabel}
               selfActions={selfActions}
-              statusMessage={statusMessage}
+              statusMessage={localizedStatusMessage}
               summary={roomSummary}
               targetByActionKey={targetByActionKey}
+              locale={locale}
+              t={t}
               onAdvancePhase={handleResolvePhase}
               onCloseNightConversation={() => setIsNightConversationOpen(false)}
               onClosePublicLog={() => setIsPublicLogOpen(false)}
@@ -1318,6 +1341,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
           playerCount={roomSummary.targetPlayerCount}
           roleCatalog={roomSummary.roleCatalog}
           settings={startRuleSetSettings}
+          t={t}
           onClose={() => setIsStartSettingsOpen(false)}
           onApplySettings={(nextSettings) => setStartRuleSetSettings(nextSettings)}
         />
@@ -1335,11 +1359,13 @@ function DevLiveToolbar({
   readonly fixtures: readonly DevLiveFixture[];
   readonly onSelectFixture: (fixture: DevLiveFixture) => void;
 }) {
+  const { t } = useI18n();
+
   return (
-    <section className="liveDevToolbar" aria-label="Development live fixtures">
+    <section className="liveDevToolbar" aria-label={t.live.aria.developmentFixtures}>
       <div>
-        <span>Dev live</span>
-        <strong>Local fixtures only</strong>
+        <span>{t.live.dev.title}</span>
+        <strong>{t.live.dev.localFixturesOnly}</strong>
       </div>
       <div className="liveDevToolbarActions">
         {fixtures.map((fixture) => (
@@ -1354,7 +1380,7 @@ function DevLiveToolbar({
           </button>
         ))}
         <Link className="secondaryButton" href="/live">
-          Real live
+          {t.live.dev.realLive}
         </Link>
       </div>
     </section>
@@ -1366,6 +1392,7 @@ function StartSettingsDialog({
   playerCount,
   roleCatalog,
   settings,
+  t,
   onClose,
   onApplySettings,
 }: {
@@ -1373,6 +1400,7 @@ function StartSettingsDialog({
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
+  readonly t: Localization;
   readonly onClose: () => void;
   readonly onApplySettings: (settings: StartRuleSetSettings) => void;
 }) {
@@ -1382,7 +1410,7 @@ function StartSettingsDialog({
     roleCounts: { ...settings.roleCounts },
   }));
   const canApplySettings =
-    getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts)
+    getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts, t)
       .length === 0;
 
   function handleDraftSettingsChange<Key extends keyof StartRuleSetSettings>(
@@ -1454,15 +1482,15 @@ function StartSettingsDialog({
       >
         <div className="liveSettingsHeader">
           <div>
-            <span>Host settings</span>
-            <h2 id="start-settings-title">Game settings</h2>
-            <p>Adjust the room flow before the first night starts.</p>
+            <span>{t.live.lobby.hostControls}</span>
+            <h2 id="start-settings-title">{t.live.settings.title}</h2>
+            <p>{t.live.settings.description}</p>
           </div>
           <div className="liveSettingsHeaderActions">
-            <span className="liveSettingsRoomBadge">{playerCount} seats</span>
+            <span className="liveSettingsRoomBadge">{t.live.settings.seats(playerCount)}</span>
             <button
               className="secondaryButton liveIconButton"
-              aria-label="Close settings"
+              aria-label={t.live.buttons.closeSettings}
               type="button"
               onClick={onClose}
             >
@@ -1471,19 +1499,19 @@ function StartSettingsDialog({
           </div>
         </div>
 
-        <div className="liveSettingsTabs" role="tablist" aria-label="Settings sections">
+        <div className="liveSettingsTabs" role="tablist" aria-label={t.live.aria.settingsSections}>
           {START_SETTINGS_TABS.map((tab) => (
             <button
-              aria-controls={`start-settings-${tab.id}-panel`}
-              aria-selected={activeTab === tab.id}
-              className={activeTab === tab.id ? "active" : ""}
-              id={`start-settings-${tab.id}-tab`}
-              key={tab.id}
+              aria-controls={`start-settings-${tab}-panel`}
+              aria-selected={activeTab === tab}
+              className={activeTab === tab ? "active" : ""}
+              id={`start-settings-${tab}-tab`}
+              key={tab}
               role="tab"
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab)}
             >
-              {tab.label}
+              {t.live.settings.tabs[tab]}
             </button>
           ))}
         </div>
@@ -1499,6 +1527,7 @@ function StartSettingsDialog({
             onRoleCountChange={handleDraftRoleCountChange}
             onRolePresetSelect={handleDraftRolePresetSelect}
             onSettingsChange={handleDraftSettingsChange}
+            t={t}
           />
         </div>
 
@@ -1508,14 +1537,14 @@ function StartSettingsDialog({
             type="button"
             onClick={() => setDraftSettings({ ...DEFAULT_START_RULE_SET_SETTINGS, roleCounts: {} })}
           >
-            Reset
+            {t.live.buttons.reset}
           </button>
           <div>
             <button className="secondaryButton" type="button" onClick={onClose}>
-              Cancel
+              {t.live.buttons.cancel}
             </button>
             <button type="button" disabled={!canApplySettings} onClick={handleApplySettings}>
-              Apply settings
+              {t.live.buttons.applySettings}
             </button>
           </div>
         </div>
@@ -1528,12 +1557,14 @@ function LivePopupDialog({
   children,
   id,
   meta,
+  t,
   title,
   onClose,
 }: {
   readonly children: ReactNode;
   readonly id: string;
   readonly meta: string;
+  readonly t: Localization;
   readonly title: string;
   readonly onClose: () => void;
 }) {
@@ -1562,7 +1593,7 @@ function LivePopupDialog({
           </div>
           <button
             className="secondaryButton liveIconButton"
-            aria-label={`Close ${title}`}
+            aria-label={t.live.buttons.closeDialog(title)}
             type="button"
             onClick={onClose}
           >
@@ -1580,6 +1611,7 @@ function LiveSetupSurface({
   isBusy,
   roomCodeInput,
   statusMessage,
+  t,
   targetPlayerCount,
   onCreateRoom,
   onDisplayNameChange,
@@ -1593,7 +1625,7 @@ function LiveSetupSurface({
 
     return roomCodeInput[index] ?? "";
   });
-  const normalizedDisplayName = displayName.trim() || "Player";
+  const normalizedDisplayName = displayName.trim() || t.live.setup.player;
   const isJoinDisabled = isBusy || roomCodeInput.length !== 6;
 
   function focusRoomCodeInput(index: number): void {
@@ -1658,42 +1690,37 @@ function LiveSetupSurface({
   }
 
   return (
-    <section className="liveSetupSurface" aria-label="Room setup">
+    <section className="liveSetupSurface" aria-label={t.live.aria.roomSetup}>
       <section className="liveSetupHero" aria-labelledby="setup-title">
         <div>
-          <div className="liveSetupEyebrow">Setup</div>
-          <h2 id="setup-title">Create or join a private game room.</h2>
-          <p>
-            Keep the first screen focused on the decision players make here: host a new table, or
-            enter a six-digit code from the host.
-          </p>
+          <div className="liveSetupEyebrow">{t.game.phase.setup}</div>
+          <h2 id="setup-title">{t.live.setup.title}</h2>
+          <p>{t.live.setup.decisionCopy}</p>
         </div>
-        <aside className="liveSetupMeter" aria-label="Setup progress">
+        <aside className="liveSetupMeter" aria-label={t.live.aria.setupProgress}>
           <div className="liveSetupMeterLabel">
-            <span>Before room</span>
+            <span>{t.live.setup.beforeRoom}</span>
             <span>1 / 3</span>
           </div>
           <div className="liveSetupMeterTrack" aria-hidden="true" />
-          <p className="liveSetupMeterCopy">
-            Name first, then choose either Create room or Join room.
-          </p>
+          <p className="liveSetupMeterCopy">{t.live.setup.meterCopy}</p>
           <p className="liveSetupStatus" aria-live="polite">
             {statusMessage}
           </p>
         </aside>
       </section>
 
-      <section className="liveSetupActionGrid" aria-label="Room actions">
+      <section className="liveSetupActionGrid" aria-label={t.live.aria.roomActions}>
         <article className="liveSetupPanel liveSetupProfilePanel">
           <div className="liveSetupPanelHeader">
             <div>
-              <p className="liveSetupPanelKicker">Player</p>
-              <h3>Your seat</h3>
+              <p className="liveSetupPanelKicker">{t.live.setup.player}</p>
+              <h3>{t.live.setup.yourSeat}</h3>
             </div>
           </div>
           <div className="liveSetupPanelBody">
             <label className="liveSetupField">
-              Display name
+              {t.live.setup.displayName}
               <input
                 autoComplete="nickname"
                 maxLength={32}
@@ -1707,20 +1734,18 @@ function LiveSetupSurface({
               </div>
               <div>
                 <p className="liveSetupProfileName">{normalizedDisplayName}</p>
-                <p className="liveSetupProfileNote">This identity stays in this browser.</p>
+                <p className="liveSetupProfileNote">{t.live.setup.profileNote}</p>
               </div>
             </div>
-            <p className="liveSetupHint">
-              Use this as the single source for player identity across create and join flows.
-            </p>
+            <p className="liveSetupHint">{t.live.setup.useIdentityHint}</p>
           </div>
         </article>
 
         <article className="liveSetupPanel">
           <div className="liveSetupPanelHeader">
             <div>
-              <p className="liveSetupPanelKicker">Host</p>
-              <h3>Create a room</h3>
+              <p className="liveSetupPanelKicker">{t.live.setup.host}</p>
+              <h3>{t.live.setup.createTitle}</h3>
             </div>
             <div className="liveSetupPanelIcon" aria-hidden="true">
               +
@@ -1728,21 +1753,19 @@ function LiveSetupSurface({
           </div>
           <div className="liveSetupPanelBody">
             <label className="liveSetupField">
-              Players
+              {t.live.setup.players}
               <select
                 value={targetPlayerCount}
                 onChange={(event) => onTargetPlayerCountChange(Number(event.target.value))}
               >
                 {PLAYER_COUNT_OPTIONS.map((playerCount) => (
                   <option key={playerCount} value={playerCount}>
-                    {playerCount} players
+                    {playerCount}
                   </option>
                 ))}
               </select>
             </label>
-            <p className="liveSetupHint">
-              Start a lobby from this browser. The host controls stay attached to this session.
-            </p>
+            <p className="liveSetupHint">{t.live.setup.createHint}</p>
             <div className="liveSetupButtonRow">
               <button
                 className="liveSetupButton liveSetupButtonPrimary"
@@ -1750,7 +1773,7 @@ function LiveSetupSurface({
                 onClick={onCreateRoom}
                 disabled={isBusy}
               >
-                Create room
+                {t.live.buttons.createRoom}
               </button>
             </div>
           </div>
@@ -1759,8 +1782,8 @@ function LiveSetupSurface({
         <article className="liveSetupPanel">
           <div className="liveSetupPanelHeader">
             <div>
-              <p className="liveSetupPanelKicker">Guest</p>
-              <h3>Join with code</h3>
+              <p className="liveSetupPanelKicker">{t.live.setup.guest}</p>
+              <h3>{t.live.setup.joinTitle}</h3>
             </div>
             <div className="liveSetupPanelIcon" aria-hidden="true">
               -&gt;
@@ -1768,11 +1791,11 @@ function LiveSetupSurface({
           </div>
           <div className="liveSetupPanelBody">
             <div className="liveSetupField">
-              <span id="live-room-code-label">Room code</span>
+              <span id="live-room-code-label">{t.live.setup.roomCode}</span>
               <div className="liveSetupCodeGrid" aria-labelledby="live-room-code-label">
                 {roomCodeDigits.map((digit, index) => (
                   <input
-                    aria-label={`Room code digit ${index + 1}`}
+                    aria-label={t.live.setup.roomCodeDigit(index + 1)}
                     autoComplete={index === 0 ? "one-time-code" : "off"}
                     className="liveSetupCodeCell"
                     inputMode="numeric"
@@ -1793,10 +1816,7 @@ function LiveSetupSurface({
                 ))}
               </div>
             </div>
-            <p className="liveSetupHint">
-              Paste or type the six-digit code. The join button becomes active once all digits are
-              filled.
-            </p>
+            <p className="liveSetupHint">{t.live.setup.joinHint}</p>
             <div className="liveSetupButtonRow">
               <button
                 className="liveSetupButton liveSetupButtonSecondary"
@@ -1804,7 +1824,7 @@ function LiveSetupSurface({
                 onClick={() => onRoomCodeChange("")}
                 disabled={isBusy || roomCodeInput.length === 0}
               >
-                Clear
+                {t.live.buttons.clear}
               </button>
               <button
                 className="liveSetupButton liveSetupButtonPrimary"
@@ -1812,7 +1832,7 @@ function LiveSetupSurface({
                 onClick={onJoinRoom}
                 disabled={isJoinDisabled}
               >
-                Join room
+                {t.live.buttons.joinRoom}
               </button>
             </div>
           </div>
@@ -1825,14 +1845,16 @@ function LiveSetupSurface({
 function SavedRoomState({
   isCompact = false,
   roomCode,
+  t,
 }: {
   readonly isCompact?: boolean;
   readonly roomCode: string;
+  readonly t: Localization;
 }) {
   return (
     <div className={isCompact ? "liveEmptyState compact" : "liveEmptyState"}>
-      <strong>Restoring room {roomCode}</strong>
-      <p>This browser already has a room. Leave that room before creating or joining another.</p>
+      <strong>{t.live.room.restoring(roomCode)}</strong>
+      <p>{t.live.room.currentAlreadyExistsCreate}</p>
     </div>
   );
 }
@@ -1840,11 +1862,13 @@ function SavedRoomState({
 function RoomInviteTools({
   copiedRoomCode,
   summary,
+  t,
   onCopyRoomCode,
   onShareRoom,
 }: {
   readonly copiedRoomCode: string | null;
   readonly summary: RoomSummary;
+  readonly t: Localization;
   readonly onCopyRoomCode: (roomCode: string) => void;
   readonly onShareRoom: (roomCode: string) => void;
 }) {
@@ -1853,11 +1877,13 @@ function RoomInviteTools({
   const didCopyCurrentRoom = copiedRoomCode === summary.code;
 
   return (
-    <div className="liveInviteTools" aria-label="Room invite tools">
+    <div className="liveInviteTools" aria-label={t.live.aria.roomInviteTools}>
       <div>
-        <span>Invite code</span>
+        <span>{t.live.invite.codeLabel}</span>
         <strong>{summary.code}</strong>
-        <small>{openSeats === 0 ? "Table full" : `${openSeats} seats open`}</small>
+        <small>
+          {openSeats === 0 ? t.live.invite.tableFull : t.live.invite.openSeats(openSeats)}
+        </small>
       </div>
       <div>
         <button
@@ -1865,17 +1891,23 @@ function RoomInviteTools({
           type="button"
           onClick={() => onCopyRoomCode(summary.code)}
         >
-          {didCopyCurrentRoom ? "Copied!" : "Copy code"}
+          {didCopyCurrentRoom ? t.live.buttons.copied : t.live.buttons.copyCode}
         </button>
         <button className="secondaryButton" type="button" onClick={() => onShareRoom(summary.code)}>
-          Share invite
+          {t.live.buttons.shareInvite}
         </button>
       </div>
     </div>
   );
 }
 
-function LobbyRequirements({ summary }: { readonly summary: RoomSummary }) {
+function LobbyRequirements({
+  summary,
+  t,
+}: {
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+}) {
   const joinedPlayerCount = countJoinedPlayers(summary);
   const requiredPlayers = Math.max(summary.targetPlayerCount - joinedPlayerCount, 0);
   const progressPercent = Math.min(
@@ -1886,22 +1918,22 @@ function LobbyRequirements({ summary }: { readonly summary: RoomSummary }) {
   return (
     <div className="liveLobbyRequirements">
       <div>
-        <span>Start requirement</span>
+        <span>{t.live.invite.requirement}</span>
         <strong>
           {requiredPlayers === 0
-            ? "All seats are filled."
-            : `${requiredPlayers} more player${requiredPlayers === 1 ? "" : "s"} needed.`}
+            ? t.live.invite.allSeatsFilled
+            : t.live.invite.morePlayersNeeded(requiredPlayers)}
         </strong>
       </div>
       <div
         className="liveProgressTrack"
-        aria-label={`${joinedPlayerCount} of ${summary.targetPlayerCount} seats filled`}
+        aria-label={t.live.invite.progressLabel(joinedPlayerCount, summary.targetPlayerCount)}
       >
         <span style={{ width: `${progressPercent}%` }} />
       </div>
       <ul>
-        <li>Share the code with separate browser sessions.</li>
-        <li>Settings stay behind the host Settings button.</li>
+        <li>{t.live.invite.tips.share}</li>
+        <li>{t.live.invite.tips.settings}</li>
       </ul>
     </div>
   );
@@ -1913,12 +1945,14 @@ function LivePlaySurface({
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
+  locale,
   nightConversationDraft,
   roomStatusLabel,
   selfActions,
   statusMessage,
   summary,
   targetByActionKey,
+  t,
   onAdvancePhase,
   onCloseNightConversation,
   onClosePublicLog,
@@ -1931,21 +1965,21 @@ function LivePlaySurface({
 }: LivePlaySurfaceProps) {
   const actionProgress = summary.game?.actionProgress ?? null;
   const phaseEndsAt = summary.game?.phaseEndsAt ?? null;
-  const phaseGuidance = getPlayPhaseGuidance(summary, isBusy);
-  const playStatusMessage = getPlayStatusMessage(statusMessage, summary);
+  const phaseGuidance = getPlayPhaseGuidance(summary, isBusy, t);
+  const playStatusMessage = getPlayStatusMessage(statusMessage, summary, t);
   const nightConversation = summary.rolePrivate?.nightConversation ?? null;
   const publicEventCount = summary.game?.events.length ?? 0;
 
   return (
     <>
-      <section className="livePanel livePlayTablePanel" aria-label="Live game table">
-        <LiveRoundTable summary={summary} />
+      <section className="livePanel livePlayTablePanel" aria-label={t.live.aria.liveGameTable}>
+        <LiveRoundTable summary={summary} t={t} />
       </section>
 
       <div className="livePlaySideStack">
-        <section className="livePanel livePlayPhasePanel" aria-label="Current phase">
+        <section className="livePanel livePlayPhasePanel" aria-label={t.live.aria.currentPhase}>
           <div className="livePanelHeading">
-            <span>Current phase</span>
+            <span>{t.live.aria.currentPhase}</span>
             <strong>{roomStatusLabel}</strong>
           </div>
 
@@ -1957,19 +1991,19 @@ function LivePlaySurface({
             </div>
             {phaseEndsAt === null ? null : (
               <time dateTime={phaseEndsAt}>
-                <PhaseCountdown key={phaseEndsAt} phaseEndsAt={phaseEndsAt} />
+                <PhaseCountdown key={phaseEndsAt} phaseEndsAt={phaseEndsAt} t={t} />
               </time>
             )}
             {actionProgress === null ? null : (
               <em>
-                {actionProgress.label}: {formatActionProgress(actionProgress)}
+                {actionProgress.label}: {formatActionProgress(actionProgress, t)}
               </em>
             )}
           </div>
 
           {summary.isHost && summary.game?.status === "playing" ? (
             <div className="livePlayHostTools">
-              <span>Table operation</span>
+              <span>{t.live.table.operation}</span>
               <div>
                 <button
                   className="secondaryButton"
@@ -1978,7 +2012,7 @@ function LivePlaySurface({
                   onClick={onAdvancePhase}
                   disabled={!canAdvancePhase}
                 >
-                  Advance phase
+                  {t.live.buttons.advancePhase}
                 </button>
                 <p id="play-control-hint">{controlHint}</p>
               </div>
@@ -1988,11 +2022,11 @@ function LivePlaySurface({
 
         <section
           className="livePanel liveNightActionPanel"
-          aria-label={getActionPanelTitle(summary)}
+          aria-label={getActionPanelTitle(summary, t)}
         >
           <div className="livePanelHeading">
-            <span>{getActionPanelTitle(summary)}</span>
-            <strong>{summary.self?.roleName ?? "Role"}</strong>
+            <span>{getActionPanelTitle(summary, t)}</span>
+            <strong>{summary.self?.roleName ?? t.game.actions.action}</strong>
           </div>
 
           <div className="liveNightActionStack">
@@ -2002,23 +2036,25 @@ function LivePlaySurface({
               players={summary.players}
               summary={summary}
               targetByActionKey={targetByActionKey}
+              locale={locale}
+              t={t}
               onSubmitAction={onSubmitAction}
               onTargetChange={onTargetChange}
             />
           </div>
         </section>
 
-        <div className="livePopupActions" aria-label="Popup panels">
+        <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
           <button
             className="secondaryButton"
             type="button"
             onClick={onOpenNightConversation}
             disabled={nightConversation === null}
           >
-            Night chat
+            {t.live.buttons.nightChat}
           </button>
           <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
-            Public log
+            {t.live.buttons.publicLog}
             <em>{publicEventCount}</em>
           </button>
         </div>
@@ -2027,7 +2063,8 @@ function LivePlaySurface({
       {nightConversation !== null && isNightConversationOpen ? (
         <LivePopupDialog
           id="night-chat-dialog"
-          meta={nightConversation.readOnly ? "Read only" : "Night"}
+          meta={nightConversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}
+          t={t}
           title={nightConversation.label}
           onClose={onCloseNightConversation}
         >
@@ -2035,6 +2072,8 @@ function LivePlaySurface({
             conversation={nightConversation}
             draft={nightConversationDraft}
             isBusy={isBusy}
+            locale={locale}
+            t={t}
             onDraftChange={onNightConversationDraftChange}
             onSend={onSendNightConversation}
           />
@@ -2044,18 +2083,25 @@ function LivePlaySurface({
       {isPublicLogOpen ? (
         <LivePopupDialog
           id="public-log-dialog"
-          meta={`${publicEventCount} events`}
-          title="Public log"
+          meta={t.live.eventLog.meta(publicEventCount)}
+          t={t}
+          title={t.live.eventLog.title}
           onClose={onClosePublicLog}
         >
-          <EventLog summary={summary} />
+          <EventLog locale={locale} summary={summary} t={t} />
         </LivePopupDialog>
       ) : null}
     </>
   );
 }
 
-function LiveRoundTable({ summary }: { readonly summary: RoomSummary }) {
+function LiveRoundTable({
+  summary,
+  t,
+}: {
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+}) {
   const playerCount = summary.players.length;
 
   return (
@@ -2063,14 +2109,14 @@ function LiveRoundTable({ summary }: { readonly summary: RoomSummary }) {
       <div className="tableSurface liveTableSurface">
         <div className="tableCenter liveTableCenter">
           <span className={`liveTablePhaseIcon ${getLiveMood(summary)}`} aria-hidden="true" />
-          <strong>{getLiveTableTitle(summary)}</strong>
-          <span>{getLiveTableNotice(summary)}</span>
+          <strong>{getLiveTableTitle(summary, t)}</strong>
+          <span>{getLiveTableNotice(summary, t)}</span>
         </div>
 
         {summary.players.map((player, index) => {
           const position = getRoundTableSeatPosition(index, playerCount);
           const seatState = getLiveSeatState(player, index, summary);
-          const seatStatusLabel = getLiveSeatStatusLabel(player, index, summary);
+          const seatStatusLabel = getLiveSeatStatusLabel(player, index, summary, t);
           const seatStyle: CSSProperties & {
             readonly "--seat-x": string;
             readonly "--seat-y": string;
@@ -2111,7 +2157,13 @@ function LiveRoundTable({ summary }: { readonly summary: RoomSummary }) {
   );
 }
 
-function PhaseCountdown({ phaseEndsAt }: { readonly phaseEndsAt: string | null }) {
+function PhaseCountdown({
+  phaseEndsAt,
+  t,
+}: {
+  readonly phaseEndsAt: string | null;
+  readonly t: Localization;
+}) {
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -2124,10 +2176,16 @@ function PhaseCountdown({ phaseEndsAt }: { readonly phaseEndsAt: string | null }
     return () => window.clearInterval(intervalId);
   }, [phaseEndsAt]);
 
-  return <>{formatPhaseCountdown(phaseEndsAt, currentTimeMs)}</>;
+  return <>{formatPhaseCountdown(phaseEndsAt, currentTimeMs, t)}</>;
 }
 
-function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
+function PlayerSeatGrid({
+  summary,
+  t,
+}: {
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+}) {
   const joinedPlayers = summary.players.filter((player) => player.status === "joined");
   const emptySeats = Array.from(
     { length: Math.max(summary.targetPlayerCount - joinedPlayers.length, 0) },
@@ -2139,7 +2197,7 @@ function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
   );
 
   return (
-    <div className="liveSeatGrid" aria-label="Lobby seats">
+    <div className="liveSeatGrid" aria-label={t.live.aria.lobbySeats}>
       {joinedPlayers.map((player, index) => (
         <div className={player.isCurrent ? "liveSeatCard current" : "liveSeatCard"} key={player.id}>
           <span className="liveAvatar" aria-hidden="true">
@@ -2147,19 +2205,19 @@ function PlayerSeatGrid({ summary }: { readonly summary: RoomSummary }) {
           </span>
           <span>
             <strong>{player.displayName}</strong>
-            <small>Seat {index + 1}</small>
+            <small>{t.live.lobby.seat(index + 1)}</small>
           </span>
-          <em>{player.isHost ? "Host" : "Player"}</em>
+          <em>{player.isHost ? t.live.lobby.host : t.live.lobby.player}</em>
         </div>
       ))}
       {emptySeats.map((seatNumber) => (
         <div className="liveSeatCard empty" key={`empty-${seatNumber}`}>
           <span className="liveAvatar" aria-hidden="true" />
           <span>
-            <strong>Open seat</strong>
-            <small>Seat {seatNumber}</small>
+            <strong>{t.live.lobby.openSeat}</strong>
+            <small>{t.live.lobby.seat(seatNumber)}</small>
           </span>
-          <em>Open</em>
+          <em>{t.live.lobby.open}</em>
         </div>
       ))}
     </div>
@@ -2172,6 +2230,7 @@ function StartRuleSetPanel({
   playerCount,
   roleCatalog,
   settings,
+  t,
   onNumberChange,
   onRoleCountChange,
   onRolePresetSelect,
@@ -2182,6 +2241,7 @@ function StartRuleSetPanel({
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
+  readonly t: Localization;
   readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
   readonly onRoleCountChange: (roleId: RoleId, value: number) => void;
   readonly onRolePresetSelect: (preset: RolePreset) => void;
@@ -2208,14 +2268,15 @@ function StartRuleSetPanel({
     playerCount,
     roleCatalog,
     defaultRoleCounts,
+    t,
   );
   const activeRoleOptions =
     roleCounts === null ? [] : getActiveRoleSpecificOptions(roleCatalog, roleCounts);
   const isRoleMixValid = roleValidationMessages.length === 0;
   const displayedRoleValidationMessages = isRoleMixValid
-    ? ["Role counts are valid for this lobby."]
+    ? [t.live.settings.validation.validForLobby]
     : roleValidationMessages;
-  const flowItems = getSettingsFlowItems(settings);
+  const flowItems = getSettingsFlowItems(settings, t);
 
   return (
     <div className="liveRuleSetPanel">
@@ -2227,15 +2288,15 @@ function StartRuleSetPanel({
       >
         <div className="liveSettingsSectionHead">
           <div>
-            <h3>Overall settings</h3>
-            <p>Set the day progression and vote result visibility for the room.</p>
+            <h3>{t.live.settings.general.heading}</h3>
+            <p>{t.live.settings.general.summary}</p>
           </div>
         </div>
 
         <div className="liveSettingsGridTwo">
           <article className="liveSettingsCard">
-            <h4>Day progression</h4>
-            <p>The selected mode changes which timer fields are used during the day phase.</p>
+            <h4>{t.live.settings.general.dayProgressionTitle}</h4>
+            <p>{t.live.settings.general.dayProgressionBody}</p>
 
             <div className="liveSettingsChoiceGrid">
               <label className="liveSettingsChoice">
@@ -2246,9 +2307,9 @@ function StartRuleSetPanel({
                   value="ordered_speech"
                   onChange={() => onSettingsChange("dayMode", "ordered_speech")}
                 />
-                <span>Ordered</span>
-                <strong>Ordered speech</strong>
-                <em>Players speak through fixed slots before voting opens.</em>
+                <span>{t.live.settings.dayMode.ordered.label}</span>
+                <strong>{t.live.settings.dayMode.ordered.title}</strong>
+                <em>{t.live.settings.dayMode.ordered.body}</em>
               </label>
 
               <label className="liveSettingsChoice">
@@ -2259,18 +2320,18 @@ function StartRuleSetPanel({
                   value="ready_check"
                   onChange={() => onSettingsChange("dayMode", "ready_check")}
                 />
-                <span>Ready check</span>
-                <strong>Ready check</strong>
-                <em>Voting opens when players are ready or the meeting cap is reached.</em>
+                <span>{t.live.settings.dayMode.readyCheck.label}</span>
+                <strong>{t.live.settings.dayMode.readyCheck.title}</strong>
+                <em>{t.live.settings.dayMode.readyCheck.body}</em>
               </label>
             </div>
           </article>
 
           <article className="liveSettingsCard">
-            <h4>Vote detail</h4>
-            <p>Choose how much detail is shown after votes resolve.</p>
+            <h4>{t.live.settings.general.voteDetailTitle}</h4>
+            <p>{t.live.settings.general.voteDetailBody}</p>
             <label className="liveRuleSetField">
-              <span>Visibility</span>
+              <span>{t.live.settings.general.voteVisibility}</span>
               <select
                 value={settings.voteResultVisibility}
                 onChange={(event) =>
@@ -2280,8 +2341,12 @@ function StartRuleSetPanel({
                   )
                 }
               >
-                <option value="count_only">Count only</option>
-                <option value="voter_to_target">Voter to target</option>
+                <option value="count_only">
+                  {t.live.settings.general.voteVisibilityCountOnly}
+                </option>
+                <option value="voter_to_target">
+                  {t.live.settings.general.voteVisibilityVoterToTarget}
+                </option>
               </select>
             </label>
           </article>
@@ -2296,38 +2361,38 @@ function StartRuleSetPanel({
       >
         <div className="liveSettingsSectionHead">
           <div>
-            <h3>Time settings</h3>
-            <p>Keep common phase timers separate from the selected day mode.</p>
+            <h3>{t.live.settings.timers.heading}</h3>
+            <p>{t.live.settings.timers.summary}</p>
           </div>
         </div>
 
         <div className="liveSettingsMainSide">
           <div className="liveSettingsStack">
             <article className="liveSettingsCard">
-              <h4>Common phase timers</h4>
-              <p>These timers are used regardless of the day progression mode.</p>
-              <div className="liveTimingGrid common" aria-label="Common phase timing">
+              <h4>{t.live.settings.timers.commonTitle}</h4>
+              <p>{t.live.settings.timers.commonBody}</p>
+              <div className="liveTimingGrid common" aria-label={t.live.aria.commonPhaseTiming}>
                 <RuleSetNumberControl
                   field="firstNightSeconds"
-                  label="First night"
+                  label={t.live.settings.timers.firstNight}
                   value={settings.firstNightSeconds}
                   onChange={onNumberChange}
                 />
                 <RuleSetNumberControl
                   field="nightSeconds"
-                  label="Night"
+                  label={t.live.settings.timers.night}
                   value={settings.nightSeconds}
                   onChange={onNumberChange}
                 />
                 <RuleSetNumberControl
                   field="votingSeconds"
-                  label="Vote"
+                  label={t.live.settings.timers.vote}
                   value={settings.votingSeconds}
                   onChange={onNumberChange}
                 />
                 <RuleSetNumberControl
                   field="executionLastWordsSeconds"
-                  label="Last words"
+                  label={t.live.settings.timers.lastWords}
                   value={settings.executionLastWordsSeconds}
                   onChange={onNumberChange}
                 />
@@ -2335,38 +2400,48 @@ function StartRuleSetPanel({
             </article>
 
             <article className="liveSettingsCard">
-              <h4>{settings.dayMode === "ordered_speech" ? "Ordered speech" : "Ready check"}</h4>
+              <h4>
+                {settings.dayMode === "ordered_speech"
+                  ? t.live.settings.timers.orderedSpeech
+                  : t.live.settings.timers.readyCheck}
+              </h4>
               <p>
                 {settings.dayMode === "ordered_speech"
-                  ? "Speech slot timing for first and normal days."
-                  : "Meeting cap timing for ready-check days."}
+                  ? t.live.settings.timers.orderedSpeechBody
+                  : t.live.settings.timers.readyCheckBody}
               </p>
               {settings.dayMode === "ordered_speech" ? (
-                <div className="liveTimingGrid day" aria-label="Ordered speech timing">
+                <div
+                  className="liveTimingGrid day"
+                  aria-label={t.live.settings.timers.orderedSpeechTiming}
+                >
                   <RuleSetNumberControl
                     field="daySpeechSeconds"
-                    label="Speech / player"
+                    label={t.live.settings.timers.speechPerPlayer}
                     value={settings.daySpeechSeconds}
                     onChange={onNumberChange}
                   />
                   <RuleSetNumberControl
                     field="firstDaySpeechRounds"
-                    label="First day rounds"
+                    label={t.live.settings.timers.firstDayRounds}
                     value={settings.firstDaySpeechRounds}
                     onChange={onNumberChange}
                   />
                   <RuleSetNumberControl
                     field="normalDaySpeechRounds"
-                    label="Normal rounds"
+                    label={t.live.settings.timers.normalRounds}
                     value={settings.normalDaySpeechRounds}
                     onChange={onNumberChange}
                   />
                 </div>
               ) : (
-                <div className="liveTimingGrid day" aria-label="Ready check timing">
+                <div
+                  className="liveTimingGrid day"
+                  aria-label={t.live.settings.timers.readyCheckTiming}
+                >
                   <RuleSetNumberControl
                     field="dayReadyCheckSecondsPerPlayer"
-                    label="Ready / player"
+                    label={t.live.settings.timers.readyPerPlayer}
                     value={settings.dayReadyCheckSecondsPerPlayer}
                     onChange={onNumberChange}
                   />
@@ -2376,9 +2451,11 @@ function StartRuleSetPanel({
           </div>
 
           <aside className="liveSettingsCard liveSettingsSticky">
-            <h4>Flow preview</h4>
+            <h4>{t.live.settings.timers.flowPreview}</h4>
             <p>
-              {settings.dayMode === "ordered_speech" ? "Ordered speech flow." : "Ready check flow."}
+              {settings.dayMode === "ordered_speech"
+                ? t.live.settings.timers.orderedFlow
+                : t.live.settings.timers.readyCheckFlow}
             </p>
             <div className="liveSettingsFlow">
               {flowItems.map((item, index) => (
@@ -2404,8 +2481,8 @@ function StartRuleSetPanel({
             <section className="liveSettingsCard liveRolePresetSection">
               <div className="liveRolesHeader">
                 <div>
-                  <h3>Role presets</h3>
-                  <p>Use a tested mix for this room size, then adjust manually if needed.</p>
+                  <h3>{t.live.settings.roles.presetsTitle}</h3>
+                  <p>{t.live.settings.roles.presetsBody}</p>
                 </div>
                 <span
                   className={
@@ -2414,11 +2491,11 @@ function StartRuleSetPanel({
                       : "liveRolePresetStatus is-selected"
                   }
                 >
-                  {selectedRolePreset?.name ?? "Custom"}
+                  {selectedRolePreset?.name ?? t.live.settings.roles.custom}
                 </span>
               </div>
 
-              <div className="liveRolePresetGrid" aria-label="Role presets">
+              <div className="liveRolePresetGrid" aria-label={t.live.aria.rolePresets}>
                 {rolePresets.map((preset) => {
                   const isSelected = selectedRolePreset?.id === preset.id;
                   const presetRoleEntries = getPresetRoleEntries(
@@ -2443,7 +2520,10 @@ function StartRuleSetPanel({
                         <strong>{preset.name}</strong>
                         <em>{preset.description}</em>
                       </span>
-                      <span className="liveRolePresetChips" aria-label={`${preset.name} role mix`}>
+                      <span
+                        className="liveRolePresetChips"
+                        aria-label={t.live.settings.roles.presetRoleMix(preset.name)}
+                      >
                         {presetRoleEntries.map(({ count, role }) => (
                           <span className="liveRolePresetChip" key={role.id} title={role.name}>
                             <strong>{count}</strong>
@@ -2461,8 +2541,8 @@ function StartRuleSetPanel({
           <section className="liveSettingsCard">
             <div className="liveRolesHeader">
               <div>
-                <h3>Role counts</h3>
-                <p>Adjust role counts for the selected room size.</p>
+                <h3>{t.live.settings.roles.countsTitle}</h3>
+                <p>{t.live.settings.roles.countsBody}</p>
               </div>
               <span
                 className={isRoleMixValid ? "liveRoleTotal is-valid" : "liveRoleTotal is-invalid"}
@@ -2470,13 +2550,13 @@ function StartRuleSetPanel({
                 <strong>
                   {assignedRoleCount} / {playerCount}
                 </strong>{" "}
-                assigned
+                {t.live.settings.roles.assigned}
               </span>
             </div>
-            <div className="liveRoleGrid" aria-label="Automatic role counts">
+            <div className="liveRoleGrid" aria-label={t.live.aria.roleCounts}>
               {roleCounts === null ? (
                 <div className="liveSettingsEmptyOptions">
-                  <strong>Role mix appears at 3 players</strong>
+                  <strong>{t.live.settings.roles.mixAppearsAt(MIN_ROOM_PLAYERS)}</strong>
                 </div>
               ) : (
                 startRoleCatalog.map((role) => {
@@ -2510,10 +2590,13 @@ function StartRuleSetPanel({
                         <div className="liveRoleName">{roleName}</div>
                         <div className="liveRoleDescription">{role.description}</div>
                       </div>
-                      <div className="liveRoleCounter" aria-label={`${roleName} count`}>
+                      <div
+                        className="liveRoleCounter"
+                        aria-label={t.live.settings.roles.count(roleName)}
+                      >
                         <button
                           type="button"
-                          aria-label={`Decrease ${roleName}`}
+                          aria-label={t.live.settings.roles.decrease(roleName)}
                           disabled={!canDecrease}
                           onClick={() => onRoleCountChange(roleId, count - 1)}
                         >
@@ -2522,7 +2605,7 @@ function StartRuleSetPanel({
                         <span>{count}</span>
                         <button
                           type="button"
-                          aria-label={`Increase ${roleName}`}
+                          aria-label={t.live.settings.roles.increase(roleName)}
                           disabled={!canIncrease}
                           onClick={() => onRoleCountChange(roleId, count + 1)}
                         >
@@ -2539,8 +2622,8 @@ function StartRuleSetPanel({
           <section className="liveSettingsCard">
             <div className="liveSettingsSectionHead">
               <div>
-                <h3>Role-specific settings</h3>
-                <p>Only options for active roles affect the game when it starts.</p>
+                <h3>{t.live.settings.roles.specificTitle}</h3>
+                <p>{t.live.settings.roles.specificBody}</p>
               </div>
             </div>
             <div className="liveSettingsOptionGrid">
@@ -2549,13 +2632,13 @@ function StartRuleSetPanel({
                   <h4>
                     {role.name} - {option.label}
                   </h4>
-                  {renderRoleSpecificOptionControl(option, settings, onSettingsChange)}
+                  {renderRoleSpecificOptionControl(option, settings, onSettingsChange, t)}
                 </div>
               ))}
 
               {activeRoleOptions.length === 0 ? (
                 <div className="liveSettingsEmptyOptions">
-                  No extra role options for the current automatic mix.
+                  {t.live.settings.roles.noExtraOptions}
                 </div>
               ) : null}
             </div>
@@ -2569,7 +2652,11 @@ function StartRuleSetPanel({
             }
           >
             <div>
-              <h3>{isRoleMixValid ? "Ready to apply" : "Needs adjustment"}</h3>
+              <h3>
+                {isRoleMixValid
+                  ? t.live.settings.validation.readyToApply
+                  : t.live.settings.validation.needsAdjustment}
+              </h3>
               <ul>
                 {displayedRoleValidationMessages.map((message) => (
                   <li key={message}>{message}</li>
@@ -2616,12 +2703,16 @@ function NightConversationPanel({
   conversation,
   draft,
   isBusy,
+  locale,
+  t,
   onDraftChange,
   onSend,
 }: {
   readonly conversation: NightConversationView;
   readonly draft: string;
   readonly isBusy: boolean;
+  readonly locale: Locale;
+  readonly t: Localization;
   readonly onDraftChange: (value: string) => void;
   readonly onSend: (conversation: NightConversationView) => void;
 }) {
@@ -2633,21 +2724,23 @@ function NightConversationPanel({
     trimmedDraft.length <= conversation.maxMessageLength;
 
   return (
-    <div className="liveNightChatPanel" aria-label="Night conversation">
+    <div className="liveNightChatPanel" aria-label={t.live.aria.nightConversation}>
       <div className="liveNightChatHeader">
         <strong>{conversation.label}</strong>
-        <em>{conversation.readOnly ? "Read only" : "Night"}</em>
+        <em>{conversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}</em>
       </div>
 
       {conversation.messages.length === 0 ? (
-        <p>No messages yet.</p>
+        <p>{t.live.nightConversation.noMessages}</p>
       ) : (
         <ol className="liveNightChatMessages">
           {conversation.messages.map((message) => (
             <li key={message.id}>
               <div>
                 <strong>{message.senderName}</strong>
-                <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
+                <time dateTime={message.createdAt}>
+                  {formatDateTime(message.createdAt, locale, t)}
+                </time>
               </div>
               <p>{message.body}</p>
             </li>
@@ -2658,7 +2751,7 @@ function NightConversationPanel({
       {conversation.canSend ? (
         <div className="liveNightChatComposer">
           <label>
-            Message
+            {t.live.nightConversation.message}
             <input
               maxLength={conversation.maxMessageLength}
               value={draft}
@@ -2666,10 +2759,13 @@ function NightConversationPanel({
             />
           </label>
           <button type="button" disabled={!canSend} onClick={() => onSend(conversation)}>
-            Send
+            {t.live.buttons.send}
           </button>
           <small>
-            {trimmedDraft.length}/{conversation.maxMessageLength}
+            {t.live.nightConversation.draftCount(
+              trimmedDraft.length,
+              conversation.maxMessageLength,
+            )}
           </small>
         </div>
       ) : null}
@@ -2680,22 +2776,26 @@ function NightConversationPanel({
 function ActionList({
   actions,
   isBusy,
+  locale,
   players,
   summary,
+  t,
   targetByActionKey,
   onTargetChange,
   onSubmitAction,
 }: {
   readonly actions: readonly PublicAction[];
   readonly isBusy: boolean;
+  readonly locale: Locale;
   readonly players: readonly PublicPlayer[];
   readonly summary: RoomSummary | null;
+  readonly t: Localization;
   readonly targetByActionKey: Record<string, string>;
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
   readonly onSubmitAction: (action: PublicAction) => void;
 }) {
   if (actions.length === 0) {
-    const emptyCopy = getEmptyActionCopy(summary);
+    const emptyCopy = getEmptyActionCopy(summary, t);
 
     return (
       <div className="liveEmptyState compact">
@@ -2722,8 +2822,8 @@ function ActionList({
               <strong>{action.label}</strong>
               <span>
                 {action.status === "submitted"
-                  ? "Already submitted"
-                  : formatDateTime(action.closesAt)}
+                  ? t.game.actionStatus.submitted
+                  : formatDateTime(action.closesAt, locale, t)}
               </span>
             </div>
 
@@ -2740,7 +2840,9 @@ function ActionList({
               </select>
             ) : (
               <span className="liveActionState">
-                {action.status === "submitted" ? "Target locked" : "No target"}
+                {action.status === "submitted"
+                  ? t.game.actionStatus.locked
+                  : t.game.actionStatus.noTarget}
               </span>
             )}
 
@@ -2749,7 +2851,7 @@ function ActionList({
               onClick={() => onSubmitAction(action)}
               disabled={isBusy || action.status === "submitted"}
             >
-              {getActionButtonLabel(action, isBusy)}
+              {getActionButtonLabel(action, isBusy, t)}
             </button>
           </div>
         );
@@ -2758,82 +2860,84 @@ function ActionList({
   );
 }
 
-function getEmptyActionCopy(summary: RoomSummary | null): { body: string; title: string } {
+function getEmptyActionCopy(
+  summary: RoomSummary | null,
+  t: Localization,
+): { body: string; title: string } {
   if (summary === null) {
-    return {
-      body: "Join a room to load role-specific prompts.",
-      title: "No private actions",
-    };
+    return t.game.actions.empty.noRoom;
   }
 
   if (summary.status === "disbanded") {
-    return {
-      body: "This room is closed. Create or join a new room to continue.",
-      title: "Room closed",
-    };
+    return t.game.actions.empty.roomClosed;
   }
 
   if (summary.game?.status === "ended") {
-    return {
-      body: "Private actions are closed. Review your result and the public log.",
-      title: "Game complete",
-    };
+    return t.game.actions.empty.gameComplete;
   }
 
   if (summary.status === "lobby") {
-    return {
-      body: "Private actions appear here after the host starts the game.",
-      title: "Waiting for start",
-    };
+    return t.game.actions.empty.waitingForStart;
   }
 
-  return {
-    body: "This phase has no private action for you, or your action is already closed.",
-    title: "No private actions",
-  };
+  return t.game.actions.empty.noActions;
 }
 
-function EventLog({ summary }: { readonly summary: RoomSummary | null }) {
+function EventLog({
+  locale,
+  summary,
+  t,
+}: {
+  readonly locale: Locale;
+  readonly summary: RoomSummary | null;
+  readonly t: Localization;
+}) {
   const events = summary?.game?.events ?? [];
 
   if (events.length === 0) {
     return (
       <div className="liveEmptyState compact">
-        <strong>No public events yet</strong>
-        <p>Start the game or resolve a phase to build the public log.</p>
+        <strong>{t.live.eventLog.emptyTitle}</strong>
+        <p>{t.live.eventLog.emptyBody}</p>
       </div>
     );
   }
 
   return (
     <ol className="liveEventList">
-      {events.map((event) => (
-        <li key={`${event.kind}:${event.createdAt}`}>
-          <time dateTime={event.createdAt}>{formatDateTime(event.createdAt)}</time>
-          <strong>{formatEventKind(event.kind)}</strong>
-          <p>{event.message}</p>
-          {event.details.length === 0 ? null : (
-            <dl className="liveEventDetails">
-              {event.details.map((detail) => (
-                <div key={`${event.kind}:${event.createdAt}:${detail.label}`}>
-                  <dt>{detail.label}</dt>
-                  <dd>{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </li>
-      ))}
+      {events.map((event) => {
+        const display = formatPublicEvent(event, summary?.players ?? [], t);
+
+        return (
+          <li key={`${event.kind}:${event.createdAt}`}>
+            <time dateTime={event.createdAt}>{formatDateTime(event.createdAt, locale, t)}</time>
+            <strong>{display.kindLabel}</strong>
+            <p>{display.message}</p>
+            {display.details.length === 0 ? null : (
+              <dl className="liveEventDetails">
+                {display.details.map((detail) => (
+                  <div key={`${event.kind}:${event.createdAt}:${detail.label}`}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
 class ApiRequestError extends Error {
+  readonly code: string;
   readonly status: number;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: string) {
     super(message);
     this.name = "ApiRequestError";
+    this.code = code;
     this.status = status;
   }
 }
@@ -2857,7 +2961,9 @@ async function apiFetch<Body>(path: string, options: RequestOptions): Promise<Bo
   const json = await parseJson(response);
 
   if (!response.ok) {
-    throw new ApiRequestError(extractErrorMessage(json, response.status), response.status);
+    const apiError = extractApiError(json, response.status);
+
+    throw new ApiRequestError(apiError.message, response.status, apiError.code);
   }
 
   return json as Body;
@@ -2892,23 +2998,53 @@ function getLiveRoomUrl(): string {
   return `${window.location.origin}/live`;
 }
 
-function extractErrorMessage(value: unknown, status: number): string {
+function extractApiError(
+  value: unknown,
+  status: number,
+): { readonly code: string; readonly message: string } {
   if (isApiErrorResponse(value)) {
-    return value.error.message;
+    return {
+      code: value.error.code,
+      message: value.error.message,
+    };
   }
 
-  return `Request failed with HTTP ${status}.`;
+  return {
+    code: "unknown",
+    message: `Request failed with HTTP ${status}.`,
+  };
 }
 
-function toRequestFailureMessage(error: unknown): string {
+function toRequestFailureMessage(error: unknown, t: Localization): string {
   if (
     error instanceof TypeError ||
     (error instanceof Error && /failed to fetch|load failed|networkerror/iu.test(error.message))
   ) {
-    return "Cannot reach the table. Check your connection, then try again.";
+    return t.api.networkFailure;
   }
 
-  return error instanceof Error ? error.message : "The request failed.";
+  if (error instanceof ApiRequestError) {
+    return formatApiError(error, t);
+  }
+
+  return error instanceof Error ? error.message : t.api.errors.unknown;
+}
+
+function formatApiError(error: ApiRequestError, t: Localization): string {
+  switch (error.code) {
+    case "bad_request":
+      return t.api.errors.bad_request;
+    case "conflict":
+      return t.api.errors.conflict;
+    case "not_found":
+      return t.api.errors.not_found;
+    case "server_error":
+      return t.api.errors.server_error;
+    case "unauthorized":
+      return t.api.errors.unauthorized;
+    default:
+      return t.api.errors.unknown;
+  }
 }
 
 function toRealtimeSubscriptionKey(realtime: RoomSummary["realtime"]): string {
@@ -2995,7 +3131,7 @@ function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
     return false;
   }
 
-  return "message" in candidate.error;
+  return "code" in candidate.error && "message" in candidate.error;
 }
 
 function readStorage(key: string): string | null {
@@ -3018,9 +3154,9 @@ function removeStorage(key: string): void {
   }
 }
 
-function requireRoomCode(roomCode: string): string {
+function requireRoomCode(roomCode: string, t: Localization): string {
   if (!/^\d{6}$/.test(roomCode)) {
-    throw new Error("Enter a six-digit room code.");
+    throw new Error(t.live.room.enterCode);
   }
 
   return roomCode;
@@ -3056,6 +3192,7 @@ function getStartRuleSetValidationMessages(
   playerCount: number,
   roleCatalog: readonly RoleCatalogItem[],
   defaultRoleCounts: Readonly<RoleCounts>,
+  t: Localization,
 ): readonly string[] {
   const startRoleCatalog = getStartRoleCatalog(roleCatalog);
   const roleCounts = getEffectiveStartRoleCounts(settings, roleCatalog, defaultRoleCounts);
@@ -3063,15 +3200,17 @@ function getStartRuleSetValidationMessages(
   const totalRoles = getRoleCountTotal(roleCounts, startRoleCatalog);
 
   if (playerCount < MIN_ROOM_PLAYERS || playerCount > MAX_ROOM_PLAYERS) {
-    messages.push(`Role counts are available for ${MIN_ROOM_PLAYERS}-${MAX_ROOM_PLAYERS} players.`);
+    messages.push(
+      t.live.settings.validation.availableForPlayers(MIN_ROOM_PLAYERS, MAX_ROOM_PLAYERS),
+    );
   }
 
   if (totalRoles !== playerCount) {
     const diff = playerCount - totalRoles;
     messages.push(
       diff > 0
-        ? `Add ${diff} more role${diff === 1 ? "" : "s"}.`
-        : `Remove ${Math.abs(diff)} role${Math.abs(diff) === 1 ? "" : "s"}.`,
+        ? t.live.settings.validation.addRoles(diff)
+        : t.live.settings.validation.removeRoles(Math.abs(diff)),
     );
   }
 
@@ -3080,15 +3219,15 @@ function getStartRuleSetValidationMessages(
     const maxCount = getRoleMaxCount(definition.id, playerCount, roleCatalog);
 
     if (!Number.isInteger(count) || count < 0) {
-      messages.push(`${definition.name} count must be a non-negative integer.`);
+      messages.push(t.live.settings.validation.countNonNegative(definition.name));
     }
 
     if (count < definition.minCount) {
-      messages.push(`${definition.name} count must be at least ${definition.minCount}.`);
+      messages.push(t.live.settings.validation.countAtLeast(definition.name, definition.minCount));
     }
 
     if (count > maxCount) {
-      messages.push(`${definition.name} count must be at most ${maxCount}.`);
+      messages.push(t.live.settings.validation.countAtMost(definition.name, maxCount));
     }
   }
 
@@ -3189,6 +3328,7 @@ function renderRoleSpecificOptionControl(
     key: Key,
     value: StartRuleSetSettings[Key],
   ) => void,
+  t: Localization,
 ): ReactNode {
   switch (option.key) {
     case "guardConsecutiveTargetPolicy":
@@ -3196,45 +3336,49 @@ function renderRoleSpecificOptionControl(
         <div
           className="liveSettingsSegments"
           role="group"
-          aria-label="Guard consecutive target policy"
+          aria-label={t.live.settings.roleSpecific.guardConsecutiveTargetPolicy}
         >
           <button
             aria-pressed={settings.guardConsecutiveTargetPolicy === "deny"}
             type="button"
             onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "deny")}
           >
-            Deny same
+            {t.live.settings.roleSpecific.guardConsecutiveTargetPolicyDeny}
           </button>
           <button
             aria-pressed={settings.guardConsecutiveTargetPolicy === "allow"}
             type="button"
             onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "allow")}
           >
-            Allow
+            {t.live.settings.roleSpecific.guardConsecutiveTargetPolicyAllow}
           </button>
         </div>
       );
     case "initialInspectionPolicy":
       return (
-        <div className="liveSettingsSegments" role="group" aria-label="Initial inspection policy">
+        <div
+          className="liveSettingsSegments"
+          role="group"
+          aria-label={t.live.settings.roleSpecific.initialInspectionPolicy}
+        >
           <button
             aria-pressed={settings.initialInspectionPolicy === "enabled"}
             type="button"
             onClick={() => onSettingsChange("initialInspectionPolicy", "enabled")}
           >
-            Enabled
+            {t.live.settings.roleSpecific.initialInspectionPolicyEnabled}
           </button>
           <button
             aria-pressed={settings.initialInspectionPolicy === "disabled"}
             type="button"
             onClick={() => onSettingsChange("initialInspectionPolicy", "disabled")}
           >
-            Disabled
+            {t.live.settings.roleSpecific.initialInspectionPolicyDisabled}
           </button>
         </div>
       );
     default:
-      return <p>{option.label} is not configurable in this client yet.</p>;
+      return <p>{t.live.settings.roleSpecific.notConfigurable(option.label)}</p>;
   }
 }
 
@@ -3281,32 +3425,45 @@ function compareStartRoleCatalogItems(left: RoleCatalogItem, right: RoleCatalogI
 
 function getSettingsFlowItems(
   settings: StartRuleSetSettings,
+  t: Localization,
 ): readonly { readonly label: string; readonly value: string }[] {
   const dayValue =
     settings.dayMode === "ordered_speech"
-      ? `${settings.firstDaySpeechRounds}r first / ${settings.normalDaySpeechRounds}r normal x ${formatSettingsDuration(
-          settings.daySpeechSeconds,
-        )}`
-      : `alive x ${formatSettingsDuration(settings.dayReadyCheckSecondsPerPlayer)} cap`;
+      ? t.live.settings.flow.orderedDay(
+          settings.firstDaySpeechRounds,
+          settings.normalDaySpeechRounds,
+          formatSettingsDuration(settings.daySpeechSeconds, t),
+        )
+      : t.live.settings.flow.readyDay(
+          formatSettingsDuration(settings.dayReadyCheckSecondsPerPlayer, t),
+        );
 
   return [
-    { label: "First night", value: formatSettingsDuration(settings.firstNightSeconds) },
-    { label: "Day", value: dayValue },
-    { label: "Vote", value: formatSettingsDuration(settings.votingSeconds) },
-    { label: "Last words", value: formatSettingsDuration(settings.executionLastWordsSeconds) },
-    { label: "Night", value: formatSettingsDuration(settings.nightSeconds) },
+    {
+      label: t.live.settings.flow.firstNight,
+      value: formatSettingsDuration(settings.firstNightSeconds, t),
+    },
+    { label: t.live.settings.flow.day, value: dayValue },
+    { label: t.live.settings.flow.vote, value: formatSettingsDuration(settings.votingSeconds, t) },
+    {
+      label: t.live.settings.flow.lastWords,
+      value: formatSettingsDuration(settings.executionLastWordsSeconds, t),
+    },
+    { label: t.live.settings.flow.night, value: formatSettingsDuration(settings.nightSeconds, t) },
   ];
 }
 
-function formatSettingsDuration(seconds: number): string {
+function formatSettingsDuration(seconds: number, t: Localization): string {
   if (seconds < 60) {
-    return `${seconds}s`;
+    return t.live.time.durationSeconds(seconds);
   }
 
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
 
-  return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+  return remainingSeconds === 0
+    ? t.live.time.durationMinutes(minutes)
+    : t.live.time.durationMinutesSeconds(minutes, remainingSeconds);
 }
 
 function clampRuleSetNumber(field: RuleSetNumberField, value: number): number {
@@ -3348,118 +3505,196 @@ function getLiveGridClassName(summary: RoomSummary | null): string {
   return "liveGrid livePlayGrid";
 }
 
-function getLivePageTitle(summary: RoomSummary | null): string {
+function getLivePageTitle(summary: RoomSummary | null, t: Localization): string {
   if (summary === null) {
-    return "Room setup";
+    return t.live.page.roomSetup;
   }
 
   if (summary.status === "lobby") {
-    return `Room ${summary.code}`;
+    return t.live.page.room(summary.code);
   }
 
   if (summary.status === "disbanded") {
-    return "Room closed";
+    return t.live.page.roomClosed;
   }
 
   if (summary.game?.status === "ended") {
-    return "Result";
+    return t.live.page.result;
   }
 
-  return formatPhaseTitle(summary.game?.phase ?? null);
+  return formatPhaseTitle(summary.game?.phase ?? null, t);
 }
 
-function getLiveTableTitle(summary: RoomSummary): string {
+function getLiveTableTitle(summary: RoomSummary, t: Localization): string {
   if (summary.status === "disbanded") {
-    return "Closed";
+    return t.live.table.closed;
   }
 
   if (summary.game?.status === "ended") {
-    return "Result";
+    return t.live.page.result;
   }
 
-  return formatPhaseTitle(summary.game?.phase ?? null);
+  return formatPhaseTitle(summary.game?.phase ?? null, t);
 }
 
-function getLiveTableNotice(summary: RoomSummary): string {
+function getLiveTableNotice(summary: RoomSummary, t: Localization): string {
   if (summary.status === "disbanded") {
-    return "This room is closed.";
+    return t.live.table.closed;
   }
 
   if (summary.game?.status === "ended") {
-    return `${formatWinner(summary.game.winnerTeam)} win.`;
+    return t.live.table.noticeResult(formatWinner(summary.game.winnerTeam, t));
   }
 
   if (summary.game?.phase === "night") {
-    return "Private actions are open. The table view stays public.";
+    return t.live.table.noticeNight;
   }
 
   if (summary.game?.phase === "day") {
-    return "Discussion is live. Track readiness without replacing table talk.";
+    return t.live.table.noticeDay;
   }
 
   if (summary.game?.phase === "voting") {
-    return "Ballots are open for living players.";
+    return t.live.table.noticeVoting;
   }
 
   if (summary.game?.phase === "execution") {
-    return "Resolve the candidate and move the table forward.";
+    return t.live.table.noticeExecution;
   }
 
-  return "Game state is loading from the server.";
+  return t.live.table.gameStateLoading;
 }
 
-function getActionPanelTitle(summary: RoomSummary): string {
+function getActionPanelTitle(summary: RoomSummary, t: Localization): string {
   if (summary.game?.phase === "night") {
-    return "Night action";
+    return t.game.actions.night;
   }
 
   if (summary.game?.phase === "day") {
-    return "Day action";
+    return t.game.actions.day;
   }
 
   if (summary.game?.phase === "voting") {
-    return "Vote action";
+    return t.game.actions.vote;
   }
 
   if (summary.game?.phase === "execution") {
-    return "Execution action";
+    return t.game.actions.execution;
   }
 
-  return "Action";
+  return t.game.actions.action;
 }
 
-function getPlayStatusMessage(statusMessage: string, summary: RoomSummary): string {
-  if (statusMessage === "Your browser identity stays local and can rejoin the room.") {
+function localizeStatusMessage(statusMessage: string, t: Localization): string {
+  for (const localization of Object.values(localizations)) {
+    if (statusMessage === localization.live.room.initialStatus) {
+      return t.live.room.initialStatus;
+    }
+
+    if (statusMessage === localization.live.room.readyToJoin) {
+      return t.live.room.readyToJoin;
+    }
+
+    if (statusMessage === localization.live.room.savedExpired) {
+      return t.live.room.savedExpired;
+    }
+
+    if (statusMessage === localization.live.room.savedCouldNotRestore) {
+      return t.live.room.savedCouldNotRestore;
+    }
+
+    if (statusMessage === localization.live.room.closed) {
+      return t.live.room.closed;
+    }
+
+    if (statusMessage === localization.live.room.identityExpired) {
+      return t.live.room.identityExpired;
+    }
+
+    if (statusMessage === localization.live.room.identityReset) {
+      return t.live.room.identityReset;
+    }
+
+    if (statusMessage === localization.live.room.identityResetting) {
+      return t.live.room.identityResetting;
+    }
+
+    if (statusMessage === localization.live.room.left) {
+      return t.live.room.left;
+    }
+
+    if (statusMessage === localization.live.room.syncFailed) {
+      return t.live.room.syncFailed;
+    }
+
+    if (statusMessage === localization.live.status.gameStarted) {
+      return t.live.status.gameStarted;
+    }
+
+    if (statusMessage === localization.live.status.phaseStillWaiting) {
+      return t.live.status.phaseStillWaiting;
+    }
+
+    if (statusMessage === localization.live.status.realtimeFailed) {
+      return t.live.status.realtimeFailed;
+    }
+
+    if (statusMessage === localization.live.status.timerAdvanceChecked) {
+      return t.live.status.timerAdvanceChecked;
+    }
+
+    if (statusMessage === localization.live.status.timerAdvanceFailed) {
+      return t.live.status.timerAdvanceFailed;
+    }
+
+    if (statusMessage === localization.live.dev.fixtureCleared) {
+      return t.live.dev.fixtureCleared;
+    }
+
+    if (statusMessage === localization.live.invite.shareCancelled) {
+      return t.live.invite.shareCancelled;
+    }
+  }
+
+  return statusMessage;
+}
+
+function getPlayStatusMessage(
+  statusMessage: string,
+  summary: RoomSummary,
+  t: Localization,
+): string {
+  if (statusMessage === t.live.room.initialStatus) {
     return "";
   }
 
-  const roomPrefix = `Room ${summary.code} `;
+  const roomPrefix = t.live.page.room(summary.code);
 
   if (statusMessage.startsWith(roomPrefix)) {
-    return `Table ${statusMessage.slice(roomPrefix.length)}`;
+    return t.live.status.tableStatus(statusMessage.slice(roomPrefix.length));
   }
 
-  return statusMessage.replaceAll(summary.code, "this table");
+  return statusMessage;
 }
 
-function formatPhaseTitle(phase: NonNullable<RoomSummary["game"]>["phase"]): string {
+function formatPhaseTitle(phase: string | null, t: Localization): string {
   if (phase === "night") {
-    return "Night";
+    return t.game.phase.night;
   }
 
   if (phase === "day") {
-    return "Day";
+    return t.game.phase.day;
   }
 
   if (phase === "voting") {
-    return "Voting";
+    return t.game.phase.voting;
   }
 
   if (phase === "execution") {
-    return "Execution";
+    return t.game.phase.execution;
   }
 
-  return "Game";
+  return t.game.phase.game;
 }
 
 function getRoundTableSeatPosition(index: number, totalPlayers: number): RoundTableSeatPosition {
@@ -3532,46 +3767,51 @@ function getLiveSeatState(
   return "observing";
 }
 
-function getLiveSeatStatusLabel(player: PublicPlayer, index: number, summary: RoomSummary): string {
+function getLiveSeatStatusLabel(
+  player: PublicPlayer,
+  index: number,
+  summary: RoomSummary,
+  t: Localization,
+): string {
   if (player.alive === false) {
-    return "Out";
+    return t.game.seatStatus.out;
   }
 
   if (player.status === "disconnected") {
-    return "Disconnected";
+    return t.game.seatStatus.disconnected;
   }
 
   if (player.status === "left") {
-    return "Left";
+    return t.game.seatStatus.left;
   }
 
   if (player.isHost) {
-    return "Host";
+    return t.game.seatStatus.host;
   }
 
   if (player.isCurrent) {
-    return "You";
+    return t.game.seatStatus.you;
   }
 
   const seatState = getLiveSeatState(player, index, summary);
 
   if (seatState === "voted") {
-    return "Voted";
+    return t.game.seatStatus.voted;
   }
 
   if (seatState === "pending") {
-    return "Pending";
+    return t.game.seatStatus.pending;
   }
 
   if (seatState === "speaking") {
-    return "Speaking";
+    return t.game.seatStatus.speaking;
   }
 
   if (seatState === "ready") {
-    return "Ready";
+    return t.game.seatStatus.ready;
   }
 
-  return "Watching";
+  return t.game.seatStatus.watching;
 }
 
 function getLivingSeatIndex(player: PublicPlayer, summary: RoomSummary): number {
@@ -3584,86 +3824,80 @@ function getPlayerInitial(displayName: string): string {
   return displayName.trim().slice(0, 1).toLocaleUpperCase("en") || "?";
 }
 
-function getPlayPhaseGuidance(summary: RoomSummary, isBusy: boolean): LiveGuidance {
+function getPlayPhaseGuidance(
+  summary: RoomSummary,
+  isBusy: boolean,
+  t: Localization,
+): LiveGuidance {
   if (isBusy) {
-    return { label: "Syncing", message: "Reloading the latest table state." };
+    return t.live.phasePanel.syncing;
   }
 
   if (summary.status === "disbanded") {
-    return { label: "Closed", message: "This table is closed." };
+    return t.live.phasePanel.closed;
   }
 
   if (summary.game?.status === "ended") {
-    return { label: "Result", message: `${formatWinner(summary.game.winnerTeam)} won.` };
+    return t.live.phasePanel.result(formatWinner(summary.game.winnerTeam, t));
   }
 
   if (summary.game?.phase === "night") {
-    return { label: "Night", message: "Private actions are open. The public table stays quiet." };
+    return t.live.phasePanel.night;
   }
 
   if (summary.game?.phase === "day") {
-    return { label: "Day", message: "Discussion is live. The app tracks table readiness only." };
+    return t.live.phasePanel.day;
   }
 
   if (summary.game?.phase === "voting") {
-    return { label: "Voting", message: "Ballots are open for living players." };
+    return t.live.phasePanel.voting;
   }
 
   if (summary.game?.phase === "execution") {
-    return { label: "Execution", message: "Resolve the table outcome for this phase." };
+    return t.live.phasePanel.execution;
   }
 
-  return { label: "Game", message: "Loading the current table phase." };
+  return t.live.phasePanel.game;
 }
 
 function getLiveGuidance(
   summary: RoomSummary | null,
   actionCount: number,
   isBusy: boolean,
+  t: Localization,
 ): LiveGuidance {
   if (isBusy) {
-    return { label: "Syncing", message: "Updating the room from the server." };
+    return t.live.guidance.syncing;
   }
 
   if (summary === null) {
-    return { label: "Setup", message: "Create a room or join one with a six-digit code." };
+    return t.live.guidance.setup;
   }
 
   if (summary.status === "disbanded") {
-    return { label: "Closed", message: "This room has been disbanded." };
+    return t.live.guidance.closed;
   }
 
   if (summary.game?.status === "ended") {
-    return {
-      label: "Result",
-      message: `${formatWinner(summary.game.winnerTeam)} won. Start a new room when ready.`,
-    };
+    return t.live.guidance.result(formatWinner(summary.game.winnerTeam, t));
   }
 
   if (summary.status === "lobby") {
     const joinedPlayerCount = countJoinedPlayers(summary);
 
     if (!summary.isHost) {
-      return {
-        label: "Lobby",
-        message: `${joinedPlayerCount}/${summary.targetPlayerCount} seats filled. Waiting for the host.`,
-      };
+      return t.live.guidance.lobby(joinedPlayerCount, summary.targetPlayerCount);
     }
 
     if (joinedPlayerCount < summary.targetPlayerCount) {
-      return {
-        label: "Invite",
-        message: `${summary.targetPlayerCount - joinedPlayerCount} more player${
-          summary.targetPlayerCount - joinedPlayerCount === 1 ? "" : "s"
-        } needed before starting.`,
-      };
+      return t.live.guidance.invite(summary.targetPlayerCount - joinedPlayerCount);
     }
 
     if (joinedPlayerCount > summary.targetPlayerCount) {
-      return { label: "Full", message: "Leave extra seats before starting this room." };
+      return t.live.guidance.full;
     }
 
-    return { label: "Ready", message: "Every selected seat is filled. Start when ready." };
+    return t.live.guidance.ready;
   }
 
   if (actionCount > 0) {
@@ -3671,78 +3905,77 @@ function getLiveGuidance(
       summary.self?.actions.filter((action) => action.status === "open").length ?? 0;
 
     if (openActionCount > 0) {
-      return { label: "Your turn", message: "Submit the private action shown below." };
+      return t.live.guidance.yourTurn;
     }
   }
 
   if (summary.game?.actionProgress?.visibility === "public") {
-    return {
-      label: "Progress",
-      message: `${summary.game.actionProgress.submitted}/${summary.game.actionProgress.required} ${summary.game.actionProgress.label}`,
-    };
+    return t.live.guidance.progress(
+      summary.game.actionProgress.submitted,
+      summary.game.actionProgress.required,
+      summary.game.actionProgress.label,
+    );
   }
 
   if (summary.game?.actionProgress?.visibility === "hidden") {
-    return { label: "Private night", message: summary.game.actionProgress.label };
+    return t.live.guidance.privateNight(summary.game.actionProgress.label);
   }
 
   if (summary.isHost) {
-    return { label: "Host", message: "Advance the phase after all pending actions are submitted." };
+    return t.live.guidance.host;
   }
 
-  return { label: "Waiting", message: "Waiting for other players or the host." };
+  return t.live.guidance.waiting;
 }
 
-function getStartHint(summary: RoomSummary | null, isBusy: boolean): string {
+function getStartHint(summary: RoomSummary | null, isBusy: boolean, t: Localization): string {
   if (isBusy) {
-    return "Start is available after the current sync finishes.";
+    return t.live.hints.startAfterSync;
   }
 
   if (summary === null) {
-    return "Create or join a room before starting.";
+    return t.live.hints.startNeedsRoom;
   }
 
   if (!summary.isHost) {
-    return "Only the host can start the game.";
+    return t.live.hints.hostOnlyStart;
   }
 
   if (summary.status !== "lobby") {
-    return "Start is only available while the room is in lobby.";
+    return t.live.hints.startInLobby;
   }
 
   const joinedPlayerCount = countJoinedPlayers(summary);
 
   if (joinedPlayerCount < summary.targetPlayerCount) {
-    return `${summary.targetPlayerCount - joinedPlayerCount} more active player${
-      summary.targetPlayerCount - joinedPlayerCount === 1 ? "" : "s"
-    } needed before starting.`;
+    return t.live.hints.waitingForPlayers(summary.targetPlayerCount - joinedPlayerCount);
   }
 
   if (joinedPlayerCount > summary.targetPlayerCount) {
-    return "This room has more active players than the selected seat count.";
+    return t.live.hints.tooManyPlayers;
   }
 
-  return "Start the game when every player is seated.";
+  return t.live.hints.startWhenSeated;
 }
 
-function getControlHint(summary: RoomSummary | null, isBusy: boolean): string {
+function getControlHint(summary: RoomSummary | null, isBusy: boolean, t: Localization): string {
   if (summary === null) {
-    return "Create or join a room to use table controls.";
+    return t.live.hints.controlsNeedRoom;
   }
 
   if (summary.status === "lobby") {
-    return getStartHint(summary, isBusy);
+    return getStartHint(summary, isBusy, t);
   }
 
   if (summary.status === "playing" && summary.game?.status === "playing") {
-    return getAdvanceHint(summary, isBusy);
+    return getAdvanceHint(summary, isBusy, t);
   }
 
   if (summary.status === "disbanded") {
-    return "This room is closed.";
+    return t.live.hints.roomClosed;
   }
 
-  return "Review the result from this table.";
+  return t.live.hints.reviewResult;
 }
 
 function canStartRoom(summary: RoomSummary | null): boolean {
@@ -3759,95 +3992,106 @@ function countJoinedPlayers(summary: RoomSummary): number {
   return summary.players.filter((player) => player.status === "joined").length;
 }
 
-function getAdvanceHint(summary: RoomSummary | null, isBusy: boolean): string {
+function getAdvanceHint(summary: RoomSummary | null, isBusy: boolean, t: Localization): string {
   if (isBusy) {
-    return "Advance is available after the current sync finishes.";
+    return t.live.hints.advanceAfterSync;
   }
 
   if (summary === null) {
-    return "Create or join a room before advancing phases.";
+    return t.live.hints.advanceNeedsRoom;
   }
 
   if (!summary.isHost) {
-    return "Only the host can advance phases.";
+    return t.live.hints.hostOnlyAdvance;
   }
 
   if (summary.status !== "playing" || summary.game?.status !== "playing") {
-    return "Advance is available while a game is in progress.";
+    return t.live.hints.advanceInProgress;
   }
 
-  return "Advance after the table is ready or the phase timer has elapsed.";
+  return t.live.hints.advanceAfterReady;
 }
 
-function getActionButtonLabel(action: PublicAction, isBusy: boolean): string {
+function getActionButtonLabel(action: PublicAction, isBusy: boolean, t: Localization): string {
   if (action.status === "submitted") {
-    return "Submitted";
+    return t.game.actions.button.submitted;
   }
 
   if (isBusy) {
-    return "Submitting";
+    return t.game.actions.button.submitting;
   }
 
-  return "Submit";
+  return t.game.actions.button.submit;
 }
 
-function formatRoomStatus(summary: RoomSummary | null): string {
+function formatRoomStatus(summary: RoomSummary | null, t: Localization): string {
   if (summary === null) {
-    return "No room";
+    return t.live.roomStatus.noRoom;
   }
 
   if (summary.game?.status === "ended") {
-    return "Ended";
+    return t.home.panel.ended;
   }
 
-  return `${summary.status} / ${summary.game?.phase ?? "setup"}`;
+  const status = t.live.roomStatus.status[summary.status];
+  const phase =
+    summary.game?.phase === null || summary.game?.phase === undefined
+      ? t.game.phase.setup
+      : formatPhaseTitle(summary.game.phase, t);
+
+  return t.live.roomStatus.value(status, phase);
 }
 
-function formatWinner(winnerTeam: string | null): string {
+function formatWinner(winnerTeam: string | null, t: Localization): string {
   if (winnerTeam === null) {
-    return "No team";
+    return t.game.team.none;
   }
 
   if (winnerTeam === "werewolves") {
-    return "Werewolves";
+    return t.game.team.werewolves;
   }
 
   if (winnerTeam === "villagers") {
-    return "Villagers";
+    return t.game.team.villagers;
   }
 
-  return "Fox";
+  return t.game.team.fox;
 }
 
 function formatActionProgress(
   progress: NonNullable<RoomSummary["game"]>["actionProgress"],
+  t: Localization,
 ): string {
   if (progress === null) {
-    return "none";
+    return t.game.actionProgress.none;
   }
 
   if (progress.visibility === "hidden") {
-    return "private";
+    return t.game.actionProgress.private;
   }
 
   return `${progress.submitted}/${progress.required}`;
 }
 
-function formatPhaseCountdown(phaseEndsAt: string | null, currentTimeMs: number): string {
+function formatPhaseCountdown(
+  phaseEndsAt: string | null,
+  currentTimeMs: number,
+  t: Localization,
+): string {
   if (phaseEndsAt === null) {
-    return "closed";
+    return t.live.time.closed;
   }
 
   const phaseEndsAtMs = Date.parse(phaseEndsAt);
 
   if (!Number.isFinite(phaseEndsAtMs)) {
-    return "unknown";
+    return t.live.time.unknown;
   }
 
   const remainingSeconds = Math.max(Math.ceil((phaseEndsAtMs - currentTimeMs) / 1_000), 0);
 
   if (remainingSeconds <= 0) {
-    return "due now";
+    return t.live.time.dueNow;
   }
 
   const minutes = Math.floor(remainingSeconds / 60);
@@ -3856,19 +4100,184 @@ function formatPhaseCountdown(phaseEndsAt: string | null, currentTimeMs: number)
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function formatEventKind(kind: string): string {
+function formatPublicEvent(
+  event: NonNullable<RoomSummary["game"]>["events"][number],
+  players: readonly PublicPlayer[],
+  t: Localization,
+): {
+  readonly details: readonly PublicEventDetail[];
+  readonly kindLabel: string;
+  readonly message: string;
+} {
+  const targetName = getPayloadPublicPlayerName(event.payload["targetPlayerId"], players);
+  switch (event.kind) {
+    case "game_ended": {
+      const winner = formatWinner(toStringOrNull(event.payload["winnerTeam"]), t);
+
+      return {
+        details: [{ label: t.events.details.winner, value: winner }],
+        kindLabel: t.events.kind.game_ended,
+        message: t.events.message.game_ended(winner),
+      };
+    }
+
+    case "phase_changed": {
+      const phase = formatPhaseTitle(toStringOrNull(event.payload["phase"]), t);
+
+      return {
+        details: [],
+        kindLabel: t.events.kind.phase_changed,
+        message: t.events.message.phase_changed(phase),
+      };
+    }
+
+    case "player_died":
+      return {
+        details: targetName === null ? [] : [{ label: t.events.details.player, value: targetName }],
+        kindLabel: t.events.kind.player_died,
+        message: t.events.message.player_died(targetName ?? t.game.seatStatus.player),
+      };
+
+    case "player_executed":
+      return {
+        details: targetName === null ? [] : [{ label: t.events.details.player, value: targetName }],
+        kindLabel: t.events.kind.player_executed,
+        message: t.events.message.player_executed(targetName ?? t.game.seatStatus.player),
+      };
+
+    case "vote_resolved":
+      return formatVoteResolvedEvent(event.payload, players, t);
+
+    case "attack_guarded":
+      return {
+        details: [],
+        kindLabel: t.events.kind.attack_guarded,
+        message: t.events.message.attack_guarded,
+      };
+
+    case "peaceful_night":
+      return {
+        details: [],
+        kindLabel: t.events.kind.peaceful_night,
+        message: t.events.message.peaceful_night,
+      };
+
+    case "vote_submitted":
+      return {
+        details: [],
+        kindLabel: t.events.kind.vote_submitted,
+        message: t.events.message.vote_submitted,
+      };
+
+    case "game_started":
+      return {
+        details: [],
+        kindLabel: t.events.kind.game_started,
+        message: t.events.message.game_started,
+      };
+
+    default:
+      return {
+        details: [],
+        kindLabel: formatUnknownEventKind(event.kind),
+        message: t.events.message.unknown,
+      };
+  }
+}
+
+function formatVoteResolvedEvent(
+  payload: Record<string, unknown>,
+  players: readonly PublicPlayer[],
+  t: Localization,
+): {
+  readonly details: readonly PublicEventDetail[];
+  readonly kindLabel: string;
+  readonly message: string;
+} {
+  const details: PublicEventDetail[] = [];
+  const candidateName = getPayloadPublicPlayerName(payload["executionCandidatePlayerId"], players);
+
+  if (candidateName !== null) {
+    details.push({ label: t.events.details.candidate, value: candidateName });
+  }
+
+  const voteCountsByTarget = payload["voteCountsByTarget"];
+
+  if (isRecord(voteCountsByTarget)) {
+    const voteSummary = Object.entries(voteCountsByTarget)
+      .map(([playerId, count]) => ({
+        count: typeof count === "number" ? count : Number(count),
+        playerName: getPayloadPublicPlayerName(playerId, players) ?? playerId,
+      }))
+      .filter((entry) => Number.isFinite(entry.count))
+      .toSorted((left, right) => right.count - left.count)
+      .map((entry) => `${entry.playerName} ${entry.count}`)
+      .join(", ");
+
+    if (voteSummary !== "") {
+      details.push({ label: t.events.details.votes, value: voteSummary });
+    }
+  }
+
+  const acceptedVotes = payload["acceptedVotes"];
+
+  if (Array.isArray(acceptedVotes)) {
+    const acceptedVoteSummary = acceptedVotes
+      .flatMap((vote): string[] => {
+        if (!isRecord(vote)) {
+          return [];
+        }
+
+        const voterName = getPayloadPublicPlayerName(vote["voterPlayerId"], players);
+        const targetName = getPayloadPublicPlayerName(vote["targetPlayerId"], players);
+
+        return voterName === null || targetName === null ? [] : [`${voterName} -> ${targetName}`];
+      })
+      .join(", ");
+
+    if (acceptedVoteSummary !== "") {
+      details.push({ label: t.events.details.acceptedVotes, value: acceptedVoteSummary });
+    }
+  }
+
+  return {
+    details,
+    kindLabel: t.events.kind.vote_resolved,
+    message:
+      candidateName === null
+        ? t.events.message.vote_resolved.noExecution
+        : t.events.message.vote_resolved.candidate(candidateName),
+  };
+}
+
+function getPayloadPublicPlayerName(
+  value: unknown,
+  players: readonly PublicPlayer[],
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return players.find((player) => player.id === value)?.displayName ?? null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function formatUnknownEventKind(kind: string): string {
   return kind
     .split("_")
     .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
-function formatDateTime(value: string | null): string {
+function formatDateTime(value: string | null, locale: Locale, t: Localization): string {
   if (value === null) {
-    return "none";
+    return t.common.none;
   }
 
-  return new Intl.DateTimeFormat("en", {
+  return new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

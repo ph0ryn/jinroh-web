@@ -1,3 +1,5 @@
+import { I18nProvider } from "./i18nProvider";
+
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
@@ -58,7 +60,9 @@ function getSiteUrl(): string {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body>{children}</body>
+      <body>
+        <I18nProvider>{children}</I18nProvider>
+      </body>
     </html>
   );
 }

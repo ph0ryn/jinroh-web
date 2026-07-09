@@ -122,7 +122,7 @@ export function createDevLiveFixtures(): readonly DevLiveFixture[] {
           status: "open",
         }),
       ],
-      events: [createEvent(now, "game_started", "Roles were assigned and the first night opened.")],
+      events: [createEvent(now, "game_started", {})],
       id: "night",
       label: "Night",
       phase: "night",
@@ -148,8 +148,8 @@ export function createDevLiveFixtures(): readonly DevLiveFixture[] {
         }),
       ],
       events: [
-        createEvent(now - 300_000, "player_died", "Hiro died during the night."),
-        createEvent(now - 180_000, "phase_changed", "Day discussion started."),
+        createEvent(now - 300_000, "player_died", { targetPlayerId: "player-hiro" }),
+        createEvent(now - 180_000, "phase_changed", { phase: "day" }),
       ],
       id: "day",
       label: "Day",
@@ -182,8 +182,8 @@ export function createDevLiveFixtures(): readonly DevLiveFixture[] {
         }),
       ],
       events: [
-        createEvent(now - 240_000, "phase_changed", "Voting started."),
-        createEvent(now - 90_000, "vote_submitted", "Three players have submitted votes."),
+        createEvent(now - 240_000, "phase_changed", { phase: "voting" }),
+        createEvent(now - 90_000, "vote_submitted", {}),
       ],
       id: "voting",
       label: "Voting",
@@ -210,8 +210,15 @@ export function createDevLiveFixtures(): readonly DevLiveFixture[] {
         }),
       ],
       events: [
-        createEvent(now - 180_000, "vote_resolved", "Kenji received the most votes."),
-        createEvent(now - 60_000, "phase_changed", "Execution confirmation started."),
+        createEvent(now - 180_000, "vote_resolved", {
+          executionCandidatePlayerId: "player-kenji",
+          voteCountsByTarget: {
+            "player-kenji": 4,
+            "player-mina": 2,
+            "player-yuki": 1,
+          },
+        }),
+        createEvent(now - 60_000, "phase_changed", { phase: "execution" }),
       ],
       id: "execution",
       label: "Execution",
@@ -223,8 +230,8 @@ export function createDevLiveFixtures(): readonly DevLiveFixture[] {
       actionProgress: null,
       actions: [],
       events: [
-        createEvent(now - 240_000, "player_executed", "Kenji was executed."),
-        createEvent(now - 120_000, "game_ended", "Villagers won the game."),
+        createEvent(now - 240_000, "player_executed", { targetPlayerId: "player-kenji" }),
+        createEvent(now - 120_000, "game_ended", { winnerTeam: "villagers" }),
       ],
       id: "result",
       label: "Result",
@@ -382,12 +389,15 @@ function createAction(params: {
   };
 }
 
-function createEvent(createdAtMs: number, kind: string, message: string): PublicGameEvent {
+function createEvent(
+  createdAtMs: number,
+  kind: string,
+  payload: Record<string, unknown>,
+): PublicGameEvent {
   return {
     createdAt: new Date(createdAtMs).toISOString(),
-    details: [],
     kind,
-    message,
+    payload,
   };
 }
 

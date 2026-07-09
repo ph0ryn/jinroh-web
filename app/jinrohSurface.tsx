@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { useI18n } from "./i18nProvider";
+import { LanguageSwitcher } from "./languageSwitcher";
+
+import type { Localization } from "@/lib/i18n/localization";
 import type { CSSProperties, ReactNode } from "react";
 
 type LocalView = "home" | "lobby" | "board" | "night" | "day" | "voting" | "execution" | "result";
@@ -26,10 +30,6 @@ type IconName =
 type RoleId = "fox" | "guard" | "madman" | "seer" | "villager" | "werewolf";
 
 type GamePhase = "day" | "execution" | "night" | "voting";
-
-type RoleDefinition = {
-  readonly name: string;
-};
 
 type NavItem = {
   readonly view: LocalView;
@@ -71,18 +71,11 @@ type ActivityItem = {
   readonly dateTime: string;
   readonly time: string;
   readonly icon: IconName;
-  readonly text: string;
+  readonly text: (t: Localization) => string;
   readonly visibility: "public" | "private" | "host";
 };
 
-const roleDefinitions: Record<RoleId, RoleDefinition> = {
-  fox: { name: "Fox" },
-  guard: { name: "Guard" },
-  madman: { name: "Madman" },
-  seer: { name: "Seer" },
-  villager: { name: "Villager" },
-  werewolf: { name: "Werewolf" },
-};
+type CopyStatus = "copy" | "copied" | "copyFailed";
 
 const defaultRoleCounts: Record<RoleId, number> = {
   fox: 1,
@@ -93,25 +86,7 @@ const defaultRoleCounts: Record<RoleId, number> = {
   werewolf: 2,
 };
 
-const navItems: readonly NavItem[] = [
-  { detail: "Create or rejoin", icon: "home", label: "Home", mobileLabel: "Home", view: "home" },
-  { detail: "Room setup", icon: "people", label: "Lobby", mobileLabel: "Lobby", view: "lobby" },
-  { detail: "Live table", icon: "board", label: "Game board", mobileLabel: "Board", view: "board" },
-  { detail: "Role actions", icon: "moon", label: "Night", mobileLabel: "Night", view: "night" },
-  { detail: "Discussion", icon: "day", label: "Day", mobileLabel: "Day", view: "day" },
-  { detail: "Ballots", icon: "vote", label: "Voting", mobileLabel: "Vote", view: "voting" },
-  { detail: "Reveal", icon: "flag", label: "Execution", mobileLabel: "Exec", view: "execution" },
-  { detail: "Outcome", icon: "result", label: "Result", mobileLabel: "Result", view: "result" },
-];
-
-const phaseTrack: readonly { readonly label: string; readonly view: LocalView }[] = [
-  { label: "Lobby", view: "lobby" },
-  { label: "Night", view: "night" },
-  { label: "Day", view: "day" },
-  { label: "Voting", view: "voting" },
-  { label: "Execution", view: "execution" },
-  { label: "Result", view: "result" },
-];
+const phaseTrack: readonly LocalView[] = ["lobby", "night", "day", "voting", "execution", "result"];
 
 function primaryIconForPhase(phase: GamePhase | null): IconName {
   if (phase === "voting") {
@@ -364,7 +339,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     dateTime: "2026-07-07T20:18:00+09:00",
     icon: "people",
     id: "activity-room",
-    text: "Room 428913 opened with eight joined players.",
+    text: (t) => t.home.activity.roomOpened,
     time: "20:18",
     visibility: "public",
   },
@@ -372,7 +347,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     dateTime: "2026-07-07T20:21:00+09:00",
     icon: "moon",
     id: "activity-night",
-    text: "Night started. Role actions are waiting for eligible players.",
+    text: (t) => t.home.activity.nightStarted,
     time: "20:21",
     visibility: "private",
   },
@@ -380,7 +355,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     dateTime: "2026-07-07T20:22:00+09:00",
     icon: "eye",
     id: "activity-seer",
-    text: "Seer action submitted. Public room state remains unchanged.",
+    text: (t) => t.home.activity.seerSubmitted,
     time: "20:22",
     visibility: "private",
   },
@@ -388,7 +363,7 @@ const initialActivityItems: readonly ActivityItem[] = [
     dateTime: "2026-07-07T20:28:00+09:00",
     icon: "vote",
     id: "activity-vote",
-    text: "Voting phase prepared with one action per living player.",
+    text: (t) => t.home.activity.votingPrepared,
     time: "20:28",
     visibility: "host",
   },
@@ -409,27 +384,104 @@ const roleSummary: readonly {
 
 const actionRows: readonly {
   readonly icon: IconName;
-  readonly label: string;
-  readonly status: "Done" | "Open" | "Pending" | "Locked";
+  readonly label: keyof Localization["home"]["actionRows"]["labels"];
+  readonly status: keyof Localization["home"]["actionRows"]["status"];
 }[] = [
-  { icon: "wolf", label: "Werewolves", status: "Pending" },
-  { icon: "eye", label: "Seer", status: "Done" },
-  { icon: "shield", label: "Guard", status: "Open" },
-  { icon: "vote", label: "Living players", status: "Locked" },
+  { icon: "wolf", label: "werewolves", status: "pending" },
+  { icon: "eye", label: "seer", status: "done" },
+  { icon: "shield", label: "guard", status: "open" },
+  { icon: "vote", label: "livingPlayers", status: "locked" },
 ];
 
+function getLocalizedNavItems(t: Localization): readonly NavItem[] {
+  return [
+    {
+      detail: t.home.nav.home.detail,
+      icon: "home",
+      label: t.home.nav.home.label,
+      mobileLabel: t.home.nav.home.mobileLabel,
+      view: "home",
+    },
+    {
+      detail: t.home.nav.lobby.detail,
+      icon: "people",
+      label: t.home.nav.lobby.label,
+      mobileLabel: t.home.nav.lobby.mobileLabel,
+      view: "lobby",
+    },
+    {
+      detail: t.home.nav.board.detail,
+      icon: "board",
+      label: t.home.nav.board.label,
+      mobileLabel: t.home.nav.board.mobileLabel,
+      view: "board",
+    },
+    {
+      detail: t.home.nav.night.detail,
+      icon: "moon",
+      label: t.home.nav.night.label,
+      mobileLabel: t.home.nav.night.mobileLabel,
+      view: "night",
+    },
+    {
+      detail: t.home.nav.day.detail,
+      icon: "day",
+      label: t.home.nav.day.label,
+      mobileLabel: t.home.nav.day.mobileLabel,
+      view: "day",
+    },
+    {
+      detail: t.home.nav.voting.detail,
+      icon: "vote",
+      label: t.home.nav.voting.label,
+      mobileLabel: t.home.nav.voting.mobileLabel,
+      view: "voting",
+    },
+    {
+      detail: t.home.nav.execution.detail,
+      icon: "flag",
+      label: t.home.nav.execution.label,
+      mobileLabel: t.home.nav.execution.mobileLabel,
+      view: "execution",
+    },
+    {
+      detail: t.home.nav.result.detail,
+      icon: "result",
+      label: t.home.nav.result.label,
+      mobileLabel: t.home.nav.result.mobileLabel,
+      view: "result",
+    },
+  ];
+}
+
+function getLocalizedScenarios(t: Localization): Record<LocalView, Scenario> {
+  return {
+    board: { ...scenarios.board, ...t.home.scenarios.board },
+    day: { ...scenarios.day, ...t.home.scenarios.day },
+    execution: { ...scenarios.execution, ...t.home.scenarios.execution },
+    home: { ...scenarios.home, ...t.home.scenarios.home },
+    lobby: { ...scenarios.lobby, ...t.home.scenarios.lobby },
+    night: { ...scenarios.night, ...t.home.scenarios.night },
+    result: { ...scenarios.result, ...t.home.scenarios.result },
+    voting: { ...scenarios.voting, ...t.home.scenarios.voting },
+  };
+}
+
 export function JinrohSurface() {
+  const { t } = useI18n();
   const [activeView, setActiveView] = useState<LocalView>("home");
   const [selectedPlayerId, setSelectedPlayerId] = useState("sora");
   const [roomCode, setRoomCode] = useState("428913");
   const [activityItems, setActivityItems] = useState(initialActivityItems);
-  const [copyStatus, setCopyStatus] = useState("Copy");
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>("copy");
 
-  const scenario = scenarios[activeView];
+  const localizedNavItems = useMemo(() => getLocalizedNavItems(t), [t]);
+  const localizedScenarios = useMemo(() => getLocalizedScenarios(t), [t]);
+  const scenario = localizedScenarios[activeView];
   const selectedPlayer =
     samplePlayers.find((player) => player.id === selectedPlayerId) ?? fallbackPlayer;
   const joinedPlayers = samplePlayers.filter((player) => player.alive).length;
-  const viewIndex = navItems.findIndex((item) => item.view === activeView);
+  const viewIndex = localizedNavItems.findIndex((item) => item.view === activeView);
 
   const visiblePlayers = useMemo(() => {
     if (activeView === "result") {
@@ -446,7 +498,7 @@ export function JinrohSurface() {
       dateTime: new Date().toISOString(),
       icon: primaryIconForPhase(scenario.phase),
       id: `activity-${Date.now()}`,
-      text: `${scenario.primaryAction} confirmed in the local product surface.`,
+      text: (localized) => localized.home.activity.primaryActionConfirmed(scenario.primaryAction),
       time: "now",
       visibility: activeView === "night" ? "private" : "public",
     };
@@ -464,8 +516,8 @@ export function JinrohSurface() {
       return;
     }
 
-    const currentTrackIndex = phaseTrack.findIndex((item) => item.view === activeView);
-    const nextView = phaseTrack[currentTrackIndex + 1]?.view ?? "lobby";
+    const currentTrackIndex = phaseTrack.findIndex((view) => view === activeView);
+    const nextView = phaseTrack[currentTrackIndex + 1] ?? "lobby";
 
     setActiveView(nextView);
   }
@@ -473,10 +525,10 @@ export function JinrohSurface() {
   async function handleCopyRoomCode() {
     try {
       await navigator.clipboard.writeText(roomCode);
-      setCopyStatus("Copied");
-      window.setTimeout(() => setCopyStatus("Copy"), 1800);
+      setCopyStatus("copied");
+      window.setTimeout(() => setCopyStatus("copy"), 1800);
     } catch {
-      setCopyStatus("Copy failed");
+      setCopyStatus("copyFailed");
     }
   }
 
@@ -485,46 +537,47 @@ export function JinrohSurface() {
       <section className="heroBackdrop" aria-hidden="true" />
       <div className="surfaceFrame">
         <header className="topBar">
-          <a className="brandMark" href="#app-surface" aria-label="Jinroh Web home">
+          <a className="brandMark" href="#app-surface" aria-label={t.home.brand.homeLabel}>
             <span className="brandEmblem">
               <Icon name="wolf" />
             </span>
             <span>
               <strong>Jinroh Web</strong>
-              <small>Shared state for live werewolf</small>
+              <small>{t.home.brand.subtitle}</small>
             </span>
           </a>
 
-          <div className="roomTools" aria-label="Room tools">
-            <span className="roomCode">Room {roomCode}</span>
+          <div className="roomTools" aria-label={t.home.aria.roomTools}>
+            <LanguageSwitcher />
+            <span className="roomCode">{t.home.room.code(roomCode)}</span>
             <button
               className="iconButton"
               type="button"
-              aria-label="Copy room code"
+              aria-label={t.home.copy.copyRoomCode}
               onClick={handleCopyRoomCode}
             >
               <Icon name="copy" />
             </button>
             <span className="copyStatus" aria-live="polite">
-              {copyStatus}
+              {t.home.copy[copyStatus]}
             </span>
             <Link className="secondaryButton compactButton" href="/live">
-              Live table
+              {t.home.buttons.liveTable}
             </Link>
             <button
               className="primaryButton compactButton"
               type="button"
               onClick={() => setActiveView("lobby")}
             >
-              Create room
+              {t.home.buttons.createRoom}
             </button>
           </div>
         </header>
 
         <div id="app-surface" className="productShell">
-          <aside className="stateRail" aria-label="Product states">
+          <aside className="stateRail" aria-label={t.home.aria.productStates}>
             <nav className="stateNav">
-              {navItems.map((item) => (
+              {localizedNavItems.map((item) => (
                 <button
                   aria-current={item.view === activeView ? "page" : undefined}
                   className={item.view === activeView ? "stateButton active" : "stateButton"}
@@ -543,33 +596,34 @@ export function JinrohSurface() {
             </nav>
 
             <div className="railFooter">
-              <span>
-                State {viewIndex + 1} of {navItems.length}
-              </span>
+              <span>{t.home.phaseMeta.state(viewIndex + 1, localizedNavItems.length)}</span>
               <strong>{scenario.title}</strong>
             </div>
           </aside>
 
-          <section className="mainStage" aria-label={`${scenario.title} surface`}>
+          <section className="mainStage" aria-label={t.home.aria.appSurface(scenario.title)}>
             <div className="stageHeader">
               <div>
                 <h1>{scenario.title}</h1>
                 <p>{scenario.summary}</p>
               </div>
-              <div className="phaseMeta" aria-label="Current phase">
-                <span>{scenario.phase === null ? "Setup" : scenario.phase}</span>
+              <div className="phaseMeta" aria-label={t.home.aria.currentPhase}>
+                <span>
+                  {scenario.phase === null ? t.game.phase.setup : t.game.phase[scenario.phase]}
+                </span>
                 <strong>
-                  Day {scenario.dayNumber} / Night {scenario.nightNumber}
+                  {t.home.phaseMeta.dayNight(scenario.dayNumber, scenario.nightNumber)}
                 </strong>
               </div>
             </div>
 
-            <PhaseTimeline activeView={activeView} />
+            <PhaseTimeline activeView={activeView} t={t} />
 
             {activeView === "home" ? (
               <HomeSurface
                 roomCode={roomCode}
                 setRoomCode={setRoomCode}
+                t={t}
                 onCreateRoom={handlePrimaryAction}
                 onJoinRoom={() => setActiveView("lobby")}
               />
@@ -579,18 +633,19 @@ export function JinrohSurface() {
                 players={visiblePlayers}
                 scenario={scenario}
                 selectedPlayerId={selectedPlayer.id}
+                t={t}
                 onSelectPlayer={setSelectedPlayerId}
               />
             )}
 
-            <ActivityStrip activityItems={activityItems} />
+            <ActivityStrip activityItems={activityItems} t={t} />
           </section>
 
-          <aside className="commandPanel" aria-label="Host and player controls">
+          <aside className="commandPanel" aria-label={t.home.aria.commandPanel}>
             <section className="panelSection">
               <div className="sectionHeading">
-                <span>Host controls</span>
-                <strong>{activeView === "result" ? "Ended" : "Live"}</strong>
+                <span>{t.home.panel.hostControls}</span>
+                <strong>{activeView === "result" ? t.home.panel.ended : t.home.panel.live}</strong>
               </div>
               <button className="primaryButton" type="button" onClick={handlePrimaryAction}>
                 <Icon name={primaryIconForPhase(scenario.phase)} />
@@ -604,8 +659,8 @@ export function JinrohSurface() {
 
             <section className="panelSection">
               <div className="sectionHeading">
-                <span>Selected player</span>
-                <strong>{selectedPlayer.alive ? "Alive" : "Out"}</strong>
+                <span>{t.home.panel.selectedPlayer}</span>
+                <strong>{selectedPlayer.alive ? t.game.seatStatus.alive : t.home.panel.out}</strong>
               </div>
               <div className="selectedPlayer">
                 <span className="avatar largeAvatar" aria-hidden="true">
@@ -614,7 +669,10 @@ export function JinrohSurface() {
                 <div>
                   <strong>{selectedPlayer.displayName}</strong>
                   <span>
-                    Seat {selectedPlayer.seatNumber} / {roleDefinitions[selectedPlayer.roleId].name}
+                    {t.home.panel.selectedSeatRole(
+                      selectedPlayer.seatNumber,
+                      getHomeRoleName(selectedPlayer.roleId, t),
+                    )}
                   </span>
                 </div>
               </div>
@@ -622,15 +680,15 @@ export function JinrohSurface() {
 
             <section className="panelSection">
               <div className="sectionHeading">
-                <span>Action status</span>
-                <strong>{joinedPlayers} alive</strong>
+                <span>{t.home.panel.actionStatus}</span>
+                <strong>{t.home.panel.alive(joinedPlayers)}</strong>
               </div>
               <div className="actionList">
                 {actionRows.map((row) => (
                   <div className="actionRow" key={row.label}>
                     <Icon name={row.icon} />
-                    <span>{row.label}</span>
-                    <strong data-status={row.status}>{row.status}</strong>
+                    <span>{t.home.actionRows.labels[row.label]}</span>
+                    <strong data-status={row.status}>{t.home.actionRows.status[row.status]}</strong>
                   </div>
                 ))}
               </div>
@@ -638,19 +696,19 @@ export function JinrohSurface() {
           </aside>
         </div>
 
-        <footer className="roleLegend" aria-label="Rule set role counts">
+        <footer className="roleLegend" aria-label={t.home.aria.roleCounts}>
           {roleSummary.map((role) => (
             <div className="roleLegendItem" key={role.roleId}>
               <Icon name={role.icon} />
-              <span>{roleDefinitions[role.roleId].name}</span>
+              <span>{getHomeRoleName(role.roleId, t)}</span>
               <strong>{role.count}</strong>
             </div>
           ))}
         </footer>
       </div>
 
-      <nav className="mobileTabs" aria-label="Mobile state tabs">
-        {navItems.map((item) => (
+      <nav className="mobileTabs" aria-label={t.home.aria.mobileTabs}>
+        {localizedNavItems.map((item) => (
           <button
             aria-current={item.view === activeView ? "page" : undefined}
             aria-label={item.label}
@@ -672,36 +730,35 @@ export function JinrohSurface() {
 function HomeSurface({
   roomCode,
   setRoomCode,
+  t,
   onCreateRoom,
   onJoinRoom,
 }: {
   readonly roomCode: string;
   readonly setRoomCode: (roomCode: string) => void;
+  readonly t: Localization;
   readonly onCreateRoom: () => void;
   readonly onJoinRoom: () => void;
 }) {
   return (
     <div className="homeSurface">
       <div className="homeCopy">
-        <h2>Start from a real table</h2>
-        <p>
-          The app keeps room membership, host state, phase progress, actions, and results organized
-          while the conversation stays with the players.
-        </p>
+        <h2>{t.home.hero.title}</h2>
+        <p>{t.home.hero.body}</p>
       </div>
 
-      <div className="homeActions" aria-label="Room entry actions">
+      <div className="homeActions" aria-label={t.home.aria.roomActions}>
         <section className="homeChoice">
           <span className="choiceIcon">
             <Icon name="home" />
           </span>
-          <h3>Create room</h3>
-          <p>Open a lobby, become host, and invite players with a six-digit code.</p>
+          <h3>{t.home.room.createTitle}</h3>
+          <p>{t.home.room.createBody}</p>
           <button className="primaryButton" type="button" onClick={onCreateRoom}>
-            Create room
+            {t.home.buttons.createRoom}
           </button>
           <Link className="secondaryButton" href="/live">
-            Open live table
+            {t.home.buttons.openLiveTable}
           </Link>
         </section>
 
@@ -709,8 +766,8 @@ function HomeSurface({
           <span className="choiceIcon">
             <Icon name="copy" />
           </span>
-          <h3>Join with code</h3>
-          <label htmlFor="room-code">Room code</label>
+          <h3>{t.home.room.joinTitle}</h3>
+          <label htmlFor="room-code">{t.home.room.codeLabel}</label>
           <div className="joinControl">
             <input
               id="room-code"
@@ -720,7 +777,7 @@ function HomeSurface({
               onChange={(event) => setRoomCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
             />
             <button className="secondaryButton" type="button" onClick={onJoinRoom}>
-              Join
+              {t.home.buttons.join}
             </button>
           </div>
         </section>
@@ -729,20 +786,26 @@ function HomeSurface({
   );
 }
 
-function PhaseTimeline({ activeView }: { readonly activeView: LocalView }) {
+function PhaseTimeline({
+  activeView,
+  t,
+}: {
+  readonly activeView: LocalView;
+  readonly t: Localization;
+}) {
   const effectiveView = activeView === "board" ? "day" : activeView;
-  const activeIndex = phaseTrack.findIndex((item) => item.view === effectiveView);
+  const activeIndex = phaseTrack.findIndex((view) => view === effectiveView);
 
   return (
-    <ol className="phaseTimeline" aria-label="Phase timeline">
-      {phaseTrack.map((item, index) => {
+    <ol className="phaseTimeline" aria-label={t.home.aria.currentPhase}>
+      {phaseTrack.map((view, index) => {
         const isComplete = activeIndex > index;
-        const isActive = item.view === effectiveView;
+        const isActive = view === effectiveView;
 
         return (
-          <li className={timelineItemClassName(isActive, isComplete)} key={item.view}>
+          <li className={timelineItemClassName(isActive, isComplete)} key={view}>
             <span>{isComplete ? <Icon name="check" /> : index + 1}</span>
-            <strong>{item.label}</strong>
+            <strong>{getPhaseTrackLabel(view, t)}</strong>
           </li>
         );
       })}
@@ -750,26 +813,48 @@ function PhaseTimeline({ activeView }: { readonly activeView: LocalView }) {
   );
 }
 
+function getPhaseTrackLabel(view: LocalView, t: Localization): string {
+  switch (view) {
+    case "day":
+      return t.game.phase.day;
+    case "execution":
+      return t.game.phase.execution;
+    case "lobby":
+      return t.game.phase.lobby;
+    case "night":
+      return t.game.phase.night;
+    case "result":
+      return t.game.phase.result;
+    case "voting":
+      return t.game.phase.voting;
+    case "board":
+    case "home":
+      return t.game.phase.game;
+  }
+}
+
 function GameBoard({
   activeView,
   players,
   scenario,
   selectedPlayerId,
+  t,
   onSelectPlayer,
 }: {
   readonly activeView: LocalView;
   readonly players: readonly Player[];
   readonly scenario: Scenario;
   readonly selectedPlayerId: string;
+  readonly t: Localization;
   readonly onSelectPlayer: (playerId: string) => void;
 }) {
   return (
     <div className="boardAndRoster">
-      <section className="tableBoard" aria-label="Werewolf table board">
+      <section className="tableBoard" aria-label={t.home.aria.tableBoard}>
         <div className="tableSurface">
           <div className="tableCenter">
             <Icon name={tableCenterIconName(activeView, scenario.phase)} />
-            <strong>{activeView === "result" ? "Villagers win" : scenario.title}</strong>
+            <strong>{activeView === "result" ? t.home.board.villagersWin : scenario.title}</strong>
             <span>{scenario.notice}</span>
           </div>
 
@@ -800,7 +885,7 @@ function GameBoard({
                 </span>
                 <span className="seatLabel">
                   <strong>{player.displayName}</strong>
-                  <small>{getPlayerStatusLabel(player)}</small>
+                  <small>{getPlayerStatusLabel(player, t)}</small>
                 </span>
               </button>
             );
@@ -808,7 +893,7 @@ function GameBoard({
         </div>
       </section>
 
-      <section className="mobileRoster" aria-label="Player roster">
+      <section className="mobileRoster" aria-label={t.home.panel.selectedPlayer}>
         {players.map((player) => (
           <button
             aria-pressed={selectedPlayerId === player.id}
@@ -823,9 +908,9 @@ function GameBoard({
             </span>
             <span>
               <strong>{player.displayName}</strong>
-              <small>{roleDefinitions[player.roleId].name}</small>
+              <small>{getHomeRoleName(player.roleId, t)}</small>
             </span>
-            <em>{player.alive ? "Alive" : "Out"}</em>
+            <em>{player.alive ? t.game.seatStatus.alive : t.game.seatStatus.out}</em>
           </button>
         ))}
       </section>
@@ -833,20 +918,26 @@ function GameBoard({
   );
 }
 
-function ActivityStrip({ activityItems }: { readonly activityItems: readonly ActivityItem[] }) {
+function ActivityStrip({
+  activityItems,
+  t,
+}: {
+  readonly activityItems: readonly ActivityItem[];
+  readonly t: Localization;
+}) {
   return (
-    <section className="activityStrip" aria-label="Activity">
+    <section className="activityStrip" aria-label={t.home.activity.heading}>
       <div className="sectionHeading">
-        <span>Activity</span>
-        <strong>Realtime invalidation log</strong>
+        <span>{t.home.activity.heading}</span>
+        <strong>{t.home.activity.logLabel}</strong>
       </div>
       <div className="activityRows">
         {activityItems.map((activityItem) => (
           <div className="activityRow" key={activityItem.id}>
             <time dateTime={activityItem.dateTime}>{activityItem.time}</time>
             <Icon name={activityItem.icon} />
-            <span>{activityItem.text}</span>
-            <strong>{activityItem.visibility}</strong>
+            <span>{activityItem.text(t)}</span>
+            <strong>{t.home.activity.visibility[activityItem.visibility]}</strong>
           </div>
         ))}
       </div>
@@ -854,32 +945,36 @@ function ActivityStrip({ activityItems }: { readonly activityItems: readonly Act
   );
 }
 
-function getPlayerStatusLabel(player: Player): string {
+function getHomeRoleName(roleId: RoleId, t: Localization): string {
+  return t.home.sampleRoles[roleId];
+}
+
+function getPlayerStatusLabel(player: Player, t: Localization): string {
   if (!player.alive) {
-    return "Out";
+    return t.game.seatStatus.out;
   }
 
   if (player.isHost) {
-    return "Host";
+    return t.game.seatStatus.host;
   }
 
   if (player.isCurrent) {
-    return "You";
+    return t.game.seatStatus.you;
   }
 
   switch (player.status) {
     case "executed":
-      return "Out";
+      return t.game.seatStatus.out;
     case "observing":
-      return "Watching";
+      return t.game.seatStatus.watching;
     case "pending":
-      return "Pending";
+      return t.game.seatStatus.pending;
     case "ready":
-      return "Ready";
+      return t.game.seatStatus.ready;
     case "speaking":
-      return "Speaking";
+      return t.game.seatStatus.speaking;
     case "voted":
-      return "Voted";
+      return t.game.seatStatus.voted;
   }
 }
 

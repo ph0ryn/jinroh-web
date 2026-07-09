@@ -90,14 +90,8 @@ export type PublicGameView = {
 
 export type PublicGameEvent = {
   kind: string;
-  message: string;
+  payload: Record<string, unknown>;
   createdAt: string;
-  details: PublicGameEventDetail[];
-};
-
-export type PublicGameEventDetail = {
-  label: string;
-  value: string;
 };
 
 export type PublicActionProgress =

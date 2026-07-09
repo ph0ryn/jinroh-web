@@ -9,7 +9,6 @@ import {
   type PublicAction,
   type PublicActionProgress,
   type PublicGameEvent,
-  type PublicGameEventDetail,
   type PublicGameView,
   type PublicPlayer,
   type PublicSubmittedAction,
@@ -143,7 +142,6 @@ type GameEventRecord = {
   event_kind: string;
   id: number;
   payload: Record<string, unknown>;
-  public_message: string | null;
   visibility: "public" | "private" | "internal";
 };
 
@@ -1063,7 +1061,7 @@ function formatPrivateEventMessage(
     return `${targetPlayerName} was ${result}.`;
   }
 
-  return event.public_message ?? event.event_kind.replaceAll("_", " ");
+  return event.event_kind.replaceAll("_", " ");
 }
 
 function getPayloadPlayerName(value: unknown, players: readonly PlayerRecord[]): string {
@@ -1074,35 +1072,6 @@ function getPayloadPlayerName(value: unknown, players: readonly PlayerRecord[]):
   const player = players.find((candidate) => String(candidate.id) === value);
 
   return player?.display_name ?? "The target";
-}
-
-function getOptionalPayloadPlayerName(
-  value: unknown,
-  players: readonly PlayerRecord[],
-): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const player = players.find((candidate) => String(candidate.id) === value);
-
-  return player?.display_name ?? null;
-}
-
-function formatWinnerTeam(value: unknown): string {
-  if (value === "werewolves") {
-    return "Werewolves";
-  }
-
-  if (value === "villagers") {
-    return "Villagers";
-  }
-
-  if (value === "fox") {
-    return "Fox";
-  }
-
-  return "Unknown";
 }
 
 function getRoleDisplayName(roleId: RoleId | null): string | null {
@@ -1596,7 +1565,7 @@ async function getPublicEvents(
 ): Promise<PublicGameEvent[]> {
   const { data, error } = await supabase
     .from("game_events")
-    .select("id,event_kind,visibility,payload,public_message,created_at")
+    .select("id,event_kind,visibility,payload,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "public")
     .order("created_at", { ascending: true })
@@ -1608,89 +1577,71 @@ async function getPublicEvents(
 
   return data.map((event) => ({
     createdAt: event.created_at,
-    details: toPublicEventDetails(event, players),
     kind: event.event_kind,
-    message: event.public_message ?? event.event_kind.replaceAll("_", " "),
+    payload: toPublicEventPayload(event.payload, players),
   }));
 }
 
-function toPublicEventDetails(
-  event: GameEventRecord,
+function toPublicEventPayload(
+  payload: Record<string, unknown>,
   players: readonly PlayerRecord[],
-): PublicGameEventDetail[] {
-  switch (event.event_kind) {
-    case "player_died":
-    case "player_executed": {
-      const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
+): Record<string, unknown> {
+  const publicPayload: Record<string, unknown> = { ...payload };
 
-      return [{ label: "Player", value: targetPlayerName }];
-    }
+  mapPayloadPlayerId(publicPayload, "actorPlayerId", players);
+  mapPayloadPlayerId(publicPayload, "targetPlayerId", players);
+  mapPayloadPlayerId(publicPayload, "executionCandidatePlayerId", players);
 
-    case "vote_resolved":
-      return toVoteResolvedDetails(event.payload, players);
+  if (Array.isArray(publicPayload["targetPlayerIds"])) {
+    publicPayload["targetPlayerIds"] = publicPayload["targetPlayerIds"].map((playerId) =>
+      toPublicPlayerId(playerId, players),
+    );
+  }
 
-    case "game_ended":
-      return [{ label: "Winner", value: formatWinnerTeam(event.payload["winnerTeam"]) }];
+  if (isRecord(publicPayload["voteCountsByTarget"])) {
+    publicPayload["voteCountsByTarget"] = Object.fromEntries(
+      Object.entries(publicPayload["voteCountsByTarget"]).map(([playerId, count]) => [
+        toPublicPlayerId(playerId, players),
+        count,
+      ]),
+    );
+  }
 
-    default:
-      return [];
+  if (Array.isArray(publicPayload["acceptedVotes"])) {
+    publicPayload["acceptedVotes"] = publicPayload["acceptedVotes"].map((vote) => {
+      if (!isRecord(vote)) {
+        return vote;
+      }
+
+      return {
+        ...vote,
+        targetPlayerId: toPublicPlayerId(vote["targetPlayerId"], players),
+        voterPlayerId: toPublicPlayerId(vote["voterPlayerId"], players),
+      };
+    });
+  }
+
+  return publicPayload;
+}
+
+function mapPayloadPlayerId(
+  payload: Record<string, unknown>,
+  key: string,
+  players: readonly PlayerRecord[],
+): void {
+  if (key in payload) {
+    payload[key] = toPublicPlayerId(payload[key], players);
   }
 }
 
-function toVoteResolvedDetails(
-  payload: Record<string, unknown>,
-  players: readonly PlayerRecord[],
-): PublicGameEventDetail[] {
-  const details: PublicGameEventDetail[] = [];
-  const executionCandidateName = getOptionalPayloadPlayerName(
-    payload["executionCandidatePlayerId"],
-    players,
-  );
-
-  if (executionCandidateName !== null) {
-    details.push({ label: "Candidate", value: executionCandidateName });
+function toPublicPlayerId(value: unknown, players: readonly PlayerRecord[]): unknown {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return value;
   }
 
-  const voteCountsByTarget = payload["voteCountsByTarget"];
+  const player = players.find((candidate) => String(candidate.id) === String(value));
 
-  if (isRecord(voteCountsByTarget)) {
-    const voteSummary = Object.entries(voteCountsByTarget)
-      .map(([playerId, count]) => ({
-        count: typeof count === "number" ? count : Number(count),
-        playerName: getPayloadPlayerName(playerId, players),
-      }))
-      .filter((entry) => Number.isFinite(entry.count))
-      .toSorted((left, right) => right.count - left.count)
-      .map((entry) => `${entry.playerName} ${entry.count}`)
-      .join(", ");
-
-    if (voteSummary !== "") {
-      details.push({ label: "Votes", value: voteSummary });
-    }
-  }
-
-  const acceptedVotes = payload["acceptedVotes"];
-
-  if (Array.isArray(acceptedVotes)) {
-    const voterSummary = acceptedVotes
-      .flatMap((vote): string[] => {
-        if (!isRecord(vote)) {
-          return [];
-        }
-
-        const voterName = getOptionalPayloadPlayerName(vote["voterPlayerId"], players);
-        const targetName = getOptionalPayloadPlayerName(vote["targetPlayerId"], players);
-
-        return voterName === null || targetName === null ? [] : [`${voterName} -> ${targetName}`];
-      })
-      .join(", ");
-
-    if (voterSummary !== "") {
-      details.push({ label: "Ballots", value: voterSummary });
-    }
-  }
-
-  return details;
+  return player?.public_player_id ?? value;
 }
 
 async function getVisiblePrivateEvents(
@@ -1702,7 +1653,7 @@ async function getVisiblePrivateEvents(
 ): Promise<PrivateGameEvent[]> {
   const { data: events, error: eventError } = await supabase
     .from("game_events")
-    .select("id,event_kind,visibility,payload,public_message,created_at")
+    .select("id,event_kind,visibility,payload,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "private")
     .order("created_at", { ascending: true })
@@ -2010,7 +1961,6 @@ function serializeEvents(events: readonly EngineEvent[]): JsonObject[] {
   return events.map((event) => ({
     event_kind: event.kind,
     payload: event.payload,
-    public_message: event.message,
     visibility: event.visibility,
     visible_to_player_ids: event.visibleToPlayerIds.map((playerId) =>
       Number.parseInt(playerId, 10),

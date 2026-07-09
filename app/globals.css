@@ -78,6 +78,33 @@ a {
   text-decoration: none;
 }
 
+.languageSwitcher {
+  align-items: center;
+  background: rgba(241, 230, 202, 0.08);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+}
+
+.languageSwitcher button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--paper-200);
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.languageSwitcher button.active,
+.languageSwitcher button:hover {
+  background: rgba(217, 173, 95, 0.18);
+  color: var(--paper-100);
+}
+
 .appShell {
   isolation: isolate;
   min-height: 100svh;
@@ -828,12 +855,12 @@ a {
   font-size: 0.78rem;
 }
 
-.actionRow strong[data-status="Done"] {
+.actionRow strong[data-status="done"] {
   color: var(--green-400);
 }
 
-.actionRow strong[data-status="Open"],
-.actionRow strong[data-status="Pending"] {
+.actionRow strong[data-status="open"],
+.actionRow strong[data-status="pending"] {
   color: var(--brass-300);
 }
 
@@ -1492,6 +1519,8 @@ a {
   gap: 18px;
   grid-template-columns: minmax(0, 1fr);
   min-height: 58px;
+  position: relative;
+  z-index: 2;
 }
 
 .liveHero h1 {
@@ -1512,6 +1541,12 @@ a {
 .liveHeroTitle {
   justify-self: end;
   text-align: right;
+}
+
+.liveLanguageSwitcher {
+  justify-self: end;
+  position: relative;
+  z-index: 3;
 }
 
 .liveKicker {
