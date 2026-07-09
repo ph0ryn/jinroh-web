@@ -13,6 +13,16 @@ export const localizations = {
 } satisfies Record<Locale, Localization>;
 
 export type { Localization };
+export {
+  getLocalizedActionButtonLabel,
+  getLocalizedActionLabel,
+  getLocalizedActionProgressLabel,
+  getLocalizedNightConversationLabel,
+  getLocalizedRole,
+  getLocalizedRoleOptionLabel,
+  getLocalizedRolePreset,
+} from "./resolvers";
+export type { LocalizedActionProgressKind } from "./resolvers";
 
 export function isLocale(value: unknown): value is Locale {
   return typeof value === "string" && LOCALES.includes(value as Locale);
