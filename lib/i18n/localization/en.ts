@@ -631,11 +631,9 @@ export const enLocalization = {
     status: {
       actionWindowClosed: "Action window is not open.",
       actionSubmitted: (label: string) => `${label} submitted. Waiting for the table to catch up.`,
-      actionSubmittedDev: (label: string) => `${label} submitted in the local dev fixture.`,
       advancedTo: (status: string) => `Advanced to ${status}.`,
       gameStarted: "Game started. Each player can check their private action card.",
       nightChatClosed: "Night chat is not open.",
-      nightMessageAddedDev: (label: string) => `${label} message added to the dev fixture.`,
       nightMessageSent: (label: string) => `${label} message sent.`,
       phaseStillWaiting: "Still waiting for pending actions or the phase timer.",
       realtimeFailed: "Realtime update failed. Polling is still active.",

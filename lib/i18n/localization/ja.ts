@@ -629,12 +629,10 @@ export const jaLocalization = {
     status: {
       actionWindowClosed: "アクション受付は開いていません。",
       actionSubmitted: (label: string) => `${label} を送信しました。テーブルの同期を待っています。`,
-      actionSubmittedDev: (label: string) => `${label} をローカル開発fixtureで送信しました。`,
       advancedTo: (status: string) => `${status} に進みました。`,
       gameStarted:
         "ゲームを開始しました。各プレイヤーは自分の非公開アクションカードを確認できます。",
       nightChatClosed: "夜会話は開いていません。",
-      nightMessageAddedDev: (label: string) => `${label} にメッセージを開発fixtureへ追加しました。`,
       nightMessageSent: (label: string) => `${label} にメッセージを送信しました。`,
       phaseStillWaiting: "未完了アクションまたはフェーズタイマーを待っています。",
       realtimeFailed: "リアルタイム更新に失敗しました。ポーリングは継続中です。",
