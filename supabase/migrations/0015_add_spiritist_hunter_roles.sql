@@ -61,7 +61,6 @@ alter table public.game_events
       'game_ended',
       'initial_inspection',
       'inspection_result',
-      'guard_resolved',
       'attack_guarded',
       'player_executed',
       'peaceful_night',

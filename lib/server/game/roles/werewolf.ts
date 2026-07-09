@@ -16,6 +16,7 @@ import {
 import { Role } from "./base";
 
 import type {
+  GameEffect,
   GameEndCandidate,
   RoleActionDefinition,
   RoleDefaultCountContext,
@@ -25,6 +26,7 @@ import type {
   InspectionContext,
   PlayerResultContext,
   PlayerRoleContext,
+  RoleActionResolvedContext,
   RoleContext,
 } from "./base";
 
@@ -91,6 +93,26 @@ export class WerewolfRole extends Role {
     });
   }
 
+  override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
+    if (context.actionKind !== GameActionKind.Attack || context.targetId === null) {
+      return [];
+    }
+
+    const targetRoleId = context.state.roleByPlayerId.get(context.targetId);
+
+    if (targetRoleId === undefined) {
+      return [];
+    }
+
+    const targetRole = context.roles.get(targetRoleId);
+
+    return targetRole.onAttacked({
+      ...context,
+      attackerIds: this.getAliveWerewolfIds(context),
+      targetId: context.targetId,
+    });
+  }
+
   override checkEndCondition(context: RoleContext): GameEndCandidate | null {
     const aliveWerewolves = this.countAliveByGroup(context, CountGroup.Werewolf);
     const aliveOthers = this.countAliveByGroup(context, CountGroup.NonWerewolf);
@@ -114,6 +136,12 @@ export class WerewolfRole extends Role {
 
   override evaluateResult(context: PlayerResultContext): PlayerResult | null {
     return context.winnerTeam === Team.Werewolf ? PlayerResult.Win : null;
+  }
+
+  private getAliveWerewolfIds(context: RoleContext): readonly string[] {
+    return context.state.alivePlayerIds.filter((playerId) => {
+      return context.state.roleByPlayerId.get(playerId) === this.id;
+    });
   }
 
   private countAliveByGroup(context: RoleContext, group: CountGroup): number {

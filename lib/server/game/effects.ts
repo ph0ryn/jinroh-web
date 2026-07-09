@@ -73,68 +73,6 @@ export function resolveEffects(effects: readonly GameEffect[]): EffectResolution
   };
 }
 
-export function collectInspectionEffects(params: {
-  context: RoleContext;
-  sourceActionId: string | null;
-  targetId: PlayerId;
-  viewerId: PlayerId;
-}): readonly GameEffect[] {
-  const viewerRoleId = getRequiredRoleIdForPlayer(params.context, params.viewerId);
-  const targetRole = params.context.roles.get(
-    getRequiredRoleIdForPlayer(params.context, params.targetId),
-  );
-  const inspectionContext = {
-    ...params.context,
-    targetId: params.targetId,
-    viewerId: params.viewerId,
-  };
-
-  return [
-    {
-      emitterRoleId: viewerRoleId,
-      id: `inspection:${params.viewerId}:${params.targetId}`,
-      kind: GameEffectKind.InspectionResult,
-      layer: GameEffectLayer.Information,
-      priority: 100,
-      sourceActionId: params.sourceActionId,
-      tags: [],
-      targetId: params.targetId,
-      view: targetRole.seenAs(inspectionContext),
-      viewerId: params.viewerId,
-    },
-    ...targetRole.onInspected(inspectionContext).map((effect) => {
-      return {
-        ...effect,
-        sourceActionId: params.sourceActionId,
-      };
-    }),
-  ];
-}
-
-export function collectAttackEffects(params: {
-  attackerIds: readonly PlayerId[];
-  context: RoleContext;
-  sourceActionId: string | null;
-  targetId: PlayerId;
-}): readonly GameEffect[] {
-  const targetRole = params.context.roles.get(
-    getRequiredRoleIdForPlayer(params.context, params.targetId),
-  );
-
-  return targetRole
-    .onAttacked({
-      ...params.context,
-      attackerIds: params.attackerIds,
-      targetId: params.targetId,
-    })
-    .map((effect) => {
-      return {
-        ...effect,
-        sourceActionId: params.sourceActionId,
-      };
-    });
-}
-
 export function collectExecutionEffects(params: {
   context: RoleContext;
   sourceActionId: string | null;
@@ -205,19 +143,21 @@ export function collectDeathResolvedEffects(params: {
 export function collectRoleActionEffects(params: {
   actionKind: GameActionKind;
   actorId: PlayerId;
+  actorRoleId: RoleId | null;
   context: RoleContext;
   sourceActionId: string | null;
   targetId: PlayerId | null;
 }): readonly GameEffect[] {
-  const actorRole = params.context.roles.get(
-    getRequiredRoleIdForPlayer(params.context, params.actorId),
-  );
+  const actorRoleId =
+    params.actorRoleId ?? getRequiredRoleIdForPlayer(params.context, params.actorId);
+  const actorRole = params.context.roles.get(actorRoleId);
 
   return actorRole
     .onActionResolved({
       ...params.context,
       actionKind: params.actionKind,
       actorId: params.actorId,
+      actorRoleId,
       targetId: params.targetId,
     })
     .map((effect) => {

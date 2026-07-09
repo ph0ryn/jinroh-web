@@ -28,6 +28,7 @@ import type {
 import type {
   InspectionContext,
   PlayerRoleContext,
+  RoleActionResolvedContext,
   RoleRuleValidationContext,
   RoleRuleValidationIssue,
 } from "./base";
@@ -142,6 +143,41 @@ export class SeerRole extends Role {
         sourceActionId: null,
         tags: [],
       },
+    ];
+  }
+
+  override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
+    if (context.actionKind !== GameActionKind.Inspect || context.targetId === null) {
+      return [];
+    }
+
+    const targetRoleId = context.state.roleByPlayerId.get(context.targetId);
+
+    if (targetRoleId === undefined) {
+      return [];
+    }
+
+    const targetRole = context.roles.get(targetRoleId);
+    const inspectionContext = {
+      ...context,
+      targetId: context.targetId,
+      viewerId: context.actorId,
+    };
+
+    return [
+      {
+        emitterRoleId: this.id,
+        id: `inspection:${context.actorId}:${context.targetId}`,
+        kind: GameEffectKind.InspectionResult,
+        layer: GameEffectLayer.Information,
+        priority: 100,
+        sourceActionId: null,
+        tags: [],
+        targetId: context.targetId,
+        view: targetRole.seenAs(inspectionContext),
+        viewerId: context.actorId,
+      },
+      ...targetRole.onInspected(inspectionContext),
     ];
   }
 

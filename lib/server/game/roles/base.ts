@@ -69,6 +69,7 @@ export type DeathResolvedContext = RoleContext & {
 export type RoleActionResolvedContext = RoleContext & {
   actionKind: GameActionKind;
   actorId: PlayerId;
+  actorRoleId: RoleId;
   targetId: PlayerId | null;
 };
 

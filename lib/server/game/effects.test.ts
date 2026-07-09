@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  collectAttackEffects,
   collectDeathResolvedEffects,
   collectExecutionEffects,
-  collectInspectionEffects,
   collectRoleActionEffects,
   resolveEffects,
 } from "./effects";
@@ -23,8 +21,10 @@ describe("resolveEffects", () => {
       ["guard", "guard"],
     ]);
     const effects = [
-      ...collectAttackEffects({
-        attackerIds: ["wolf"],
+      ...collectRoleActionEffects({
+        actionKind: GameActionKind.Attack,
+        actorId: "wolf",
+        actorRoleId: "werewolf",
         context,
         sourceActionId: "attack-action",
         targetId: "target",
@@ -32,6 +32,7 @@ describe("resolveEffects", () => {
       ...collectRoleActionEffects({
         actionKind: GameActionKind.Guard,
         actorId: "guard",
+        actorRoleId: "guard",
         context,
         sourceActionId: "guard-action",
         targetId: "target",
@@ -59,6 +60,7 @@ describe("resolveEffects", () => {
       ...collectRoleActionEffects({
         actionKind: GameActionKind.Guard,
         actorId: "guard",
+        actorRoleId: "guard",
         context,
         sourceActionId: "guard-action",
         targetId: "target",
@@ -78,19 +80,23 @@ describe("resolveEffects", () => {
       ["wolf", "werewolf"],
     ]);
     const attackResolution = resolveEffects(
-      collectAttackEffects({
-        attackerIds: ["wolf"],
+      collectRoleActionEffects({
+        actionKind: GameActionKind.Attack,
+        actorId: "wolf",
+        actorRoleId: "werewolf",
         context,
         sourceActionId: "attack-action",
         targetId: "fox",
       }),
     );
     const inspectionResolution = resolveEffects(
-      collectInspectionEffects({
+      collectRoleActionEffects({
+        actionKind: GameActionKind.Inspect,
+        actorId: "seer",
+        actorRoleId: "seer",
         context,
         sourceActionId: "inspect-action",
         targetId: "fox",
-        viewerId: "seer",
       }),
     );
 

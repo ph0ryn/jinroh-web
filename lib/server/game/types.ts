@@ -1,16 +1,5 @@
 import "server-only";
 
-export const BUILT_IN_ROLE_IDS = [
-  "werewolf",
-  "villager",
-  "madman",
-  "seer",
-  "guard",
-  "spiritist",
-  "hunter",
-  "fox",
-] as const;
-
 export type RoleId = string;
 
 export type PlayerId = string;

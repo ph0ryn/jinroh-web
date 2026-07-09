@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
 import {
   DEFAULT_TARGET_PLAYER_COUNT,
-  DEFAULT_RULE_SET,
+  DEFAULT_RULE_SET_OPTIONS,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   type NightConversationView,
@@ -171,19 +171,19 @@ const LIVE_MOOD_BACKGROUND_SOURCES = [
 ] as const;
 
 const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
-  dayMode: DEFAULT_RULE_SET.dayMode,
-  dayReadyCheckSecondsPerPlayer: DEFAULT_RULE_SET.dayReadyCheckSecondsPerPlayer,
-  daySpeechSeconds: DEFAULT_RULE_SET.daySpeechSeconds,
-  executionLastWordsSeconds: DEFAULT_RULE_SET.executionLastWordsSeconds,
-  firstDaySpeechRounds: DEFAULT_RULE_SET.firstDaySpeechRounds,
-  firstNightSeconds: DEFAULT_RULE_SET.firstNightSeconds,
-  guardConsecutiveTargetPolicy: DEFAULT_RULE_SET.guardConsecutiveTargetPolicy,
-  initialInspectionPolicy: DEFAULT_RULE_SET.initialInspectionPolicy,
-  nightSeconds: DEFAULT_RULE_SET.nightSeconds,
-  normalDaySpeechRounds: DEFAULT_RULE_SET.normalDaySpeechRounds,
+  dayMode: DEFAULT_RULE_SET_OPTIONS.dayMode,
+  dayReadyCheckSecondsPerPlayer: DEFAULT_RULE_SET_OPTIONS.dayReadyCheckSecondsPerPlayer,
+  daySpeechSeconds: DEFAULT_RULE_SET_OPTIONS.daySpeechSeconds,
+  executionLastWordsSeconds: DEFAULT_RULE_SET_OPTIONS.executionLastWordsSeconds,
+  firstDaySpeechRounds: DEFAULT_RULE_SET_OPTIONS.firstDaySpeechRounds,
+  firstNightSeconds: DEFAULT_RULE_SET_OPTIONS.firstNightSeconds,
+  guardConsecutiveTargetPolicy: DEFAULT_RULE_SET_OPTIONS.guardConsecutiveTargetPolicy,
+  initialInspectionPolicy: DEFAULT_RULE_SET_OPTIONS.initialInspectionPolicy,
+  nightSeconds: DEFAULT_RULE_SET_OPTIONS.nightSeconds,
+  normalDaySpeechRounds: DEFAULT_RULE_SET_OPTIONS.normalDaySpeechRounds,
   roleCounts: {},
-  voteResultVisibility: DEFAULT_RULE_SET.voteResultVisibility,
-  votingSeconds: DEFAULT_RULE_SET.votingSeconds,
+  voteResultVisibility: DEFAULT_RULE_SET_OPTIONS.voteResultVisibility,
+  votingSeconds: DEFAULT_RULE_SET_OPTIONS.votingSeconds,
 };
 
 const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {

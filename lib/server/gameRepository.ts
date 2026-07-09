@@ -2,10 +2,8 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
-  DEFAULT_RULE_SET,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
-  getRoleName,
   type PrivateGameEvent,
   type PlayerResult,
   type PublicAction,
@@ -33,20 +31,15 @@ import {
   isValidTokenShape,
   TOKEN_HASH_KEY_ID,
 } from "./accountToken";
-import { getRoleCatalog, getRoleIds } from "./game/roles";
+import { getRoleCatalog, getRoleIds, roleRegistry } from "./game/roles";
 import {
+  DEFAULT_RULE_OPTIONS,
   makeDefaultRoleCounts,
   resolveRoleSetup as resolveRegisteredRoleSetup,
   type RuleSet as RegisteredRuleSet,
 } from "./game/ruleset";
-import {
-  DayDiscussionMode,
-  GuardConsecutiveTargetPolicy,
-  InitialInspectionPolicy,
-  Team as RegisteredTeam,
-  VoteResultVisibility,
-  type RuleOptions as RegisteredRuleOptions,
-} from "./game/types";
+import { toRegisteredRuleOptions, toSharedRuleOptions } from "./game/ruleSetAdapters";
+import { Team as RegisteredTeam } from "./game/types";
 import { buildRealtimeNotificationPayload } from "./game/views";
 import {
   ENGINE_VERSION,
@@ -564,7 +557,7 @@ export async function resolveRoom(account: AccountRecord, roomCode: string): Pro
   const [runtimePlayers, ruleSet, previousGuardTargetByPlayerId, orderedSpeechSlots] =
     await Promise.all([
       getRuntimePlayers(supabase, room.id),
-      getRuleSet(supabase, room.id),
+      getRuleSet(supabase, room.id, room.target_player_count),
       getPreviousGuardTargetByPlayerId(supabase, room.id),
       state.phase === "day" ? getDaySpeechSlots(supabase, room.id, state.phase_instance_id) : [],
     ]);
@@ -715,7 +708,7 @@ async function getRoomViewByRoom(
           playerId: currentPlayer.public_player_id,
           result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
           roleId: currentRoleId,
-          roleName: getRoleName(currentRoleId),
+          roleName: getRoleDisplayName(currentRoleId),
           submittedActions: toSubmittedActions(
             actions,
             pendingActions,
@@ -1110,6 +1103,18 @@ function formatWinnerTeam(value: unknown): string {
   }
 
   return "Unknown";
+}
+
+function getRoleDisplayName(roleId: RoleId | null): string | null {
+  if (roleId === null) {
+    return null;
+  }
+
+  try {
+    return roleRegistry.get(roleId).name;
+  } catch {
+    return roleId;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1556,7 +1561,7 @@ async function getPreviousGuardTargetByPlayerId(
     .from("game_events")
     .select("payload,created_at")
     .eq("room_id", roomId)
-    .eq("event_kind", "guard_resolved")
+    .eq("event_kind", "action_resolved")
     .eq("visibility", "internal")
     .order("created_at", { ascending: true })
     .returns<Pick<GameEventRecord, "created_at" | "payload">[]>();
@@ -1568,8 +1573,13 @@ async function getPreviousGuardTargetByPlayerId(
   const previousGuardTargetByPlayerId: Record<string, string> = {};
 
   for (const event of data) {
+    if (event.payload["actionKind"] !== "guard") {
+      continue;
+    }
+
     const actorPlayerId = event.payload["actorPlayerId"];
-    const targetPlayerId = event.payload["targetPlayerId"];
+    const targetPlayerIds = event.payload["targetPlayerIds"];
+    const targetPlayerId = Array.isArray(targetPlayerIds) ? targetPlayerIds[0] : null;
 
     if (typeof actorPlayerId === "string" && typeof targetPlayerId === "string") {
       previousGuardTargetByPlayerId[actorPlayerId] = targetPlayerId;
@@ -1805,7 +1815,11 @@ async function getPlayerResults(
   return data;
 }
 
-async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<RuleSet> {
+async function getRuleSet(
+  supabase: SupabaseClient,
+  roomId: number,
+  targetPlayerCount: number,
+): Promise<RuleSet> {
   const { data, error } = await supabase
     .from("game_rule_sets")
     .select("role_counts,options")
@@ -1817,7 +1831,10 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
   }
 
   if (data === null) {
-    return DEFAULT_RULE_SET;
+    return {
+      ...toSharedRuleOptions(DEFAULT_RULE_OPTIONS),
+      roleCounts: makeDefaultRoleCounts(targetPlayerCount) as RuleSet["roleCounts"],
+    };
   }
 
   return {
@@ -1825,27 +1842,27 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
     dayReadyCheckSecondsPerPlayer: parsePositiveRuleOption(
       data.options,
       "dayReadyCheckSecondsPerPlayer",
-      DEFAULT_RULE_SET.dayReadyCheckSecondsPerPlayer,
+      DEFAULT_RULE_OPTIONS.dayReadyCheckSecondsPerPlayer,
     ),
     daySpeechSeconds: parsePositiveRuleOption(
       data.options,
       "daySpeechSeconds",
-      DEFAULT_RULE_SET.daySpeechSeconds,
+      DEFAULT_RULE_OPTIONS.daySpeechSeconds,
     ),
     executionLastWordsSeconds: parsePositiveRuleOption(
       data.options,
       "executionLastWordsSeconds",
-      DEFAULT_RULE_SET.executionLastWordsSeconds,
+      DEFAULT_RULE_OPTIONS.executionLastWordsSeconds,
     ),
     firstDaySpeechRounds: parsePositiveRuleOption(
       data.options,
       "firstDaySpeechRounds",
-      DEFAULT_RULE_SET.firstDaySpeechRounds,
+      DEFAULT_RULE_OPTIONS.firstDaySpeechRounds,
     ),
     firstNightSeconds: parsePositiveRuleOption(
       data.options,
       "firstNightSeconds",
-      DEFAULT_RULE_SET.firstNightSeconds,
+      DEFAULT_RULE_OPTIONS.firstNightSeconds,
     ),
     guardConsecutiveTargetPolicy:
       data.options["guardConsecutiveTargetPolicy"] === "allow" ? "allow" : "deny",
@@ -1854,12 +1871,12 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
     nightSeconds: parsePositiveRuleOption(
       data.options,
       "nightSeconds",
-      DEFAULT_RULE_SET.nightSeconds,
+      DEFAULT_RULE_OPTIONS.nightSeconds,
     ),
     normalDaySpeechRounds: parsePositiveRuleOption(
       data.options,
       "normalDaySpeechRounds",
-      DEFAULT_RULE_SET.normalDaySpeechRounds,
+      DEFAULT_RULE_OPTIONS.normalDaySpeechRounds,
     ),
     roleCounts: parseRoleCounts(data.role_counts) as RuleSet["roleCounts"],
     voteResultVisibility:
@@ -1867,7 +1884,7 @@ async function getRuleSet(supabase: SupabaseClient, roomId: number): Promise<Rul
     votingSeconds: parsePositiveRuleOption(
       data.options,
       "votingSeconds",
-      DEFAULT_RULE_SET.votingSeconds,
+      DEFAULT_RULE_OPTIONS.votingSeconds,
     ),
   };
 }
@@ -1965,35 +1982,6 @@ function toRegisteredRuleSet(ruleSet: RuleSet): RegisteredRuleSet {
       getRoleCatalog().map((role) => [role.id, ruleSet.roleCounts[role.id] ?? 0]),
     ),
     roleRegistryVersion: ROLE_REGISTRY_VERSION,
-  };
-}
-
-function toRegisteredRuleOptions(ruleSet: RuleSet): RegisteredRuleOptions {
-  return {
-    dayDiscussionMode:
-      ruleSet.dayMode === "ordered_speech"
-        ? DayDiscussionMode.OrderedSpeech
-        : DayDiscussionMode.ReadyCheck,
-    dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
-    daySpeechSeconds: ruleSet.daySpeechSeconds,
-    executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
-    firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
-    firstNightSeconds: ruleSet.firstNightSeconds,
-    guardConsecutiveTargetPolicy:
-      ruleSet.guardConsecutiveTargetPolicy === "allow"
-        ? GuardConsecutiveTargetPolicy.Allow
-        : GuardConsecutiveTargetPolicy.DenySameTarget,
-    initialInspectionPolicy:
-      ruleSet.initialInspectionPolicy === "disabled"
-        ? InitialInspectionPolicy.Disabled
-        : InitialInspectionPolicy.Enabled,
-    nightSeconds: ruleSet.nightSeconds,
-    normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
-    voteResultVisibility:
-      ruleSet.voteResultVisibility === "voter_to_target"
-        ? VoteResultVisibility.VoterToTarget
-        : VoteResultVisibility.CountOnly,
-    votingSeconds: ruleSet.votingSeconds,
   };
 }
 

@@ -1,3 +1,5 @@
+// Legacy dev fixture data. Production role metadata and behavior come from the
+// server RoleRegistry.
 export const ROLE_IDS = [
   "werewolf",
   "villager",
@@ -218,6 +220,8 @@ export type RuleSet = {
   votingSeconds: number;
 };
 
+export type RuleSetOptions = Omit<RuleSet, "roleCounts">;
+
 export type RoleDefinition = {
   id: RoleId;
   name: string;
@@ -321,7 +325,7 @@ export const ROLE_DEFINITIONS: Record<BuiltInRoleId, RoleDefinition> = {
   },
 };
 
-export const DEFAULT_RULE_SET: RuleSet = {
+export const DEFAULT_RULE_SET_OPTIONS: RuleSetOptions = {
   dayMode: "ready_check",
   dayReadyCheckSecondsPerPlayer: 90,
   daySpeechSeconds: 90,
@@ -332,6 +336,12 @@ export const DEFAULT_RULE_SET: RuleSet = {
   initialInspectionPolicy: "enabled",
   nightSeconds: 180,
   normalDaySpeechRounds: 1,
+  voteResultVisibility: "count_only",
+  votingSeconds: 30,
+};
+
+export const DEFAULT_RULE_SET: RuleSet = {
+  ...DEFAULT_RULE_SET_OPTIONS,
   roleCounts: {
     fox: 0,
     guard: 1,
@@ -342,8 +352,6 @@ export const DEFAULT_RULE_SET: RuleSet = {
     villager: 3,
     werewolf: 2,
   },
-  voteResultVisibility: "count_only",
-  votingSeconds: 30,
 };
 
 export function normalizeRuleSet(input: RuleSetInput, playerCount: number): RuleSet {
@@ -473,16 +481,4 @@ function getPositiveIntegerOptions(ruleSet: RuleSet): Readonly<Record<string, nu
     normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
     votingSeconds: ruleSet.votingSeconds,
   };
-}
-
-export function getRoleName(roleId: RoleId | null): string | null {
-  if (roleId === null) {
-    return null;
-  }
-
-  return isRoleId(roleId) ? ROLE_DEFINITIONS[roleId].name : roleId;
-}
-
-export function isRoleId(value: string): value is BuiltInRoleId {
-  return (ROLE_IDS as readonly string[]).includes(value);
 }

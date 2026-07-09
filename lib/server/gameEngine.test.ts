@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { makeDefaultRuleSetForPlayers } from "@/lib/shared/game";
-
 import {
   didPlayerWin,
   evaluateWinner,
   getAvailableNightActions,
+  makeDefaultRuleSetForPlayers,
   resolvePhase,
   startGame,
   type PlayerRuntimeState,
@@ -195,10 +194,12 @@ describe("game engine", () => {
       players,
       ruleSet: makeDefaultRuleSetForPlayers(players.length),
     });
-    const guardEvent = resolution.events.find((event) => event.kind === "guard_resolved");
+    const guardEvent = resolution.events.find(
+      (event) => event.kind === "action_resolved" && event.payload["actionKind"] === "guard",
+    );
 
     expect(guardEvent).toMatchObject({
-      payload: { actorPlayerId: "2", targetPlayerId: "3" },
+      payload: { actorPlayerId: "2", targetPlayerIds: ["3"] },
       visibility: "internal",
     });
   });
