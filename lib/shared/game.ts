@@ -1,28 +1,10 @@
-// Legacy dev fixture data. Production role metadata and behavior come from the
-// server RoleRegistry.
-export const ROLE_IDS = [
-  "werewolf",
-  "villager",
-  "madman",
-  "seer",
-  "guard",
-  "spiritist",
-  "hunter",
-  "fox",
-] as const;
 export const MIN_ROOM_PLAYERS = 3;
 export const MAX_ROOM_PLAYERS = 10;
 export const DEFAULT_TARGET_PLAYER_COUNT = 6;
 
-export type BuiltInRoleId = (typeof ROLE_IDS)[number];
-
 export type RoleId = string;
 
 export type Team = string;
-
-export type CountGroup = "villager" | "werewolf" | "none";
-
-export type InspectionResult = "human" | "werewolf";
 
 export type PlayerResult = "win" | "lose" | "draw" | "special";
 
@@ -196,7 +178,7 @@ export type RuleSetInput = {
   votingSeconds: number;
 };
 
-export type RoleCounts = Record<BuiltInRoleId, number> & Partial<Record<RoleId, number>>;
+export type RoleCounts = Partial<Record<RoleId, number>>;
 
 export type RuleSet = {
   roleCounts: RoleCounts;
@@ -216,16 +198,6 @@ export type RuleSet = {
 
 export type RuleSetOptions = Omit<RuleSet, "roleCounts">;
 
-export type RoleDefinition = {
-  id: RoleId;
-  name: string;
-  team: Team;
-  countAs: CountGroup;
-  seenAs: InspectionResult;
-  minCount: number;
-  maxCount: number;
-};
-
 export type RoleCatalogItem = {
   description: string;
   id: RoleId;
@@ -244,81 +216,6 @@ export type RoleSpecificOptionItem = {
   roleId: RoleId;
 };
 
-export const ROLE_DEFINITIONS: Record<BuiltInRoleId, RoleDefinition> = {
-  fox: {
-    id: "fox",
-    name: "Fox",
-    team: "fox",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 1,
-  },
-  guard: {
-    id: "guard",
-    name: "Guard",
-    team: "villagers",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 1,
-  },
-  hunter: {
-    id: "hunter",
-    name: "Hunter",
-    team: "villagers",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 1,
-  },
-  madman: {
-    id: "madman",
-    name: "Madman",
-    team: "werewolves",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 1,
-  },
-  spiritist: {
-    id: "spiritist",
-    name: "Spiritist",
-    team: "villagers",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 1,
-  },
-  seer: {
-    id: "seer",
-    name: "Seer",
-    team: "villagers",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 1,
-  },
-  villager: {
-    id: "villager",
-    name: "Villager",
-    team: "villagers",
-    countAs: "villager",
-    seenAs: "human",
-    minCount: 0,
-    maxCount: 99,
-  },
-  werewolf: {
-    id: "werewolf",
-    name: "Werewolf",
-    team: "werewolves",
-    countAs: "werewolf",
-    seenAs: "werewolf",
-    minCount: 1,
-    maxCount: 99,
-  },
-};
-
 export const DEFAULT_RULE_SET_OPTIONS: RuleSetOptions = {
   dayMode: "ready_check",
   dayReadyCheckSecondsPerPlayer: 90,
@@ -333,146 +230,3 @@ export const DEFAULT_RULE_SET_OPTIONS: RuleSetOptions = {
   voteResultVisibility: "count_only",
   votingSeconds: 30,
 };
-
-export const DEFAULT_RULE_SET: RuleSet = {
-  ...DEFAULT_RULE_SET_OPTIONS,
-  roleCounts: {
-    fox: 0,
-    guard: 1,
-    hunter: 0,
-    madman: 1,
-    spiritist: 0,
-    seer: 1,
-    villager: 3,
-    werewolf: 2,
-  },
-};
-
-export function normalizeRuleSet(input: RuleSetInput, playerCount: number): RuleSet {
-  const options = normalizeRuleSetOptions(input);
-  const roleCounts = Object.fromEntries(
-    ROLE_IDS.map((roleId) => [roleId, input.roleCounts[roleId] ?? 0]),
-  ) as RoleCounts;
-  const specifiedCount = ROLE_IDS.reduce((total, roleId) => total + roleCounts[roleId], 0);
-
-  if (specifiedCount === 0) {
-    return {
-      ...makeDefaultRuleSetForPlayers(playerCount),
-      ...options,
-    };
-  }
-
-  return {
-    ...options,
-    roleCounts,
-  };
-}
-
-function normalizeRuleSetOptions(input: RuleSetInput): Omit<RuleSet, "roleCounts"> {
-  return {
-    dayMode: input.dayMode,
-    dayReadyCheckSecondsPerPlayer: input.dayReadyCheckSecondsPerPlayer,
-    daySpeechSeconds: input.daySpeechSeconds,
-    executionLastWordsSeconds: input.executionLastWordsSeconds,
-    firstDaySpeechRounds: input.firstDaySpeechRounds,
-    firstNightSeconds: input.firstNightSeconds,
-    guardConsecutiveTargetPolicy: input.guardConsecutiveTargetPolicy,
-    initialInspectionPolicy: input.initialInspectionPolicy,
-    nightSeconds: input.nightSeconds,
-    normalDaySpeechRounds: input.normalDaySpeechRounds,
-    voteResultVisibility: input.voteResultVisibility,
-    votingSeconds: input.votingSeconds,
-  };
-}
-
-export function makeDefaultRuleSetForPlayers(playerCount: number): RuleSet {
-  const werewolfCount = playerCount >= 7 ? 2 : 1;
-  const seerCount = playerCount >= 4 ? 1 : 0;
-  const guardCount = playerCount >= 5 ? 1 : 0;
-  const madmanCount = playerCount >= 6 ? 1 : 0;
-  const foxCount = playerCount >= 8 ? 1 : 0;
-  const specialCount = werewolfCount + seerCount + guardCount + madmanCount + foxCount;
-
-  return {
-    ...DEFAULT_RULE_SET,
-    roleCounts: {
-      fox: foxCount,
-      guard: guardCount,
-      hunter: 0,
-      madman: madmanCount,
-      spiritist: 0,
-      seer: seerCount,
-      villager: Math.max(playerCount - specialCount, 0),
-      werewolf: werewolfCount,
-    } satisfies RoleCounts,
-  };
-}
-
-export type RuleSetValidationResult =
-  | { ok: true; ruleSet: RuleSet }
-  | { ok: false; errors: string[] };
-
-export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetValidationResult {
-  const errors: string[] = [];
-  const totalRoles = ROLE_IDS.reduce((total, roleId) => total + ruleSet.roleCounts[roleId], 0);
-
-  if (playerCount < 3) {
-    errors.push("At least three joined players are required.");
-  }
-
-  if (playerCount > 10) {
-    errors.push("At most ten joined players are supported.");
-  }
-
-  if (totalRoles !== playerCount) {
-    errors.push(`Role count (${totalRoles}) must match joined player count (${playerCount}).`);
-  }
-
-  for (const roleId of ROLE_IDS) {
-    const definition = ROLE_DEFINITIONS[roleId];
-    const count = ruleSet.roleCounts[roleId];
-
-    if (!Number.isInteger(count) || count < 0) {
-      errors.push(`${definition.name} count must be a non-negative integer.`);
-    }
-
-    if (count < definition.minCount) {
-      errors.push(`${definition.name} count must be at least ${definition.minCount}.`);
-    }
-
-    if (count > definition.maxCount) {
-      errors.push(`${definition.name} count must be at most ${definition.maxCount}.`);
-    }
-  }
-
-  for (const [optionName, optionValue] of Object.entries(getPositiveIntegerOptions(ruleSet))) {
-    if (!Number.isInteger(optionValue) || optionValue <= 0) {
-      errors.push(`${optionName} must be a positive integer.`);
-    }
-  }
-
-  if (ruleSet.initialInspectionPolicy === "enabled") {
-    const humanInspectionCandidates = ROLE_IDS.filter(
-      (roleId) => roleId !== "seer" && ROLE_DEFINITIONS[roleId].seenAs === "human",
-    ).reduce((total, roleId) => total + ruleSet.roleCounts[roleId], 0);
-
-    if (ruleSet.roleCounts["seer"] > 0 && humanInspectionCandidates <= 0) {
-      errors.push("Initial inspection requires at least one non-seer human result candidate.");
-    }
-  }
-
-  return errors.length === 0 ? { ok: true, ruleSet } : { errors, ok: false };
-}
-
-function getPositiveIntegerOptions(ruleSet: RuleSet): Readonly<Record<string, number>> {
-  return {
-    dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
-    daySpeechSeconds: ruleSet.daySpeechSeconds,
-    executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
-    firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
-    firstNightSeconds: ruleSet.firstNightSeconds,
-    nightSeconds: ruleSet.nightSeconds,
-    normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
-    votingSeconds: ruleSet.votingSeconds,
-  };
-}

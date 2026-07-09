@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
@@ -71,17 +70,6 @@ type RealtimeBroadcastEnvelope = {
 type RealtimeSubscriptionSnapshot = Pick<RealtimeSubscription, "scope" | "topic">;
 
 type StartRuleSetSettings = RuleSetInput;
-
-type DevLiveFixture = {
-  readonly id: string;
-  readonly label: string;
-  readonly summary: RoomSummary;
-};
-
-type LivePageProps = {
-  readonly devFixtures?: readonly DevLiveFixture[];
-  readonly devInitialFixtureId?: string;
-};
 
 type LiveMood = "closed" | "day" | "execution" | "lobby" | "night" | "result" | "setup" | "voting";
 
@@ -208,30 +196,16 @@ const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
 
 const START_SETTINGS_TABS: readonly StartSettingsTab[] = ["general", "timers", "roles"];
 
-export default function LivePage({ devFixtures = [], devInitialFixtureId }: LivePageProps = {}) {
+export default function LivePage() {
   const { locale, t } = useI18n();
-  const isDevMode = devFixtures.length > 0;
-  const initialDevFixture = getDevFixture(devFixtures, devInitialFixtureId);
   const invalidIdentityStatusMessage = t.live.room.identityExpired;
   const roomClosedStatusMessage = t.live.room.closed;
-  const [identityToken, setIdentityToken] = useState<string | null>(() =>
-    isDevMode ? "dev-token" : null,
-  );
-  const [displayName, setDisplayName] = useState(
-    () =>
-      initialDevFixture?.summary.players.find((player) => player.isCurrent)?.displayName ?? "Sora",
-  );
-  const [roomCodeInput, setRoomCodeInput] = useState(() => initialDevFixture?.summary.code ?? "");
+  const [identityToken, setIdentityToken] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("Sora");
+  const [roomCodeInput, setRoomCodeInput] = useState("");
   const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
-  const [savedRoomCode, setSavedRoomCode] = useState<string | null>(
-    () => initialDevFixture?.summary.code ?? null,
-  );
-  const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(
-    () => initialDevFixture?.summary ?? null,
-  );
-  const [activeDevFixtureId, setActiveDevFixtureId] = useState<string | null>(
-    () => initialDevFixture?.id ?? null,
-  );
+  const [savedRoomCode, setSavedRoomCode] = useState<string | null>(null);
+  const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
   const [startRuleSetSettings, setStartRuleSetSettings] = useState<StartRuleSetSettings>(
     DEFAULT_START_RULE_SET_SETTINGS,
   );
@@ -248,10 +222,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   const localizedStatusMessage = localizeStatusMessage(statusMessage, t);
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     const timerId = window.setTimeout(() => {
       const savedIdentityToken = readStorage(IDENTITY_STORAGE_KEY);
       const savedDisplayName = readStorage(DISPLAY_NAME_STORAGE_KEY);
@@ -272,7 +242,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [isDevMode]);
+  }, []);
 
   useEffect(() => {
     const preloadedImages: HTMLImageElement[] = [];
@@ -430,23 +400,15 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   );
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     if (identityToken === null && savedRoomCode !== null) {
       removeStorage(ROOM_CODE_STORAGE_KEY);
       setSavedRoomCode(null);
       setRoomCodeInput("");
       setStatusMessage(t.live.room.savedExpired);
     }
-  }, [identityToken, isDevMode, savedRoomCode, t]);
+  }, [identityToken, savedRoomCode, t]);
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     if (identityToken === null || roomSummary !== null || savedRoomCode === null) {
       return;
     }
@@ -499,7 +461,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }, [
     clearCurrentRoom,
     identityToken,
-    isDevMode,
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
@@ -518,10 +479,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     roomSummary.game?.status === "playing";
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     if (identityToken === null || activeRoomCode === null) {
       return;
     }
@@ -568,7 +525,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     activeRoomCode,
     clearCurrentRoom,
     identityToken,
-    isDevMode,
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
@@ -576,10 +532,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   ]);
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     if (
       identityToken === null ||
       activeRoomCode === null ||
@@ -621,17 +573,12 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }, [
     activeRoomCode,
     identityToken,
-    isDevMode,
     rememberRoom,
     resetInvalidIdentity,
     roomSummary?.currentPlayerId,
   ]);
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     if (
       identityToken === null ||
       activeRoomCode === null ||
@@ -715,7 +662,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     activeRoomCode,
     clearCurrentRoom,
     identityToken,
-    isDevMode,
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
@@ -723,10 +669,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   ]);
 
   useEffect(() => {
-    if (isDevMode) {
-      return;
-    }
-
     if (identityToken === null || activeRoomCode === null || activePhaseEndsAt === null) {
       return;
     }
@@ -772,7 +714,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     activePhaseInstanceId,
     activeRoomCode,
     identityToken,
-    isDevMode,
     isHostInPlayingRoom,
     rememberRoom,
     resetInvalidIdentity,
@@ -800,30 +741,7 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
     }
   }
 
-  function handleDevFixtureChange(fixture: DevLiveFixture): void {
-    setActiveDevFixtureId(fixture.id);
-    setSavedRoomCode(fixture.summary.code);
-    setRoomCodeInput(fixture.summary.code);
-    setRoomSummary(fixture.summary);
-    setTargetByActionKey({});
-    setIsNightConversationOpen(false);
-    setIsPublicLogOpen(false);
-    setNightConversationDraft("");
-    setIsStartSettingsOpen(false);
-    setStatusMessage(t.live.dev.fixtureLoaded(fixture.label));
-  }
-
   function handleCreateRoom(): void {
-    if (isDevMode) {
-      const fixture = getDevFixture(devFixtures, "night") ?? devFixtures[0];
-
-      if (fixture !== undefined) {
-        handleDevFixtureChange(fixture);
-      }
-
-      return;
-    }
-
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
         setStatusMessage(t.live.room.currentAlreadyExistsCreate);
@@ -845,16 +763,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleJoinRoom(): void {
-    if (isDevMode) {
-      const fixture = getDevFixture(devFixtures, activeDevFixtureId) ?? devFixtures[0];
-
-      if (fixture !== undefined) {
-        handleDevFixtureChange(fixture);
-      }
-
-      return;
-    }
-
     void withBusy(async () => {
       if (roomSummary !== null || savedRoomCode !== null) {
         setStatusMessage(t.live.room.currentAlreadyExistsJoin);
@@ -877,17 +785,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleRefreshRoom(): void {
-    if (isDevMode) {
-      const fixture = getDevFixture(devFixtures, activeDevFixtureId) ?? devFixtures[0];
-
-      if (fixture !== undefined) {
-        handleDevFixtureChange(fixture);
-        setStatusMessage(t.live.dev.fixtureReset(fixture.label));
-      }
-
-      return;
-    }
-
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
@@ -913,16 +810,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleStartGame(): void {
-    if (isDevMode) {
-      const fixture = getDevFixture(devFixtures, "night") ?? devFixtures[0];
-
-      if (fixture !== undefined) {
-        handleDevFixtureChange(fixture);
-      }
-
-      return;
-    }
-
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
@@ -938,16 +825,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleResolvePhase(): void {
-    if (isDevMode) {
-      const nextFixture = getNextDevFixture(devFixtures, activeDevFixtureId);
-
-      if (nextFixture !== null) {
-        handleDevFixtureChange(nextFixture);
-      }
-
-      return;
-    }
-
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
@@ -968,19 +845,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleLeaveRoom(): void {
-    if (isDevMode) {
-      setSavedRoomCode(null);
-      setRoomSummary(null);
-      setRoomCodeInput("");
-      setTargetByActionKey({});
-      setIsNightConversationOpen(false);
-      setIsPublicLogOpen(false);
-      setNightConversationDraft("");
-      setIsStartSettingsOpen(false);
-      setStatusMessage(t.live.dev.fixtureCleared);
-      return;
-    }
-
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
@@ -994,12 +858,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleSubmitAction(action: PublicAction): void {
-    if (isDevMode) {
-      setRoomSummary((currentSummary) => markDevActionSubmitted(currentSummary, action));
-      setStatusMessage(t.live.status.actionSubmittedDev(action.label));
-      return;
-    }
-
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
@@ -1027,15 +885,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
   }
 
   function handleSendNightConversation(conversation: NightConversationView): void {
-    if (isDevMode) {
-      setRoomSummary((currentSummary) =>
-        appendDevNightConversationMessage(currentSummary, conversation, nightConversationDraft),
-      );
-      setNightConversationDraft("");
-      setStatusMessage(t.live.status.nightMessageAddedDev(conversation.label));
-      return;
-    }
-
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
@@ -1149,14 +998,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         </div>
         <LanguageSwitcher className="liveLanguageSwitcher" />
       </section>
-
-      {isDevMode ? (
-        <DevLiveToolbar
-          activeFixtureId={activeDevFixtureId}
-          fixtures={devFixtures}
-          onSelectFixture={handleDevFixtureChange}
-        />
-      ) : null}
 
       {isGameSurface ? null : (
         <>
@@ -1347,43 +1188,6 @@ export default function LivePage({ devFixtures = [], devInitialFixtureId }: Live
         />
       ) : null}
     </main>
-  );
-}
-
-function DevLiveToolbar({
-  activeFixtureId,
-  fixtures,
-  onSelectFixture,
-}: {
-  readonly activeFixtureId: string | null;
-  readonly fixtures: readonly DevLiveFixture[];
-  readonly onSelectFixture: (fixture: DevLiveFixture) => void;
-}) {
-  const { t } = useI18n();
-
-  return (
-    <section className="liveDevToolbar" aria-label={t.live.aria.developmentFixtures}>
-      <div>
-        <span>{t.live.dev.title}</span>
-        <strong>{t.live.dev.localFixturesOnly}</strong>
-      </div>
-      <div className="liveDevToolbarActions">
-        {fixtures.map((fixture) => (
-          <button
-            aria-pressed={fixture.id === activeFixtureId}
-            className={fixture.id === activeFixtureId ? "active" : undefined}
-            key={fixture.id}
-            type="button"
-            onClick={() => onSelectFixture(fixture)}
-          >
-            {fixture.label}
-          </button>
-        ))}
-        <Link className="secondaryButton" href="/live">
-          {t.live.dev.realLive}
-        </Link>
-      </div>
-    </section>
   );
 }
 
@@ -3647,10 +3451,6 @@ function localizeStatusMessage(statusMessage: string, t: Localization): string {
       return t.live.status.timerAdvanceFailed;
     }
 
-    if (statusMessage === localization.live.dev.fixtureCleared) {
-      return t.live.dev.fixtureCleared;
-    }
-
     if (statusMessage === localization.live.invite.shareCancelled) {
       return t.live.invite.shareCancelled;
     }
@@ -4282,123 +4082,4 @@ function formatDateTime(value: string | null, locale: Locale, t: Localization): 
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
-}
-
-function getDevFixture(
-  fixtures: readonly DevLiveFixture[],
-  fixtureId: string | null | undefined,
-): DevLiveFixture | null {
-  return fixtures.find((fixture) => fixture.id === fixtureId) ?? fixtures[0] ?? null;
-}
-
-function getNextDevFixture(
-  fixtures: readonly DevLiveFixture[],
-  fixtureId: string | null,
-): DevLiveFixture | null {
-  if (fixtures.length === 0) {
-    return null;
-  }
-
-  const currentIndex = fixtures.findIndex((fixture) => fixture.id === fixtureId);
-  const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % fixtures.length;
-
-  return fixtures[nextIndex] ?? null;
-}
-
-function markDevActionSubmitted(
-  summary: RoomSummary | null,
-  action: PublicAction,
-): RoomSummary | null {
-  if (summary?.self === null || summary?.self === undefined) {
-    return summary;
-  }
-
-  const submittedAt = new Date().toISOString();
-
-  return {
-    ...summary,
-    game:
-      summary.game === null
-        ? null
-        : {
-            ...summary.game,
-            actionProgress: incrementDevActionProgress(summary.game.actionProgress),
-            revision: summary.game.revision + 1,
-          },
-    self: {
-      ...summary.self,
-      actions: summary.self.actions.map((currentAction) =>
-        currentAction.key === action.key
-          ? {
-              ...currentAction,
-              status: "submitted",
-            }
-          : currentAction,
-      ),
-      submittedActions: [
-        {
-          kind: action.kind,
-          label: action.label,
-          submittedAt,
-        },
-        ...summary.self.submittedActions,
-      ],
-    },
-  };
-}
-
-function incrementDevActionProgress(
-  progress: NonNullable<RoomSummary["game"]>["actionProgress"],
-): NonNullable<RoomSummary["game"]>["actionProgress"] {
-  if (progress === null || progress.visibility === "hidden") {
-    return progress;
-  }
-
-  return {
-    ...progress,
-    submitted: Math.min(progress.required, progress.submitted + 1),
-  };
-}
-
-function appendDevNightConversationMessage(
-  summary: RoomSummary | null,
-  conversation: NightConversationView,
-  draft: string,
-): RoomSummary | null {
-  const trimmedDraft = draft.trim();
-  const rolePrivate = summary?.rolePrivate;
-
-  if (
-    summary === null ||
-    rolePrivate === null ||
-    rolePrivate === undefined ||
-    rolePrivate.nightConversation === null ||
-    trimmedDraft.length === 0
-  ) {
-    return summary;
-  }
-
-  const createdAt = new Date().toISOString();
-  const currentPlayer = summary.players.find((player) => player.id === summary.currentPlayerId);
-  const nextConversation: NightConversationView = {
-    ...conversation,
-    messages: [
-      ...conversation.messages,
-      {
-        body: trimmedDraft,
-        createdAt,
-        id: `dev-night-message-${createdAt}`,
-        senderName: currentPlayer?.displayName ?? "You",
-        senderPlayerId: summary.currentPlayerId ?? "dev-player",
-      },
-    ],
-  };
-
-  return {
-    ...summary,
-    rolePrivate: {
-      ...rolePrivate,
-      nightConversation: nextConversation,
-    },
-  };
 }

@@ -321,7 +321,6 @@ export const enLocalization = {
     aria: {
       commonPhaseTiming: "Common phase timing",
       currentPhase: "Current phase",
-      developmentFixtures: "Development live fixtures",
       invite: "Invite",
       liveGameTable: "Live game table",
       lobbyControls: "Lobby controls",
@@ -358,14 +357,6 @@ export const enLocalization = {
       settings: "Settings",
       shareInvite: "Share invite",
       startGame: "Start game",
-    },
-    dev: {
-      fixtureCleared: "Dev fixture cleared. Use the dev toolbar to load a phase.",
-      fixtureLoaded: (label: string) => `Loaded ${label} dev fixture. No API calls will be made.`,
-      fixtureReset: (label: string) => `Dev fixture reset to ${label}.`,
-      localFixturesOnly: "Local fixtures only",
-      realLive: "Real live",
-      title: "Dev live",
     },
     eventLog: {
       emptyBody: "Start the game or resolve a phase to build the public log.",

@@ -314,7 +314,6 @@ export const jaLocalization = {
     aria: {
       commonPhaseTiming: "共通フェーズ時間",
       currentPhase: "現在のフェーズ",
-      developmentFixtures: "開発用ライブfixture",
       invite: "招待",
       liveGameTable: "進行中ゲームテーブル",
       lobbyControls: "ロビー操作",
@@ -351,15 +350,6 @@ export const jaLocalization = {
       settings: "設定",
       shareInvite: "招待を共有",
       startGame: "ゲーム開始",
-    },
-    dev: {
-      fixtureCleared: "開発fixtureを解除しました。開発ツールバーからフェーズを読み込んでください。",
-      fixtureLoaded: (label: string) =>
-        `${label} の開発fixtureを読み込みました。API呼び出しは行われません。`,
-      fixtureReset: (label: string) => `開発fixtureを ${label} に戻しました。`,
-      localFixturesOnly: "ローカルfixtureのみ",
-      realLive: "実ライブ",
-      title: "開発ライブ",
     },
     eventLog: {
       emptyBody: "ゲーム開始またはフェーズ解決で公開ログが作成されます。",
