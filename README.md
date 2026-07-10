@@ -105,22 +105,18 @@ If the CLI cannot connect with the temporary login role, set
 `SUPABASE_DB_PASSWORD` for the linked project's database password and rerun the
 same command.
 
-For an existing project that was migrated manually, verify migration history:
+Before the first release, use a disposable development database and verify that
+the baseline is the only applied migration:
 
 ```sh
 pnpm exec supabase migration list
 ```
 
-Local and remote versions should both list `0001` through the latest migration.
-If a manually applied database is missing migration history rows, repair only
-after verifying the schema:
+Local and remote versions should both list only `0001`. Recreate any pre-release
+database that contains the superseded development migration history instead of
+repairing it in place.
 
-```sh
-pnpm exec supabase migration repair --linked --status applied 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013
-```
-
-To verify room-code reuse hardening after
-`0003_restore_active_room_code_reuse.sql`, run:
+To verify room-code reuse hardening, run:
 
 ```sql
 select indexname, indexdef
