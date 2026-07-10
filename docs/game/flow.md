@@ -209,7 +209,7 @@ First night は、Role assignment 後、最初の Day に入る前の `night` ph
 - 各 Player が自分の役職を確認する
 - 初日白判定確定占いが有効な場合、占い師へ結果を配る
 - Player が開始準備完了を押せるようにする
-- 最大30秒で最初の Day に進める
+- `firstNightSeconds` 以内に最初の Day に進める
 
 初日襲撃は固定で発生しない。
 人狼の襲撃 action は出さない。
@@ -223,9 +223,9 @@ Werewolf night conversation は、実際に WerewolfRole を持つ Player だけ
 - status は `playing`
 - phase は `night`
 - nightNumber は1
-- 制限時間は30秒
-- 全 Player が開始準備完了を押したら、30秒を待たずに Day へ進む
-- 30秒経過したら、未準備の Player がいても Day へ進む
+- 制限時間は `firstNightSeconds`（デフォルト30秒）
+- 全 Player が開始準備完了を押したら、制限時間を待たずに Day へ進む
+- `firstNightSeconds` 経過後は、未準備の Player がいても Day へ進む
 - 準備完了 action は core action として扱う
 - 同じ Player の二重送信は最初の有効 action だけを受理する
 - Day へ進んだら、ready current action は削除する
@@ -245,9 +245,9 @@ First night が終わったら、`status` は `playing` のまま、`phase` は 
 
 通常の Night は、最初の Day 以降に発生する夜 phase。
 内部的には `nightNumber >= 2` の夜を指す。
-固定で180秒にする。
+制限時間は `nightSeconds`（デフォルト180秒）にする。
 
-夜 action が全員分揃っても、180秒が経過するまでは次の phase に進めない。
+夜 action が全員分揃っても、`nightSeconds` が経過するまでは次の phase に進めない。
 早く進めると、残っている役職や行動可能な役職が推測されやすいため。
 
 Night の基本ルール。
@@ -257,7 +257,7 @@ Night の基本ルール。
 - 夜会話 group の対象 Player には night conversation を表示できる
 - 受理済み pending action は current action ごとに固定する
 - すべての night action が揃っても phase は短縮しない
-- 180秒経過後に受理済み pending action を解決する
+- `nightSeconds` 経過後に受理済み pending action を解決する
 - action 解決後、night current action を削除する
 - action 解決後、対応する pending action を削除する
 - action 解決後に終了判定を実行する
@@ -306,7 +306,8 @@ Role 固有の action ではない。
 - action scope は all alive players
 - 同じ Player の二重送信は最初の有効 action だけを受理する
 - 全生存 Player の ready action が揃ったら Voting に移行する
-- 最大会議時間は Day 開始時点の生存人数 x 90秒
+- 最大会議時間は Day 開始時点の生存人数 x
+  `dayReadyCheckSecondsPerPlayer`（デフォルト90秒）
 - 最大会議時間に達したら、未 ready の Player がいても Voting に移行する
 - Voting に移行したら、ready current action は削除する
 
@@ -326,8 +327,8 @@ ready for voting slot
 - 作成した発言順はその Day の間固定する
 - 1人あたりの発言時間は `daySpeechSeconds`
 - `daySpeechSeconds` のデフォルトは90秒
-- 最初の Day は2周する
-- 2回目以降の Day は1周する
+- 最初の Day は `firstDaySpeechRounds` 周（デフォルト2周）する
+- 2回目以降の Day は `normalDaySpeechRounds` 周（デフォルト1周）する
 - 現在の発言者は、自分の発言 slot を早く終了できる
 - すべての発言 slot が終わったら Voting に移行する
 
@@ -374,8 +375,8 @@ end speech slot
 投票 action は `ActionScope.AllAlivePlayers` の action として扱う。
 投票 action は `Role.getActions` ではなく、Game Engine が core action として提供する。
 
-Voting は30秒にする。
-ただし、全生存 Player の有効票が揃った場合は30秒を待たずに解決する。
+Voting は `votingSeconds`（デフォルト30秒）にする。
+ただし、全生存 Player の有効票が揃った場合は制限時間を待たずに解決する。
 
 投票の基本ルール。
 
@@ -385,8 +386,8 @@ Voting は30秒にする。
 - 投票変更はできない
 - 最初に受理された有効な投票だけを採用する
 - 未投票の Player は投票放棄として扱う
-- 30秒経過時点で未投票者がいても voting phase は解決できる
-- 全生存 Player が投票済みなら30秒を待たずに解決できる
+- `votingSeconds` 経過時点で未投票者がいても voting phase は解決できる
+- 全生存 Player が投票済みなら制限時間を待たずに解決できる
 - 投票中は、誰が誰に投票したかを public view に出さない
 - 投票解決後に誰が誰へ投票したか公開するかは RuleSet option で決める
 
@@ -470,9 +471,10 @@ Execution の基本ルール。
 
 - 処刑候補がいる場合だけ開始する
 - 処刑候補を public view に表示する
-- 遺言時間は60秒
+- 遺言時間は `executionLastWordsSeconds`（デフォルト60秒）
 - 処刑候補は遺言時間を早く終了できる
-- 60秒が経過するか、処刑候補が早期終了したら `Role.onExecuted` を呼ぶ
+- `executionLastWordsSeconds` が経過するか、処刑候補が早期終了したら
+  `Role.onExecuted` を呼ぶ
 - `Role.onExecuted` から返った effect を Engine が解決する
 - effect 解決後に終了判定を実行する
 

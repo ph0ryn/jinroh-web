@@ -50,12 +50,13 @@
 - First night は user-visible phase として `night` を使う
 - First night は `nightNumber === 1` で通常夜と区別する
 - Day の会議方式は phase ではなく RuleSet option と DayState で扱う
-- ready check の最大会議時間は Day 開始時点の生存人数 x 90秒にする
+- ready check の最大会議時間は Day 開始時点の生存人数 x
+  `dayReadyCheckSecondsPerPlayer` にする
 - ordered speech の発言時間はデフォルト90秒にする
 - ordered speech の早期終了は現在の発言者だけが実行できる
 - execution の遺言は処刑候補だけが早期終了できる
 - 初日襲撃は固定で発生させない
-- First night は全 Player の開始準備完了、または30秒経過で Day に進む
+- First night は全 Player の開始準備完了、または `firstNightSeconds` 経過で Day に進む
 - 初日白判定確定占いはデフォルトありにする
 - Normal night は action が早く揃っても固定時間が終わるまで進めない
 - 会話内容そのものは core game state に含めない
@@ -114,21 +115,24 @@
 - Role assignment と result は user-visible phase に含まれない
 - First night は user-visible phase `night` として表示される
 - First night は `nightNumber === 1` で通常夜と区別できる
-- First night は全 Player の開始準備完了、または30秒経過で Day に進む
+- First night は全 Player の開始準備完了、または `firstNightSeconds` 経過で Day に進む
 - Playing 中の phase は night、day、voting、execution のいずれかになる
 - Day は ready check と ordered speech のどちらかで進行できる
 - ready check day は全生存 Player の ready action で Voting に進む
-- ready check day は最大で Day 開始時点の生存人数 x 90秒で Voting に進む
+- ready check day は最大で Day 開始時点の生存人数 x
+  `dayReadyCheckSecondsPerPlayer` で Voting に進む
 - ordered speech day はランダム開始位置の発言順を一度だけ作る
-- ordered speech day は最初の Day だけ2周し、それ以降は1周する
+- ordered speech day は最初の Day に `firstDaySpeechRounds`、それ以降は
+  `normalDaySpeechRounds` を使う
 - ordered speech day の発言時間はデフォルト90秒になる
 - ordered speech day は現在の発言者だけが自分の slot を早期終了できる
 - 発言終了 action の二重送信は最初の有効 action だけが受理される
-- Voting は30秒経過、または全生存 Player の投票完了で解決される
-- Execution は処刑候補がいる場合だけ発生し、遺言時間は60秒になる
+- Voting は `votingSeconds` 経過、または全生存 Player の投票完了で解決される
+- Execution は処刑候補がいる場合だけ発生し、遺言時間は
+  `executionLastWordsSeconds` になる
 - Execution の遺言は処刑候補だけが早期終了できる
-- Execution の遺言が早期終了されたら、60秒を待たずに処刑 effect 解決へ進む
-- Normal night は180秒固定で、全 action が揃っても短縮しない
+- Execution の遺言が早期終了されたら、設定時間を待たずに処刑 effect 解決へ進む
+- Normal night は `nightSeconds` で固定し、全 action が揃っても短縮しない
 - First night では襲撃 action が出ない
 - First night でも Werewolf night conversation は表示できる
 - Night 中は group member が夜会話 message を送信できる
