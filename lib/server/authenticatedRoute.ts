@@ -13,11 +13,27 @@ export async function requireAccount(
     return { response: jsonError("unauthorized", "Bearer token is required.", 401) };
   }
 
-  const account = await authenticate(token);
+  const authentication = await authenticateAccount(token);
 
-  if (account === null) {
+  if ("response" in authentication) {
+    return authentication;
+  }
+
+  if (authentication.account === null) {
     return { response: jsonError("unauthorized", "Invalid account token.", 401) };
   }
 
-  return { account };
+  return { account: authentication.account };
+}
+
+async function authenticateAccount(
+  token: string,
+): Promise<{ account: AccountRecord | null } | { response: Response }> {
+  try {
+    return { account: await authenticate(token) };
+  } catch {
+    return {
+      response: jsonError("server_error", "Authentication is temporarily unavailable.", 500),
+    };
+  }
 }

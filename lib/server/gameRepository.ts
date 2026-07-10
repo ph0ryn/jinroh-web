@@ -52,6 +52,7 @@ import {
   type PlayerRuntimeState,
   type SubmittedAction,
 } from "./gameEngine";
+import { RoomNotFoundError } from "./gameRepositoryErrors";
 import { createServiceClient } from "./supabase";
 
 type SupabaseClient = ReturnType<typeof createServiceClient>;
@@ -255,7 +256,11 @@ export async function authenticate(rawToken: string): Promise<AccountRecord | nu
     .is("revoked_at", null)
     .maybeSingle<TokenRecord>();
 
-  if (error !== null || data === null) {
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  if (data === null) {
     return null;
   }
 
@@ -1310,12 +1315,16 @@ function toTimedOutSpeechActions(
 async function createUniqueRoomCode(supabase: SupabaseClient): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("rooms")
       .select("id")
       .eq("public_room_code", code)
       .in("status", ["lobby", "playing"])
       .maybeSingle<{ id: number }>();
+
+    if (error !== null) {
+      throw new Error(error.message);
+    }
 
     if (data === null) {
       return code;
@@ -1349,8 +1358,12 @@ async function getRoomByCodeOrThrow(
     .limit(1)
     .maybeSingle<RoomRecord>();
 
-  if (error !== null || data === null) {
-    throw new Error("Room not found.");
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  if (data === null) {
+    throw new RoomNotFoundError();
   }
 
   return data;
@@ -1365,8 +1378,12 @@ async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Pro
     .eq("id", roomId)
     .maybeSingle<RoomRecord>();
 
-  if (error !== null || data === null) {
-    throw new Error("Room not found.");
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  if (data === null) {
+    throw new RoomNotFoundError();
   }
 
   return data;

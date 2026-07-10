@@ -1,5 +1,6 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { getRoomView } from "@/lib/server/gameRepository";
+import { RoomNotFoundError } from "@/lib/server/gameRepositoryErrors";
 import { jsonError, jsonOk } from "@/lib/server/http";
 
 type RouteContext = {
@@ -19,7 +20,9 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
 
   try {
     return jsonOk(await getRoomView(auth.account, roomCode));
-  } catch {
-    return jsonError("not_found", "Room not found.", 404);
+  } catch (error) {
+    return error instanceof RoomNotFoundError
+      ? jsonError("not_found", "Room not found.", 404)
+      : jsonError("server_error", "Room state is temporarily unavailable.", 500);
   }
 }
