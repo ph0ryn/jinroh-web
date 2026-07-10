@@ -64,6 +64,20 @@ type RememberRoomOptions = {
   readonly resetActionTargets?: boolean;
 };
 
+type RoomRequestContext = {
+  readonly expectedRoomCode: string | null;
+  readonly identityToken: string;
+  readonly requestId: number;
+  readonly sessionId: number;
+};
+
+type AppliedRoomSnapshot = {
+  readonly requestId: number;
+  readonly roomCode: string;
+  readonly sessionId: number;
+  readonly snapshotRevision: number;
+};
+
 type ClearCurrentRoomOptions = {
   readonly ignoredRoomCode?: string | null;
 };
@@ -231,6 +245,10 @@ export default function LivePage() {
   const copiedInviteResetTimerRef = useRef<number | null>(null);
   const toastDismissTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
+  const identityTokenRef = useRef<string | null>(null);
+  const roomSessionIdRef = useRef(0);
+  const nextRoomRequestIdRef = useRef(0);
+  const appliedRoomSnapshotRef = useRef<AppliedRoomSnapshot | null>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
@@ -265,6 +283,34 @@ export default function LivePage() {
     [setToast],
   );
 
+  const updateIdentityToken = useCallback((nextIdentityToken: string | null) => {
+    identityTokenRef.current = nextIdentityToken;
+    setIdentityToken(nextIdentityToken);
+  }, []);
+
+  const createRoomRequestContext = useCallback(
+    (expectedRoomCode: string | null, token: string): RoomRequestContext => ({
+      expectedRoomCode,
+      identityToken: token,
+      requestId: (nextRoomRequestIdRef.current += 1),
+      sessionId: roomSessionIdRef.current,
+    }),
+    [],
+  );
+
+  const isRoomRequestContextCurrent = useCallback(
+    (context: RoomRequestContext): boolean =>
+      context.sessionId === roomSessionIdRef.current &&
+      context.identityToken === identityTokenRef.current,
+    [],
+  );
+
+  const beginRoomSession = useCallback(() => {
+    roomSessionIdRef.current += 1;
+    appliedRoomSnapshotRef.current = null;
+    ignoredRoomCodeRef.current = null;
+  }, []);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       const requestedRoomCode = getRoomCodeSearchParam(window.location.search);
@@ -275,7 +321,7 @@ export default function LivePage() {
       setLiveOrigin(window.location.origin);
 
       if (savedIdentityToken !== null) {
-        setIdentityToken(savedIdentityToken);
+        updateIdentityToken(savedIdentityToken);
       }
 
       if (savedDisplayName !== null) {
@@ -295,7 +341,7 @@ export default function LivePage() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [updateIdentityToken]);
 
   useEffect(() => {
     const preloadedImages: HTMLImageElement[] = [];
@@ -354,7 +400,7 @@ export default function LivePage() {
     const identity = await apiFetch<IdentityResponse>("/api/identity", { method: "POST" });
 
     writeStorage(IDENTITY_STORAGE_KEY, identity.token);
-    setIdentityToken(identity.token);
+    updateIdentityToken(identity.token);
 
     return identity.token;
   }
@@ -368,6 +414,8 @@ export default function LivePage() {
   }
 
   const clearCurrentRoom = useCallback((options: ClearCurrentRoomOptions = {}) => {
+    roomSessionIdRef.current += 1;
+    appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
     removeStorage(ROOM_CODE_STORAGE_KEY);
     setSavedRoomCode(null);
@@ -383,11 +431,11 @@ export default function LivePage() {
   const resetInvalidIdentity = useCallback(
     (nextStatusMessage = invalidIdentityStatusMessage) => {
       removeStorage(IDENTITY_STORAGE_KEY);
-      setIdentityToken(null);
+      updateIdentityToken(null);
       showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
       clearCurrentRoom();
     },
-    [clearCurrentRoom, invalidIdentityStatusMessage, showToast],
+    [clearCurrentRoom, invalidIdentityStatusMessage, showToast, updateIdentityToken],
   );
 
   async function withBusy(work: () => Promise<void>): Promise<void> {
@@ -429,7 +477,36 @@ export default function LivePage() {
   }
 
   const rememberRoom = useCallback(
-    (nextSummary: RoomSummary, options: RememberRoomOptions = {}) => {
+    (
+      nextSummary: RoomSummary,
+      requestContext: RoomRequestContext,
+      options: RememberRoomOptions = {},
+    ) => {
+      if (!isRoomRequestContextCurrent(requestContext)) {
+        return false;
+      }
+
+      if (
+        requestContext.expectedRoomCode !== null &&
+        requestContext.expectedRoomCode !== nextSummary.code
+      ) {
+        return false;
+      }
+
+      const appliedSnapshot = appliedRoomSnapshotRef.current;
+
+      if (appliedSnapshot !== null) {
+        if (
+          appliedSnapshot.sessionId !== requestContext.sessionId ||
+          appliedSnapshot.roomCode !== nextSummary.code ||
+          nextSummary.snapshotRevision < appliedSnapshot.snapshotRevision ||
+          (nextSummary.snapshotRevision === appliedSnapshot.snapshotRevision &&
+            requestContext.requestId <= appliedSnapshot.requestId)
+        ) {
+          return false;
+        }
+      }
+
       if (ignoredRoomCodeRef.current === nextSummary.code) {
         return false;
       }
@@ -442,6 +519,12 @@ export default function LivePage() {
 
       writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
       writeStorage(ROOM_CODE_STORAGE_KEY, nextSummary.code);
+      appliedRoomSnapshotRef.current = {
+        requestId: requestContext.requestId,
+        roomCode: nextSummary.code,
+        sessionId: requestContext.sessionId,
+        snapshotRevision: nextSummary.snapshotRevision,
+      };
       setSavedRoomCode(nextSummary.code);
       setRoomCodeInput(nextSummary.code);
       setRoomSummary(nextSummary);
@@ -452,7 +535,13 @@ export default function LivePage() {
 
       return true;
     },
-    [clearCurrentRoom, displayName, roomClosedStatusMessage, showToast],
+    [
+      clearCurrentRoom,
+      displayName,
+      isRoomRequestContextCurrent,
+      roomClosedStatusMessage,
+      showToast,
+    ],
   );
 
   useEffect(() => {
@@ -479,6 +568,8 @@ export default function LivePage() {
     const activeToken = identityToken;
 
     async function restoreSavedRoom(): Promise<void> {
+      const requestContext = createRoomRequestContext(savedRoomCode, activeToken);
+
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${savedRoomCode}`, {
           method: "GET",
@@ -486,10 +577,10 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, { resetActionTargets: false });
+          rememberRoom(summary, requestContext, { resetActionTargets: false });
         }
       } catch (error) {
-        if (!isCancelled) {
+        if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
           if (isUnauthorizedRequestError(error)) {
             resetInvalidIdentity();
             return;
@@ -518,7 +609,9 @@ export default function LivePage() {
     };
   }, [
     clearCurrentRoom,
+    createRoomRequestContext,
     identityToken,
+    isRoomRequestContextCurrent,
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
@@ -539,9 +632,17 @@ export default function LivePage() {
     }
 
     let isCancelled = false;
+    let isSyncing = false;
     const activeToken = identityToken;
 
     async function syncRoom(): Promise<void> {
+      if (isSyncing) {
+        return;
+      }
+
+      isSyncing = true;
+      const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
+
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
           method: "GET",
@@ -549,10 +650,10 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, { resetActionTargets: false });
+          rememberRoom(summary, requestContext, { resetActionTargets: false });
         }
       } catch (error) {
-        if (!isCancelled) {
+        if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
           if (isUnauthorizedRequestError(error)) {
             resetInvalidIdentity();
             return;
@@ -568,6 +669,8 @@ export default function LivePage() {
 
           showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
         }
+      } finally {
+        isSyncing = false;
       }
     }
 
@@ -582,7 +685,9 @@ export default function LivePage() {
   }, [
     activeRoomCode,
     clearCurrentRoom,
+    createRoomRequestContext,
     identityToken,
+    isRoomRequestContextCurrent,
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
@@ -600,9 +705,17 @@ export default function LivePage() {
     }
 
     let isCancelled = false;
+    let isSendingHeartbeat = false;
     const activeToken = identityToken;
 
     async function heartbeatRoom(): Promise<void> {
+      if (isSendingHeartbeat) {
+        return;
+      }
+
+      isSendingHeartbeat = true;
+      const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
+
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}/heartbeat`, {
           method: "POST",
@@ -610,12 +723,18 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, { resetActionTargets: false });
+          rememberRoom(summary, requestContext, { resetActionTargets: false });
         }
       } catch (error) {
-        if (!isCancelled && isUnauthorizedRequestError(error)) {
+        if (
+          !isCancelled &&
+          isRoomRequestContextCurrent(requestContext) &&
+          isUnauthorizedRequestError(error)
+        ) {
           resetInvalidIdentity();
         }
+      } finally {
+        isSendingHeartbeat = false;
       }
     }
 
@@ -631,7 +750,9 @@ export default function LivePage() {
     };
   }, [
     activeRoomCode,
+    createRoomRequestContext,
     identityToken,
+    isRoomRequestContextCurrent,
     rememberRoom,
     resetInvalidIdentity,
     roomSummary?.currentPlayerId,
@@ -660,14 +781,17 @@ export default function LivePage() {
 
     let isCancelled = false;
     let isSyncing = false;
+    let hasPendingSync = false;
     const activeToken = identityToken;
 
     async function syncRoomFromRealtime(): Promise<void> {
       if (isSyncing) {
+        hasPendingSync = true;
         return;
       }
 
       isSyncing = true;
+      const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
 
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
@@ -676,10 +800,10 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, { resetActionTargets: false });
+          rememberRoom(summary, requestContext, { resetActionTargets: false });
         }
       } catch (error) {
-        if (!isCancelled) {
+        if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
           if (isUnauthorizedRequestError(error)) {
             resetInvalidIdentity();
             return;
@@ -697,6 +821,11 @@ export default function LivePage() {
         }
       } finally {
         isSyncing = false;
+
+        if (!isCancelled && hasPendingSync) {
+          hasPendingSync = false;
+          void syncRoomFromRealtime();
+        }
       }
     }
 
@@ -723,7 +852,9 @@ export default function LivePage() {
     activeRealtimeSubscriptionKey,
     activeRoomCode,
     clearCurrentRoom,
+    createRoomRequestContext,
     identityToken,
+    isRoomRequestContextCurrent,
     rememberRoom,
     resetInvalidIdentity,
     roomClosedStatusMessage,
@@ -741,6 +872,8 @@ export default function LivePage() {
     const delayMs = Math.max(Date.parse(activePhaseEndsAt) - Date.now() + 600, 0);
     const timeoutId = window.setTimeout(() => {
       void (async () => {
+        const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
+
         try {
           const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
             method: "GET",
@@ -748,10 +881,10 @@ export default function LivePage() {
           });
 
           if (!isCancelled) {
-            rememberRoom(summary, { resetActionTargets: false });
+            rememberRoom(summary, requestContext, { resetActionTargets: false });
           }
         } catch (error) {
-          if (!isCancelled) {
+          if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
             if (isUnauthorizedRequestError(error)) {
               resetInvalidIdentity();
               return;
@@ -769,7 +902,9 @@ export default function LivePage() {
     activePhaseEndsAt,
     activePhaseInstanceId,
     activeRoomCode,
+    createRoomRequestContext,
     identityToken,
+    isRoomRequestContextCurrent,
     rememberRoom,
     resetInvalidIdentity,
     t,
@@ -805,16 +940,19 @@ export default function LivePage() {
         return;
       }
 
-      const summary = await withFreshIdentityToken((token) =>
-        apiFetch<RoomSummary>("/api/rooms", {
+      beginRoomSession();
+      const response = await withFreshIdentityToken(async (token) => {
+        const requestContext = createRoomRequestContext(null, token);
+        const summary = await apiFetch<RoomSummary>("/api/rooms", {
           body: { displayName, targetPlayerCount },
           method: "POST",
           token,
-        }),
-      );
+        });
 
-      ignoredRoomCodeRef.current = null;
-      rememberRoom(summary);
+        return { requestContext, summary };
+      });
+
+      rememberRoom(response.summary, response.requestContext);
     });
   }
 
@@ -828,16 +966,19 @@ export default function LivePage() {
       }
 
       const roomCode = requireRoomCode(roomCodeInput, t);
-      const summary = await withFreshIdentityToken((token) =>
-        apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
+      beginRoomSession();
+      const response = await withFreshIdentityToken(async (token) => {
+        const requestContext = createRoomRequestContext(roomCode, token);
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
           body: { displayName },
           method: "POST",
           token,
-        }),
-      );
+        });
 
-      ignoredRoomCodeRef.current = null;
-      rememberRoom(summary);
+        return { requestContext, summary };
+      });
+
+      rememberRoom(response.summary, response.requestContext);
     });
   }
 
@@ -845,6 +986,7 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+      const requestContext = createRoomRequestContext(roomCode, token);
 
       try {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}`, {
@@ -852,8 +994,12 @@ export default function LivePage() {
           token,
         });
 
-        rememberRoom(summary);
+        rememberRoom(summary, requestContext);
       } catch (error) {
+        if (!isRoomRequestContextCurrent(requestContext)) {
+          return;
+        }
+
         if (isNotFoundRequestError(error)) {
           clearCurrentRoom({ ignoredRoomCode: roomCode });
           showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
@@ -869,13 +1015,14 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+      const requestContext = createRoomRequestContext(roomCode, token);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/start`, {
         body: { ruleSet: buildStartRuleSetInput(startRuleSetSettings) },
         method: "POST",
         token,
       });
 
-      rememberRoom(summary);
+      rememberRoom(summary, requestContext);
     });
   }
 
@@ -883,12 +1030,15 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+      const requestContext = createRoomRequestContext(roomCode, token);
       await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/leave`, {
         method: "POST",
         token,
       });
 
-      clearCurrentRoom({ ignoredRoomCode: roomCode });
+      if (isRoomRequestContextCurrent(requestContext)) {
+        clearCurrentRoom({ ignoredRoomCode: roomCode });
+      }
     });
   }
 
@@ -903,6 +1053,7 @@ export default function LivePage() {
         throw new Error(t.live.status.actionWindowClosed);
       }
 
+      const requestContext = createRoomRequestContext(roomCode, token);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
         body: {
           actionKey: action.key,
@@ -914,7 +1065,7 @@ export default function LivePage() {
         token,
       });
 
-      rememberRoom(summary);
+      rememberRoom(summary, requestContext);
     });
   }
 
@@ -928,6 +1079,7 @@ export default function LivePage() {
         throw new Error(t.live.status.nightChatClosed);
       }
 
+      const requestContext = createRoomRequestContext(roomCode, token);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/night-conversation`, {
         body: {
           body: nightConversationDraft,
@@ -940,7 +1092,7 @@ export default function LivePage() {
       });
 
       setNightConversationDraft("");
-      rememberRoom(summary, { resetActionTargets: false });
+      rememberRoom(summary, requestContext, { resetActionTargets: false });
     });
   }
 

@@ -159,6 +159,7 @@ function createSummary(
     roleCatalog: [],
     rolePrivate: null,
     self: null,
+    snapshotRevision: 1,
     status: "playing",
     targetPlayerCount: 3,
   };

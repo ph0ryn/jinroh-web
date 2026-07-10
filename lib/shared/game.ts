@@ -33,6 +33,7 @@ export type GameEventVisibility = "public" | "private" | "internal";
 
 export type RoomSummary = {
   code: string;
+  snapshotRevision: number;
   status: RoomStatus;
   lobbyExpiresAt: string;
   targetPlayerCount: number;

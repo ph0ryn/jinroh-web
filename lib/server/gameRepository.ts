@@ -73,9 +73,10 @@ type RoomRecord = {
   realtime_topic: string;
   lobby_expires_at: string;
   target_player_count: number;
+  view_revision: number;
 };
 
-type RoomMutationResultRecord = Omit<RoomRecord, "target_player_count"> & {
+type RoomMutationResultRecord = Omit<RoomRecord, "target_player_count" | "view_revision"> & {
   actor_player_id: number | null;
   notification_reason: string | null;
 };
@@ -631,7 +632,27 @@ async function getRoomViewByRoom(
   account: AccountRecord,
   room: RoomRecord,
 ): Promise<RoomSummary> {
-  const currentRoom = await getRoomByIdOrThrow(supabase, room.id);
+  let currentRoom = await getRoomByIdOrThrow(supabase, room.id);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const summary = await buildRoomViewByRoom(supabase, account, currentRoom);
+    const latestRoom = await getRoomByIdOrThrow(supabase, room.id);
+
+    if (latestRoom.view_revision === currentRoom.view_revision) {
+      return summary;
+    }
+
+    currentRoom = latestRoom;
+  }
+
+  throw new Error("Room view changed while it was being loaded.");
+}
+
+async function buildRoomViewByRoom(
+  supabase: SupabaseClient,
+  account: AccountRecord,
+  currentRoom: RoomRecord,
+): Promise<RoomSummary> {
   const [
     players,
     state,
@@ -749,6 +770,7 @@ async function getRoomViewByRoom(
     ),
     roleCatalog: getSharedRoleCatalog(),
     self,
+    snapshotRevision: currentRoom.view_revision,
     status: currentRoom.status,
     targetPlayerCount: currentRoom.target_player_count,
   };
@@ -1295,7 +1317,7 @@ async function getRoomByCodeOrThrow(
   const { data, error } = await supabase
     .from("rooms")
     .select(
-      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count",
+      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count,view_revision",
     )
     .eq("public_room_code", roomCode)
     .order("created_at", { ascending: false })
@@ -1313,7 +1335,7 @@ async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Pro
   const { data, error } = await supabase
     .from("rooms")
     .select(
-      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count",
+      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count,view_revision",
     )
     .eq("id", roomId)
     .maybeSingle<RoomRecord>();
@@ -1952,6 +1974,7 @@ function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
     realtime_topic: record.realtime_topic,
     status: record.status,
     target_player_count: 10,
+    view_revision: 0,
   };
 }
 
