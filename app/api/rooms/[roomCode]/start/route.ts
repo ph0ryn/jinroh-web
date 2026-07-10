@@ -3,6 +3,12 @@ import { getRoleIds } from "@/lib/server/game/roles";
 import { startRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
 import { type RoleId, type RuleSetInput } from "@/lib/shared/game";
+import {
+  isValidRuleSetNumber,
+  RULE_SET_NUMBER_FIELDS,
+  RULE_SET_NUMBER_LIMITS,
+  type RuleSetNumberField,
+} from "@/lib/shared/ruleSetConstraints";
 
 type StartBody = {
   ruleSet?: RuleSetInput | null;
@@ -13,19 +19,6 @@ type RouteContext = {
     roomCode: string;
   }>;
 };
-
-const RULE_TIMING_FIELDS = [
-  "dayReadyCheckSecondsPerPlayer",
-  "daySpeechSeconds",
-  "executionLastWordsSeconds",
-  "firstDaySpeechRounds",
-  "firstNightSeconds",
-  "nightSeconds",
-  "normalDaySpeechRounds",
-  "votingSeconds",
-] as const;
-
-type RuleTimingField = (typeof RULE_TIMING_FIELDS)[number];
 
 export async function POST(request: Request, context: RouteContext): Promise<Response> {
   const auth = await requireAccount(request);
@@ -122,15 +115,21 @@ function parseRuleSetInput(
 
 function parseRuleTimingFields(
   value: Record<string, unknown>,
-): { timings: Record<RuleTimingField, number> } | { response: Response } {
-  const timings = {} as Record<RuleTimingField, number>;
+): { timings: Record<RuleSetNumberField, number> } | { response: Response } {
+  const timings = {} as Record<RuleSetNumberField, number>;
 
-  for (const field of RULE_TIMING_FIELDS) {
+  for (const field of RULE_SET_NUMBER_FIELDS) {
     const rawValue = value[field];
 
-    if (typeof rawValue !== "number" || !Number.isInteger(rawValue) || rawValue <= 0) {
+    if (!isValidRuleSetNumber(field, rawValue)) {
+      const limits = RULE_SET_NUMBER_LIMITS[field];
+
       return {
-        response: jsonError("bad_request", `${field} must be a positive integer.`, 400),
+        response: jsonError(
+          "bad_request",
+          `${field} must be an integer from ${limits.min} to ${limits.max}.`,
+          400,
+        ),
       };
     }
 

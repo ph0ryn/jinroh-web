@@ -1,4 +1,6 @@
 import "server-only";
+import { isValidRuleSetNumber, RULE_SET_NUMBER_FIELDS } from "@/lib/shared/ruleSetConstraints";
+
 import {
   getCoreSetupContributions,
   getRoleIds,
@@ -450,11 +452,13 @@ function validateOptions(options: RuleOptions, issues: RuleSetValidationIssue[])
     });
   }
 
-  for (const [optionName, optionValue] of Object.entries(getPositiveIntegerOptions(options))) {
-    if (!Number.isInteger(optionValue) || optionValue <= 0) {
+  const numericOptions = getPositiveIntegerOptions(options);
+
+  for (const field of RULE_SET_NUMBER_FIELDS) {
+    if (!isValidRuleSetNumber(field, numericOptions[field])) {
       issues.push({
         code: "invalid_option",
-        message: `${optionName} must be a positive integer.`,
+        message: `${field} is outside the supported range.`,
       });
     }
   }

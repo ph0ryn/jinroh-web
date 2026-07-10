@@ -74,6 +74,14 @@ phase の時間も `RuleSet` の option として扱う。
 - execution の遺言時間は60秒
 - ordered speech の1人あたりの発言時間はデフォルト90秒
 
+Browser、HTTP API、Game Engine は次の入力範囲を共通で使用する。
+
+- `firstNightSeconds`、`daySpeechSeconds`、
+  `dayReadyCheckSecondsPerPlayer`、`votingSeconds`、
+  `executionLastWordsSeconds` は1秒以上300秒以下
+- `nightSeconds` は1秒以上600秒以下
+- `firstDaySpeechRounds` と `normalDaySpeechRounds` は1以上5以下
+
 normal night は、役職 action が早く揃っても時間切れまで進めない。
 早く進めると、どの役職が残っているか推測できるため。
 

@@ -8,25 +8,14 @@ import {
   type RoleSpecificOptionItem,
   type RuleSetInput,
 } from "@/lib/shared/game";
+import { RULE_SET_NUMBER_LIMITS, type RuleSetNumberField } from "@/lib/shared/ruleSetConstraints";
+
+export { RULE_SET_NUMBER_LIMITS } from "@/lib/shared/ruleSetConstraints";
+export type { RuleSetNumberField } from "@/lib/shared/ruleSetConstraints";
 
 import type { Localization } from "@/lib/i18n/localization";
 
 export type StartRuleSetSettings = RuleSetInput;
-
-export type RuleSetNumberField =
-  | "dayReadyCheckSecondsPerPlayer"
-  | "daySpeechSeconds"
-  | "executionLastWordsSeconds"
-  | "firstDaySpeechRounds"
-  | "firstNightSeconds"
-  | "nightSeconds"
-  | "normalDaySpeechRounds"
-  | "votingSeconds";
-
-type RuleSetNumberLimit = {
-  readonly max: number;
-  readonly min: number;
-};
 
 export const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
   dayMode: DEFAULT_RULE_SET_OPTIONS.dayMode,
@@ -42,17 +31,6 @@ export const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
   roleCounts: {},
   voteResultVisibility: DEFAULT_RULE_SET_OPTIONS.voteResultVisibility,
   votingSeconds: DEFAULT_RULE_SET_OPTIONS.votingSeconds,
-};
-
-export const RULE_SET_NUMBER_LIMITS: Record<RuleSetNumberField, RuleSetNumberLimit> = {
-  dayReadyCheckSecondsPerPlayer: { max: 300, min: 1 },
-  daySpeechSeconds: { max: 300, min: 1 },
-  executionLastWordsSeconds: { max: 300, min: 1 },
-  firstDaySpeechRounds: { max: 5, min: 1 },
-  firstNightSeconds: { max: 300, min: 1 },
-  nightSeconds: { max: 600, min: 1 },
-  normalDaySpeechRounds: { max: 5, min: 1 },
-  votingSeconds: { max: 300, min: 1 },
 };
 
 export function buildStartRuleSetInput(settings: StartRuleSetSettings): RuleSetInput {
