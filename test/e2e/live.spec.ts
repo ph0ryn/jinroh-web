@@ -289,6 +289,57 @@ test("the leave API rejects players while a game is in progress", async ({ reque
   expect(summary.currentPlayerId).not.toBeNull();
 });
 
+test("the desktop round table uses the available play area", async ({ page, request }) => {
+  const { players } = await createStartedRoom(request, ["Lumen", "Morrow", "Nettle"]);
+  const host = players[0];
+
+  if (host === undefined) {
+    throw new Error("Round table host was not created.");
+  }
+
+  await page.setViewportSize({ height: 801, width: 1467 });
+  await page.addInitScript(
+    ({ identityToken }) => {
+      window.localStorage.setItem("jinrohWeb.identityToken", identityToken);
+      window.localStorage.setItem("jinrohWeb.locale", "en");
+    },
+    { identityToken: host.token },
+  );
+  await page.goto("/live");
+
+  const shell = page.locator(".liveShellGame");
+  const tableBoard = page.locator(".livePlayTablePanel .liveTableBoard");
+  const tableSurface = page.locator(".livePlayTablePanel .liveTableSurface");
+
+  await expect(shell).toBeVisible();
+  await expect(tableBoard).toBeVisible();
+  await expect(tableSurface).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const board = document.querySelector<HTMLElement>(".livePlayTablePanel .liveTableBoard");
+    const surface = document.querySelector<HTMLElement>(".livePlayTablePanel .liveTableSurface");
+
+    if (board === null || surface === null) {
+      throw new Error("Round table geometry was not rendered.");
+    }
+
+    const boardRect = board.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+
+    return {
+      boardBottom: boardRect.bottom,
+      boardHeight: boardRect.height,
+      surfaceHeight: surfaceRect.height,
+      surfaceWidth: surfaceRect.width,
+    };
+  });
+
+  expect(geometry.boardHeight).toBeGreaterThan(650);
+  expect(geometry.boardBottom).toBeGreaterThan(760);
+  expect(geometry.surfaceWidth).toBeGreaterThan(560);
+  expect(Math.abs(geometry.surfaceWidth - geometry.surfaceHeight)).toBeLessThan(1);
+});
+
 async function createBrowserPlayer(
   browser: Browser,
   displayName: string,

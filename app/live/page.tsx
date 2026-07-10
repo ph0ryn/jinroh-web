@@ -1327,13 +1327,20 @@ export default function LivePage() {
   const liveMood = getLiveMood(roomSummary);
   const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
   const liveGridClassName = getLiveGridClassName(roomSummary);
+  const liveShellClassName = [
+    "liveShell",
+    `liveMood-${liveMood}`,
+    isGameSurface ? "liveShellGame" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const roomInviteUrl =
     liveOrigin === null || roomSummary === null
       ? null
       : getLiveRoomUrl(roomSummary.code, liveOrigin);
 
   return (
-    <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood} ref={liveShellRef}>
+    <main className={liveShellClassName} data-live-mood={liveMood} ref={liveShellRef}>
       <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
         <div className="liveHeroTitle">
           <h1 className={isGameSurface ? "srOnly" : undefined}>

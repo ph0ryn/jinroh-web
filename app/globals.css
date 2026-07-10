@@ -1442,6 +1442,10 @@ a {
   z-index: 1;
 }
 
+.liveShellGame {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .liveMood-setup,
 .liveMood-lobby {
   --live-accent: #d8af68;
@@ -4177,18 +4181,18 @@ a {
   }
 
   .liveTableSeat {
-    min-height: 78px;
+    min-height: clamp(64px, 20vw, 78px);
     padding: 6px;
-    width: 78px;
+    width: clamp(64px, 20vw, 78px);
   }
 
   .liveTableSeat .avatar {
-    height: 30px;
-    width: 30px;
+    height: clamp(28px, 7.7vw, 30px);
+    width: clamp(28px, 7.7vw, 30px);
   }
 
   .liveTableSeat .seatLabel {
-    font-size: 0.84rem;
+    font-size: clamp(0.72rem, 3.4vw, 0.84rem);
   }
 
   .livePlayPhaseCard {
