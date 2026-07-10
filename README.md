@@ -232,25 +232,26 @@ pnpm run build
 pnpm run test:e2e:all
 ```
 
-The focused tests cover ruleset validation, token hashing, secret-safe game
-events, role-scoped night actions, winner judgement, and player result mapping.
-The E2E smoke test starts the built app with `next start`, launches three
-isolated browser contexts, and plays a room from creation through the final
-result, including the execution timeout path.
+Unit tests cover the engine, roles, effects, persisted contracts, token
+handling, shared rule constraints, maintenance authentication, localization,
+and presentation helpers.
 
-`test:e2e:all` runs the live smoke flow, ordered-speech flow, role coverage,
-and security coverage sequentially. The individual commands remain available:
-`test:e2e`, `test:e2e:roles`, `test:e2e:security`, and
-`E2E_RULESET=ordered_speech E2E_PORT=3015 node scripts/e2e-live-smoke.mjs`.
+The Playwright suite owns one reproducible local lifecycle. It resets local
+Supabase, builds the application, injects the local Supabase JWT secret into the
+test server, and starts `next start`. Its specs verify the three-browser lobby
+and first-night UI flow, eight-player role/private-view boundaries, stale action
+rejection, private night conversation, private Realtime authorization and
+broadcast delivery, and maintenance authentication.
 
-`test:e2e:roles` launches eight isolated browser contexts and verifies a
-configured role mix, role-private night actions, night conversation visibility,
-non-member rejection, and read-only chat after night. To test an already
-running deployment, pass `E2E_BASE_URL=https://...` to the E2E command.
+Use `test:e2e:roles` or `test:e2e:security` to run tagged subsets.
+`test:e2e:all` is an alias for the complete Playwright suite. Set
+`E2E_SKIP_DB_RESET=1` or `E2E_SKIP_BUILD=1` only when deliberately reusing local
+state or an existing build.
 
-`test:e2e:security` uses the HTTP APIs directly to verify scoped realtime
-subscriptions, stale action revision rejection, and private night conversation
-message boundaries.
+To test an already running deployment, pass `E2E_BASE_URL=https://...`. Remote
+runs do not reset a database, build the app, or start a server. The authorized
+maintenance assertion is skipped unless running against the managed local test
+server.
 
 ## Architecture
 

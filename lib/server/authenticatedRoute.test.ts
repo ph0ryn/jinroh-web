@@ -48,6 +48,28 @@ describe("authenticated route helper", () => {
     }
   });
 
+  it("preserves repository outages as a server error", async () => {
+    mockedAuthenticate.mockRejectedValue(new Error("database unavailable"));
+
+    const result = await requireAccount(
+      new Request("https://jinroh.example/api", {
+        headers: { authorization: "Bearer jat_known" },
+      }),
+    );
+
+    expect("response" in result).toBe(true);
+
+    if ("response" in result) {
+      expect(result.response.status).toBe(500);
+      await expect(result.response.json()).resolves.toEqual({
+        error: {
+          code: "server_error",
+          message: "Authentication is temporarily unavailable.",
+        },
+      });
+    }
+  });
+
   it("returns the authenticated account without exposing token details", async () => {
     mockedAuthenticate.mockResolvedValue({ id: 42 });
 

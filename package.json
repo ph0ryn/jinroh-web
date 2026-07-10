@@ -12,11 +12,13 @@
     "lint": "eslint && oxlint --type-aware --type-check",
     "precommit": "pnpm run fix && eslint",
     "start": "next start",
-    "test": "vitest run",
-    "test:e2e": "node scripts/e2e-live-smoke.mjs",
-    "test:e2e:all": "node scripts/e2e-all.mjs",
-    "test:e2e:roles": "node scripts/e2e-live-roles.mjs",
-    "test:e2e:security": "node scripts/e2e-live-security.mjs"
+    "test": "pnpm run test:unit",
+    "test:all": "pnpm run test:unit && pnpm run test:e2e",
+    "test:e2e": "playwright test",
+    "test:e2e:all": "pnpm run test:e2e",
+    "test:e2e:roles": "playwright test --grep @roles",
+    "test:e2e:security": "playwright test --grep @security",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "catalog:",
