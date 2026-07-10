@@ -2242,8 +2242,7 @@ a {
   box-shadow: 0 0 0 3px rgba(var(--live-accent-rgb), 0.14);
 }
 
-.livePlayPhaseCard,
-.livePlayHostTools {
+.livePlayPhaseCard {
   background: var(--live-soft-surface);
   border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
@@ -2293,33 +2292,6 @@ a {
   font-size: 0.82rem;
   font-style: normal;
   grid-column: 1 / -1;
-}
-
-.livePlayHostTools {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-}
-
-.livePlayHostTools > span {
-  color: var(--live-muted);
-  font-size: 0.76rem;
-  font-weight: 820;
-  text-transform: uppercase;
-}
-
-.livePlayHostTools div {
-  align-items: center;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: auto minmax(0, 1fr);
-}
-
-.livePlayHostTools p {
-  color: var(--live-muted);
-  font-size: 0.82rem;
-  line-height: 1.35;
-  margin: 0;
 }
 
 .liveNightActionStack {
@@ -4178,8 +4150,7 @@ a {
     font-size: 0.84rem;
   }
 
-  .livePlayPhaseCard,
-  .livePlayHostTools div {
+  .livePlayPhaseCard {
     grid-template-columns: 1fr;
   }
 

@@ -459,7 +459,6 @@ export const jaLocalization = {
       settingsSections: "設定セクション",
     },
     buttons: {
-      advancePhase: "ゲームを進める",
       applySettings: "設定を適用",
       cancel: "キャンセル",
       clear: "クリア",
@@ -520,12 +519,7 @@ export const jaLocalization = {
       },
     },
     hints: {
-      advanceAfterReady: "全員の準備が整うか、制限時間を過ぎると進められます。",
-      advanceAfterSync: "更新が終わると次へ進めます。",
-      advanceInProgress: "ゲーム中に次の場面へ進めます。",
-      advanceNeedsRoom: "先に部屋を作るか、部屋に参加してください。",
       controlsNeedRoom: "先に部屋を作るか、部屋に参加してください。",
-      hostOnlyAdvance: "ゲームを進められるのはホストだけです。",
       hostOnlyStart: "ゲーム開始はホストだけが行えます。",
       reviewResult: "このテーブルの結果を確認してください。",
       roomClosed: "この部屋は閉じられています。",

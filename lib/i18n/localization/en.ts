@@ -467,7 +467,6 @@ export const enLocalization = {
       settingsSections: "Settings sections",
     },
     buttons: {
-      advancePhase: "Continue game",
       applySettings: "Apply settings",
       cancel: "Cancel",
       clear: "Clear",
@@ -525,12 +524,7 @@ export const enLocalization = {
       yourTurn: { label: "Your turn", message: "Submit the private action shown below." },
     },
     hints: {
-      advanceAfterReady: "Continue when everyone is ready or time runs out.",
-      advanceAfterSync: "You can continue when the update finishes.",
-      advanceInProgress: "Advance is available while a game is in progress.",
-      advanceNeedsRoom: "Create or join a room before continuing.",
       controlsNeedRoom: "Create or join a room to use table controls.",
-      hostOnlyAdvance: "Only the host can continue the game.",
       hostOnlyStart: "Only the host can start the game.",
       reviewResult: "Review the result from this table.",
       roomClosed: "This room is closed.",

@@ -330,6 +330,8 @@ export async function getRoomView(account: AccountRecord, roomCode: string): Pro
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
   const activeRoom = await expireLobbyIfNeeded(supabase, room);
 
+  await resolveRoom({ id: activeRoom.host_account_id }, roomCode);
+
   return getRoomViewByRoom(supabase, account, activeRoom);
 }
 
@@ -445,6 +447,9 @@ export async function submitAction(
 
   await broadcastMutationResult(supabase, room, transactionResult);
 
+  // The host identity comes from the persisted room record, not from the action request.
+  await resolveRoom({ id: room.host_account_id }, roomCode);
+
   return getRoomViewByRoom(supabase, account, room);
 }
 
@@ -512,7 +517,7 @@ export async function submitNightConversationMessage(
   return getRoomViewByRoom(supabase, account, updatedRoom);
 }
 
-export async function resolveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
+async function resolveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
   await requireJoinedPlayerForAccount(supabase, room.id, account.id);

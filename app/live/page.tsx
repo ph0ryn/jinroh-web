@@ -108,8 +108,6 @@ type PublicEventDetail = {
 };
 
 type LivePlaySurfaceProps = {
-  readonly canAdvancePhase: boolean;
-  readonly controlHint: string;
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
@@ -119,7 +117,6 @@ type LivePlaySurfaceProps = {
   readonly summary: RoomSummary;
   readonly targetByActionKey: Record<string, string>;
   readonly t: Localization;
-  readonly onAdvancePhase: () => void;
   readonly onCloseNightConversation: () => void;
   readonly onClosePublicLog: () => void;
   readonly onNightConversationDraftChange: (value: string) => void;
@@ -535,10 +532,6 @@ export default function LivePage() {
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
   const activePhaseInstanceId = roomSummary?.game?.phaseInstanceId ?? null;
   const activeRealtimeSubscriptionKey = toRealtimeSubscriptionKey(roomSummary?.realtime ?? null);
-  const isHostInPlayingRoom =
-    roomSummary?.isHost === true &&
-    roomSummary.status === "playing" &&
-    roomSummary.game?.status === "playing";
 
   useEffect(() => {
     if (identityToken === null || activeRoomCode === null) {
@@ -743,18 +736,14 @@ export default function LivePage() {
       return;
     }
 
-    if (!isHostInPlayingRoom) {
-      return;
-    }
-
     let isCancelled = false;
     const activeToken = identityToken;
     const delayMs = Math.max(Date.parse(activePhaseEndsAt) - Date.now() + 600, 0);
     const timeoutId = window.setTimeout(() => {
       void (async () => {
         try {
-          const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}/resolve`, {
-            method: "POST",
+          const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
+            method: "GET",
             token: activeToken,
           });
 
@@ -781,7 +770,6 @@ export default function LivePage() {
     activePhaseInstanceId,
     activeRoomCode,
     identityToken,
-    isHostInPlayingRoom,
     rememberRoom,
     resetInvalidIdentity,
     t,
@@ -883,19 +871,6 @@ export default function LivePage() {
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/start`, {
         body: { ruleSet: buildStartRuleSetInput(startRuleSetSettings) },
-        method: "POST",
-        token,
-      });
-
-      rememberRoom(summary);
-    });
-  }
-
-  function handleResolvePhase(): void {
-    void withBusy(async () => {
-      const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
-      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/resolve`, {
         method: "POST",
         token,
       });
@@ -1031,11 +1006,6 @@ export default function LivePage() {
     roomSummary !== null &&
     roomSummary.game !== null &&
     (roomSummary.status === "playing" || roomSummary.status === "ended");
-  const canAdvancePhase =
-    !isBusy &&
-    roomSummary?.isHost === true &&
-    roomSummary.status === "playing" &&
-    roomSummary.game?.status === "playing";
   const controlHint = getControlHint(roomSummary, isBusy, t);
   const liveMood = getLiveMood(roomSummary);
   const isRoomEntryAvailable = roomSummary === null && savedRoomCode === null;
@@ -1205,8 +1175,6 @@ export default function LivePage() {
 
           {roomSummary !== null && isGameSurface ? (
             <LivePlaySurface
-              canAdvancePhase={canAdvancePhase}
-              controlHint={controlHint}
               isBusy={isBusy}
               isNightConversationOpen={isNightConversationOpen}
               isPublicLogOpen={isPublicLogOpen}
@@ -1216,7 +1184,6 @@ export default function LivePage() {
               targetByActionKey={targetByActionKey}
               locale={locale}
               t={t}
-              onAdvancePhase={handleResolvePhase}
               onCloseNightConversation={() => setIsNightConversationOpen(false)}
               onClosePublicLog={() => setIsPublicLogOpen(false)}
               onNightConversationDraftChange={setNightConversationDraft}
@@ -1825,8 +1792,6 @@ function LobbyRequirements({
 }
 
 function LivePlaySurface({
-  canAdvancePhase,
-  controlHint,
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
@@ -1836,7 +1801,6 @@ function LivePlaySurface({
   summary,
   targetByActionKey,
   t,
-  onAdvancePhase,
   onCloseNightConversation,
   onClosePublicLog,
   onNightConversationDraftChange,
@@ -1881,23 +1845,6 @@ function LivePlaySurface({
               </em>
             )}
           </div>
-
-          {summary.isHost && summary.game?.status === "playing" ? (
-            <div className="livePlayHostTools">
-              <div>
-                <button
-                  className="secondaryButton"
-                  aria-describedby={canAdvancePhase ? undefined : "play-control-hint"}
-                  type="button"
-                  onClick={onAdvancePhase}
-                  disabled={!canAdvancePhase}
-                >
-                  {t.live.buttons.advancePhase}
-                </button>
-                {canAdvancePhase ? null : <p id="play-control-hint">{controlHint}</p>}
-              </div>
-            </div>
-          ) : null}
         </section>
 
         {summary.self?.roleId === null || summary.self?.roleId === undefined ? null : (
@@ -3623,10 +3570,6 @@ function getControlHint(summary: RoomSummary | null, isBusy: boolean, t: Localiz
     return getStartHint(summary, isBusy, t);
   }
 
-  if (summary.status === "playing" && summary.game?.status === "playing") {
-    return getAdvanceHint(summary, isBusy, t);
-  }
-
   if (summary.status === "disbanded") {
     return t.live.hints.roomClosed;
   }
@@ -3646,26 +3589,6 @@ function canStartRoom(summary: RoomSummary | null): boolean {
 
 function countJoinedPlayers(summary: RoomSummary): number {
   return summary.players.filter((player) => player.status === "joined").length;
-}
-
-function getAdvanceHint(summary: RoomSummary | null, isBusy: boolean, t: Localization): string {
-  if (isBusy) {
-    return t.live.hints.advanceAfterSync;
-  }
-
-  if (summary === null) {
-    return t.live.hints.advanceNeedsRoom;
-  }
-
-  if (!summary.isHost) {
-    return t.live.hints.hostOnlyAdvance;
-  }
-
-  if (summary.status !== "playing" || summary.game?.status !== "playing") {
-    return t.live.hints.advanceInProgress;
-  }
-
-  return t.live.hints.advanceAfterReady;
 }
 
 function getActionButtonLabel(action: PublicAction, isBusy: boolean, t: Localization): string {
