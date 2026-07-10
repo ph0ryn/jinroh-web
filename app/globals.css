@@ -2130,10 +2130,9 @@ a {
 }
 
 .liveTableSurface {
-  height: 100%;
-  max-width: 700px;
-  max-height: 700px;
-  width: auto;
+  height: auto;
+  max-width: 100%;
+  width: min(620px, 100%, calc(100svh - 164px));
 }
 
 .liveTableCenter {
@@ -3959,7 +3958,7 @@ a {
 
   .livePlayTablePanel .liveTableSurface {
     height: auto;
-    width: min(100%, 700px);
+    width: min(100%, 620px);
   }
 
   .liveEntryPanel {

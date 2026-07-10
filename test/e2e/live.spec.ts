@@ -336,7 +336,7 @@ test("the desktop round table uses the available play area", async ({ page, requ
 
   expect(geometry.boardHeight).toBeGreaterThan(650);
   expect(geometry.boardBottom).toBeGreaterThan(760);
-  expect(geometry.surfaceWidth).toBeGreaterThan(560);
+  expect(geometry.surfaceWidth).toBe(620);
   expect(Math.abs(geometry.surfaceWidth - geometry.surfaceHeight)).toBeLessThan(1);
 });
 
