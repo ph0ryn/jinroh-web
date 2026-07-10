@@ -26,7 +26,7 @@ export function roomApiErrorResponse(error: unknown): Response | null {
   if (error instanceof RoomSwitchForbiddenError) {
     return jsonError(
       "room_switch_forbidden",
-      "Players cannot switch rooms while a game is in progress.",
+      "Players cannot leave or switch rooms while a game is in progress.",
       409,
     );
   }

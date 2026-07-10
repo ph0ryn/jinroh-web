@@ -269,7 +269,12 @@ test("the leave API rejects players while a game is in progress", async ({ reque
   });
 
   expect(leaveResponse).toEqual({
-    body: { error: { code: "conflict", message: "Leave failed." } },
+    body: {
+      error: {
+        code: "room_switch_forbidden",
+        message: "Players cannot leave or switch rooms while a game is in progress.",
+      },
+    },
     status: 409,
   });
 
