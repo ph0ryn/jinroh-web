@@ -242,6 +242,7 @@ export default function LivePage() {
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
+  const savedRoomExpiredStatusMessageRef = useRef(t.live.room.savedExpired);
   const toastDismissTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const identityTokenRef = useRef<string | null>(null);
@@ -334,13 +335,23 @@ export default function LivePage() {
       }
 
       if (savedRoomCode !== null) {
+        if (savedIdentityToken === null) {
+          removeStorage(ROOM_CODE_STORAGE_KEY);
+          showToast(
+            savedRoomExpiredStatusMessageRef.current,
+            "warning",
+            TOAST_IMPORTANT_DURATION_MS,
+          );
+          return;
+        }
+
         setSavedRoomCode(savedRoomCode);
         setRoomCodeInput(savedRoomCode);
       }
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [updateIdentityToken]);
+  }, [showToast, updateIdentityToken]);
 
   useEffect(() => {
     const preloadedImages: HTMLImageElement[] = [];
@@ -542,17 +553,6 @@ export default function LivePage() {
       showToast,
     ],
   );
-
-  useEffect(() => {
-    if (identityToken === null && savedRoomCode !== null) {
-      const nextStatusMessage = t.live.room.savedExpired;
-
-      removeStorage(ROOM_CODE_STORAGE_KEY);
-      setSavedRoomCode(null);
-      setRoomCodeInput("");
-      showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-    }
-  }, [identityToken, savedRoomCode, showToast, t]);
 
   useEffect(() => {
     if (identityToken === null || roomSummary !== null || savedRoomCode === null) {
