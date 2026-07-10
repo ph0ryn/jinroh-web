@@ -46,6 +46,7 @@ import {
   type GameEffect,
   type PlayerResult as RegisteredPlayerResult,
   type ReadonlyGameState,
+  type ResolvedRoleSetup,
   type ResolvedDeath,
   type RoleId as RegisteredRoleId,
 } from "./game/types";
@@ -71,6 +72,7 @@ export type StartGameResult =
       ok: true;
       phase: GamePhase;
       phaseDurationSeconds: number;
+      resolvedRoleSetup: ResolvedRoleSetup;
       ruleSet: RuleSet;
     }
   | {
@@ -110,6 +112,7 @@ export type PhaseResolutionInput = {
   orderedSpeechSlots?: readonly OrderedSpeechSlot[];
   players: PlayerRuntimeState[];
   previousGuardTargetByPlayerId?: Record<string, string>;
+  resolvedRoleSetup: ResolvedRoleSetup;
   ruleSet: RuleSet;
 };
 
@@ -161,6 +164,12 @@ export function startGame(
   }
 
   const assignments = assignRoles(players, ruleSet);
+  const runtimePlayers = assignments.map((assignment) => ({
+    alive: true,
+    playerId: assignment.playerId,
+    roleId: assignment.roleId,
+  }));
+  const resolvedRoleSetup = makeResolvedRoleSetupForPlayers(ruleSet, runtimePlayers);
   const actions = players.map((player) => ({
     actorPlayerId: player.id,
     actorRoleId: null,
@@ -179,7 +188,7 @@ export function startGame(
       visibleToPlayerIds: [],
       visibleToRoleIds: [],
     },
-    ...createFirstNightRoleEvents(assignments, ruleSet),
+    ...createFirstNightRoleEvents(assignments, ruleSet, resolvedRoleSetup),
   ];
 
   return {
@@ -189,6 +198,7 @@ export function startGame(
     ok: true,
     phase: "night",
     phaseDurationSeconds: ruleSet.firstNightSeconds,
+    resolvedRoleSetup,
     ruleSet,
   };
 }
@@ -222,6 +232,7 @@ export function getAvailableNightActions(
   nightNumber: number,
   ruleSet: RuleSet = normalizeEngineRuleSet(null, players.length),
   previousGuardTargetByPlayerId: Readonly<Record<string, string>> = {},
+  resolvedRoleSetup?: ResolvedRoleSetup,
 ): EngineAction[] {
   if (nightNumber <= 1) {
     return [];
@@ -233,6 +244,7 @@ export function getAvailableNightActions(
     nightNumber,
     players,
     previousGuardTargetByPlayerId,
+    resolvedRoleSetup: resolvedRoleSetup ?? makeResolvedRoleSetupForPlayers(ruleSet, players),
     ruleSet,
   });
   const openedRoleGroupActionKeys = new Set<string>();
@@ -441,6 +453,7 @@ function validateEngineRuleSet(
 function createFirstNightRoleEvents(
   assignments: readonly RoleAssignment[],
   ruleSet: RuleSet,
+  resolvedRoleSetup: ResolvedRoleSetup,
 ): EngineEvent[] {
   const players = assignments.map((assignment) => ({
     alive: true,
@@ -452,6 +465,7 @@ function createFirstNightRoleEvents(
     dayNumber: 0,
     nightNumber: 1,
     players,
+    resolvedRoleSetup,
     ruleSet,
   });
   const effects = assignments.flatMap((assignment) => {
@@ -521,12 +535,14 @@ function resolveEffectsWithDeathHooks(params: {
 function evaluateFinalOutcome(
   players: readonly PlayerRuntimeState[],
   ruleSet: RuleSet,
+  resolvedRoleSetup?: ResolvedRoleSetup,
 ): EngineFinalOutcome | null {
   const context = createRoleContext({
     currentPhase: "night",
     dayNumber: 0,
     nightNumber: 0,
     players,
+    resolvedRoleSetup: resolvedRoleSetup ?? makeResolvedRoleSetupForPlayers(ruleSet, players),
     ruleSet,
   });
   const endReasons = [
@@ -581,7 +597,7 @@ function makeRuleSetForPlayers(players: readonly PlayerRuntimeState[]): RuleSet 
   };
 }
 
-function resolveRoleSetupForPlayers(
+export function makeResolvedRoleSetupForPlayers(
   ruleSet: RuleSet,
   players: readonly PlayerRuntimeState[],
 ): ReturnType<typeof resolveRoleSetup> {
@@ -740,7 +756,7 @@ function openDay(
     ...player,
     alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
   }));
-  const finalOutcome = evaluateFinalOutcome(nextPlayers, input.ruleSet);
+  const finalOutcome = evaluateFinalOutcome(nextPlayers, input.ruleSet, input.resolvedRoleSetup);
 
   if (finalOutcome !== null) {
     return {
@@ -1135,7 +1151,7 @@ function finishExecutionAfterRoleActions(
     ...player,
     alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
   }));
-  const finalOutcome = evaluateFinalOutcome(nextPlayers, input.ruleSet);
+  const finalOutcome = evaluateFinalOutcome(nextPlayers, input.ruleSet, input.resolvedRoleSetup);
 
   if (finalOutcome !== null) {
     return {
@@ -1170,6 +1186,7 @@ type RoleContextInput = {
   nightNumber: number;
   players: readonly PlayerRuntimeState[];
   previousGuardTargetByPlayerId?: Readonly<Record<string, string>>;
+  resolvedRoleSetup: ResolvedRoleSetup;
   ruleSet: RuleSet;
 };
 
@@ -1177,8 +1194,6 @@ function createRoleContext(input: RoleContextInput): RoleContext {
   const roleByPlayerId = new Map(
     input.players.map((player) => [player.playerId, player.roleId as RegisteredRoleId]),
   );
-  const resolvedRoleSetup = resolveRoleSetupForPlayers(input.ruleSet, input.players);
-
   return {
     roles: roleRegistry,
     state: {
@@ -1193,7 +1208,7 @@ function createRoleContext(input: RoleContextInput): RoleContext {
       pendingActions: [],
       phase: toRegisteredPhase(input.currentPhase),
       phaseInstanceId: null,
-      resolvedRoleSetup,
+      resolvedRoleSetup: input.resolvedRoleSetup,
       roleByPlayerId,
       ruleOptions: toRegisteredRuleOptions(input.ruleSet),
       status: RegisteredGameStatus.Playing,
@@ -1486,6 +1501,7 @@ function openNight(
       nextNightNumber,
       input.ruleSet,
       input.previousGuardTargetByPlayerId,
+      input.resolvedRoleSetup,
     ),
     deaths,
     events: [

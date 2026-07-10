@@ -5,10 +5,21 @@ import {
   evaluateWinner,
   getAvailableNightActions,
   makeDefaultRuleSetForPlayers,
-  resolvePhase,
+  makeResolvedRoleSetupForPlayers,
+  resolvePhase as resolvePhaseWithSetup,
   startGame,
+  type PhaseResolutionInput,
   type PlayerRuntimeState,
 } from "./gameEngine";
+
+type TestPhaseResolutionInput = Omit<PhaseResolutionInput, "resolvedRoleSetup">;
+
+function resolvePhase(input: TestPhaseResolutionInput) {
+  return resolvePhaseWithSetup({
+    ...input,
+    resolvedRoleSetup: makeResolvedRoleSetupForPlayers(input.ruleSet, input.players),
+  });
+}
 
 const PLAYERS = [
   { id: "1", name: "Aki" },

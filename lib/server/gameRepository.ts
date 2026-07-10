@@ -35,11 +35,10 @@ import { getRoleCatalog, getRoleIds, roleRegistry } from "./game/roles";
 import {
   DEFAULT_RULE_OPTIONS,
   makeDefaultRoleCounts,
-  resolveRoleSetup as resolveRegisteredRoleSetup,
-  type RuleSet as RegisteredRuleSet,
+  parseResolvedRoleSetup,
 } from "./game/ruleset";
-import { toRegisteredRuleOptions, toSharedRuleOptions } from "./game/ruleSetAdapters";
-import { Team as RegisteredTeam } from "./game/types";
+import { toSharedRuleOptions } from "./game/ruleSetAdapters";
+import { Team as RegisteredTeam, type ResolvedRoleSetup } from "./game/types";
 import { buildRealtimeNotificationPayload } from "./game/views";
 import {
   ENGINE_VERSION,
@@ -415,7 +414,7 @@ export async function startRoom(
     p_options: serializeRuleSetOptions(startResult.ruleSet),
     p_phase_ends_at: phaseEndsAt,
     p_phase_instance_id: phaseInstanceId,
-    p_resolved_role_setup: buildResolvedRoleSetup(startResult.ruleSet),
+    p_resolved_role_setup: serializeResolvedRoleSetup(startResult.resolvedRoleSetup),
     p_role_counts: startResult.ruleSet.roleCounts,
     p_role_registry_version: ROLE_REGISTRY_VERSION,
     p_room_code: roomCode,
@@ -566,6 +565,12 @@ async function resolveRoom(account: AccountRecord, roomCode: string): Promise<Ro
       getPreviousGuardTargetByPlayerId(supabase, room.id),
       state.phase === "day" ? getDaySpeechSlots(supabase, room.id, state.phase_instance_id) : [],
     ]);
+  const resolvedRoleSetup = parsePersistedRoleSetup(state.resolved_role_setup);
+
+  if (resolvedRoleSetup === null) {
+    throw new Error("Stored role setup is invalid or incompatible with this server version.");
+  }
+
   const resolution = resolvePhase({
     actions: toSubmittedResolutionActions(actions, currentPendingActions, state, phaseTimedOut),
     currentPhase: state.phase,
@@ -574,6 +579,7 @@ async function resolveRoom(account: AccountRecord, roomCode: string): Promise<Ro
     orderedSpeechSlots,
     players: runtimePlayers,
     previousGuardTargetByPlayerId,
+    resolvedRoleSetup,
     ruleSet,
   });
   const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
@@ -995,7 +1001,7 @@ function toRolePrivateView(
 type NightConversationGroupConfig = {
   groupId: string;
   labelKey: string;
-  roleIds: RoleId[];
+  roleIds: readonly RoleId[];
 };
 
 function toNightConversationView({
@@ -1057,38 +1063,29 @@ function toNightConversationView({
 
 function getNightConversationGroups(
   resolvedRoleSetup: JsonObject | null,
-): NightConversationGroupConfig[] {
-  const groups = resolvedRoleSetup?.["nightConversationGroups"];
-
-  if (!Array.isArray(groups)) {
+): readonly NightConversationGroupConfig[] {
+  if (resolvedRoleSetup === null) {
     return [];
   }
 
-  return groups.flatMap((group): NightConversationGroupConfig[] => {
-    if (
-      !isRecord(group) ||
-      typeof group["groupId"] !== "string" ||
-      typeof group["labelKey"] !== "string" ||
-      !Array.isArray(group["roleIds"])
-    ) {
-      return [];
-    }
+  const parsedRoleSetup = parsePersistedRoleSetup(resolvedRoleSetup);
 
-    const registeredRoleIds = new Set(getRoleIds());
-    const roleIds = group["roleIds"].filter(
-      (roleId): roleId is RoleId => typeof roleId === "string" && registeredRoleIds.has(roleId),
-    );
+  if (parsedRoleSetup === null) {
+    throw new Error("Stored role setup is invalid or incompatible with this server version.");
+  }
 
-    return roleIds.length === 0
-      ? []
-      : [
-          {
-            groupId: group["groupId"],
-            labelKey: group["labelKey"],
-            roleIds,
-          },
-        ];
-  });
+  return parsedRoleSetup.nightConversationGroups;
+}
+
+function parsePersistedRoleSetup(value: JsonObject | null) {
+  if (
+    value?.["engineVersion"] !== ENGINE_VERSION ||
+    value["roleRegistryVersion"] !== ROLE_REGISTRY_VERSION
+  ) {
+    return null;
+  }
+
+  return parseResolvedRoleSetup(value);
 }
 
 function labelNightConversationGroup(labelKey: string): string {
@@ -1995,24 +1992,10 @@ function serializeRuleSetOptions(ruleSet: RuleSet): JsonObject {
   };
 }
 
-function buildResolvedRoleSetup(ruleSet: RuleSet): JsonObject {
-  const registeredRuleSet = toRegisteredRuleSet(ruleSet);
-  const resolvedRoleSetup = resolveRegisteredRoleSetup(registeredRuleSet);
-
+function serializeResolvedRoleSetup(resolvedRoleSetup: ResolvedRoleSetup): JsonObject {
   return {
     ...resolvedRoleSetup,
     engineVersion: ENGINE_VERSION,
-    roleRegistryVersion: ROLE_REGISTRY_VERSION,
-  };
-}
-
-function toRegisteredRuleSet(ruleSet: RuleSet): RegisteredRuleSet {
-  return {
-    engineVersion: ENGINE_VERSION,
-    options: toRegisteredRuleOptions(ruleSet),
-    roleCounts: Object.fromEntries(
-      getRoleCatalog().map((role) => [role.id, ruleSet.roleCounts[role.id] ?? 0]),
-    ),
     roleRegistryVersion: ROLE_REGISTRY_VERSION,
   };
 }

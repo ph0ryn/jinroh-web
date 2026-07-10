@@ -10,6 +10,8 @@ import {
   GameStatus,
   GuardConsecutiveTargetPolicy,
   InitialInspectionPolicy,
+  RoleSetupContributionKind,
+  Team,
   VoteResultVisibility,
 } from "./types";
 
@@ -215,6 +217,171 @@ export function resolveRoleSetup(ruleSet: RuleSet): ResolvedRoleSetup {
     nightConversationGroups: resolveNightConversationGroups(activeRoleIds),
     winnerJudgements: contributions.map((contribution) => contribution.judgement),
   };
+}
+
+export function parseResolvedRoleSetup(value: unknown): ResolvedRoleSetup | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const activeRoleIds = parseStringArray(value["activeRoleIds"]);
+  const nightConversationGroups = parseNightConversationGroups(value["nightConversationGroups"]);
+  const winnerJudgements = parseWinnerJudgements(value["winnerJudgements"]);
+  const contributions = parseRoleSetupContributions(value["contributions"]);
+
+  if (
+    activeRoleIds === null ||
+    activeRoleIds.length === 0 ||
+    new Set(activeRoleIds).size !== activeRoleIds.length ||
+    activeRoleIds.some((roleId) => !getRoleIds().includes(roleId)) ||
+    nightConversationGroups === null ||
+    winnerJudgements === null ||
+    contributions === null
+  ) {
+    return null;
+  }
+
+  const activeRoleIdSet = new Set(activeRoleIds);
+
+  if (
+    nightConversationGroups.some(
+      (group) =>
+        group.groupId.length === 0 ||
+        group.labelKey.length === 0 ||
+        group.roleIds.length === 0 ||
+        new Set(group.roleIds).size !== group.roleIds.length ||
+        group.roleIds.some((roleId) => !activeRoleIdSet.has(roleId)),
+    ) ||
+    winnerJudgements.some(
+      (judgement) =>
+        judgement.sourceRoleId !== null && !activeRoleIdSet.has(judgement.sourceRoleId),
+    ) ||
+    new Set(winnerJudgements.map((judgement) => judgement.id)).size !== winnerJudgements.length ||
+    JSON.stringify(contributions.map((contribution) => contribution.judgement)) !==
+      JSON.stringify(winnerJudgements)
+  ) {
+    return null;
+  }
+
+  return {
+    activeRoleIds,
+    contributions,
+    nightConversationGroups,
+    winnerJudgements,
+  };
+}
+
+function parseNightConversationGroups(value: unknown): NightConversationGroup[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const groups: NightConversationGroup[] = [];
+
+  for (const candidate of value) {
+    if (!isRecord(candidate)) {
+      return null;
+    }
+
+    const roleIds = parseStringArray(candidate["roleIds"]);
+
+    if (
+      typeof candidate["groupId"] !== "string" ||
+      typeof candidate["labelKey"] !== "string" ||
+      roleIds === null
+    ) {
+      return null;
+    }
+
+    groups.push({
+      groupId: candidate["groupId"],
+      labelKey: candidate["labelKey"],
+      roleIds,
+    });
+  }
+
+  return groups;
+}
+
+function parseWinnerJudgements(value: unknown): ResolvedRoleSetup["winnerJudgements"] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const judgements: ResolvedRoleSetup["winnerJudgements"][number][] = [];
+
+  for (const candidate of value) {
+    const judgement = parseWinnerJudgement(candidate);
+
+    if (judgement === null) {
+      return null;
+    }
+
+    judgements.push(judgement);
+  }
+
+  return judgements;
+}
+
+function parseRoleSetupContributions(value: unknown): ResolvedRoleSetup["contributions"] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const contributions: ResolvedRoleSetup["contributions"][number][] = [];
+
+  for (const candidate of value) {
+    if (!isRecord(candidate) || candidate["kind"] !== RoleSetupContributionKind.WinnerJudgement) {
+      return null;
+    }
+
+    const judgement = parseWinnerJudgement(candidate["judgement"]);
+
+    if (judgement === null) {
+      return null;
+    }
+
+    contributions.push({
+      judgement,
+      kind: RoleSetupContributionKind.WinnerJudgement,
+    });
+  }
+
+  return contributions;
+}
+
+function parseWinnerJudgement(
+  value: unknown,
+): ResolvedRoleSetup["winnerJudgements"][number] | null {
+  if (
+    !isRecord(value) ||
+    typeof value["id"] !== "string" ||
+    value["id"].length === 0 ||
+    !Number.isSafeInteger(value["priority"]) ||
+    (value["sourceRoleId"] !== null && typeof value["sourceRoleId"] !== "string") ||
+    !isTeam(value["winnerTeam"])
+  ) {
+    return null;
+  }
+
+  return {
+    id: value["id"],
+    priority: value["priority"] as number,
+    sourceRoleId: value["sourceRoleId"],
+    winnerTeam: value["winnerTeam"],
+  };
+}
+
+function parseStringArray(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
+}
+
+function isTeam(value: unknown): value is Team {
+  return Object.values(Team).some((team) => team === value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function resolveNightConversationGroups(
