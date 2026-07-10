@@ -46,7 +46,6 @@ export type RoomSummary = {
   game: PublicGameView | null;
   self: SelfPrivateView | null;
   rolePrivate: RolePrivateView | null;
-  realtime: RealtimeView | null;
 };
 
 export type PublicPlayer = {
@@ -174,15 +173,14 @@ export type PublicAction = {
 export type RealtimeScope = "player_private" | "role_private" | "room";
 
 export type RealtimeSubscription = {
-  expiresAt: string;
-  grantId: string;
   scope: RealtimeScope;
   topic: string;
 };
 
-export type RealtimeView = {
+export type RealtimeAuthorization = {
+  accessToken: string;
+  expiresAt: string;
   subscriptions: RealtimeSubscription[];
-  topic: string;
 };
 
 export type RuleSetInput = {

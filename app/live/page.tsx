@@ -26,6 +26,7 @@ import {
   type NightConversationView,
   type PublicAction,
   type PublicPlayer,
+  type RealtimeAuthorization,
   type RealtimeSubscription,
   type RoleCounts,
   type RoleCatalogItem,
@@ -233,6 +234,9 @@ export default function LivePage() {
   const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
   const [savedRoomCode, setSavedRoomCode] = useState<string | null>(null);
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [realtimeAuthorization, setRealtimeAuthorization] = useState<RealtimeAuthorization | null>(
+    null,
+  );
   const [startRuleSetSettings, setStartRuleSetSettings] = useState<StartRuleSetSettings>(
     DEFAULT_START_RULE_SET_SETTINGS,
   );
@@ -624,7 +628,79 @@ export default function LivePage() {
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
   const activePhaseInstanceId = roomSummary?.game?.phaseInstanceId ?? null;
-  const activeRealtimeSubscriptionKey = toRealtimeSubscriptionKey(roomSummary?.realtime ?? null);
+  const activeRealtimeSubscriptionKey = toRealtimeSubscriptionKey(
+    realtimeAuthorization?.subscriptions ?? [],
+  );
+
+  useEffect(() => {
+    if (
+      identityToken === null ||
+      activeRoomCode === null ||
+      roomSummary?.currentPlayerId === null
+    ) {
+      const clearAuthorizationTimerId = window.setTimeout(() => {
+        setRealtimeAuthorization(null);
+      }, 0);
+
+      return () => window.clearTimeout(clearAuthorizationTimerId);
+    }
+
+    let isCancelled = false;
+    let refreshTimerId: number | null = null;
+    const activeToken = identityToken;
+
+    async function refreshRealtimeAuthorization(): Promise<void> {
+      try {
+        const authorization = await apiFetch<RealtimeAuthorization>(
+          `/api/rooms/${activeRoomCode}/realtime-token`,
+          { method: "POST", token: activeToken },
+        );
+
+        if (isCancelled) {
+          return;
+        }
+
+        setRealtimeAuthorization(authorization);
+        const refreshDelay = Math.max(
+          15_000,
+          Date.parse(authorization.expiresAt) - Date.now() - 30_000,
+        );
+        refreshTimerId = window.setTimeout(() => {
+          void refreshRealtimeAuthorization();
+        }, refreshDelay);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        setRealtimeAuthorization(null);
+
+        if (isUnauthorizedRequestError(error)) {
+          resetInvalidIdentity();
+          return;
+        }
+
+        refreshTimerId = window.setTimeout(() => {
+          void refreshRealtimeAuthorization();
+        }, 30_000);
+      }
+    }
+
+    void refreshRealtimeAuthorization();
+
+    return () => {
+      isCancelled = true;
+      if (refreshTimerId !== null) {
+        window.clearTimeout(refreshTimerId);
+      }
+    };
+  }, [
+    activeRoomCode,
+    identityToken,
+    resetInvalidIdentity,
+    roomSummary?.currentPlayerId,
+    roomSummary?.self?.roleId,
+  ]);
 
   useEffect(() => {
     if (identityToken === null || activeRoomCode === null) {
@@ -762,6 +838,7 @@ export default function LivePage() {
     if (
       identityToken === null ||
       activeRoomCode === null ||
+      realtimeAuthorization === null ||
       activeRealtimeSubscriptionKey === "[]"
     ) {
       return;
@@ -783,6 +860,10 @@ export default function LivePage() {
     let isSyncing = false;
     let hasPendingSync = false;
     const activeToken = identityToken;
+    const activeRealtimeClient = realtimeClient;
+    const realtimeRoomCode = activeRoomCode;
+    const realtimeAccessToken = realtimeAuthorization.accessToken;
+    const channels: ReturnType<typeof activeRealtimeClient.channel>[] = [];
 
     async function syncRoomFromRealtime(): Promise<void> {
       if (isSyncing) {
@@ -829,23 +910,39 @@ export default function LivePage() {
       }
     }
 
-    const channels = subscriptions.map((subscription) =>
-      realtimeClient
-        .channel(subscription.topic, { config: { broadcast: { self: false } } })
-        .on("broadcast", { event: "room_changed" }, (message: RealtimeBroadcastEnvelope) => {
-          if (!isRealtimeInvalidationPayload(message.payload, activeRoomCode)) {
-            return;
-          }
+    async function subscribeToRealtime(): Promise<void> {
+      await activeRealtimeClient.realtime.setAuth(realtimeAccessToken);
 
-          void syncRoomFromRealtime();
-        })
-        .subscribe(),
-    );
+      if (isCancelled) {
+        return;
+      }
+
+      for (const subscription of subscriptions) {
+        const channel = activeRealtimeClient
+          .channel(subscription.topic, {
+            config: { broadcast: { self: false }, private: true },
+          })
+          .on("broadcast", { event: "room_changed" }, (message: RealtimeBroadcastEnvelope) => {
+            if (!isRealtimeInvalidationPayload(message.payload, realtimeRoomCode)) {
+              return;
+            }
+
+            void syncRoomFromRealtime();
+          })
+          .subscribe();
+
+        channels.push(channel);
+      }
+    }
+
+    void subscribeToRealtime().catch(() => {
+      // Polling remains the authoritative fallback when Realtime is unavailable.
+    });
 
     return () => {
       isCancelled = true;
       for (const channel of channels) {
-        void realtimeClient.removeChannel(channel);
+        void activeRealtimeClient.removeChannel(channel);
       }
     };
   }, [
@@ -856,6 +953,7 @@ export default function LivePage() {
     identityToken,
     isRoomRequestContextCurrent,
     rememberRoom,
+    realtimeAuthorization,
     resetInvalidIdentity,
     roomClosedStatusMessage,
     showToast,
@@ -3071,16 +3169,7 @@ function formatApiError(error: ApiRequestError, t: Localization): string {
   }
 }
 
-function toRealtimeSubscriptionKey(realtime: RoomSummary["realtime"]): string {
-  if (realtime === null) {
-    return "[]";
-  }
-
-  const subscriptions =
-    Array.isArray(realtime.subscriptions) && realtime.subscriptions.length > 0
-      ? realtime.subscriptions
-      : [{ scope: "room" as const, topic: realtime.topic }];
-
+function toRealtimeSubscriptionKey(subscriptions: RealtimeSubscription[]): string {
   return JSON.stringify(
     subscriptions
       .map(({ scope, topic }) => ({ scope, topic }))

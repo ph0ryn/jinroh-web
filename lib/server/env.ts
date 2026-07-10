@@ -29,6 +29,10 @@ export function getServerEnv(): ServerEnv {
   return cachedEnv;
 }
 
+export function getSupabaseJwtSecret(): string {
+  return readRequiredEnv("SUPABASE_JWT_SECRET");
+}
+
 function readRequiredEnv(key: string): string {
   const value = process.env[key];
 

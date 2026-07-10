@@ -66,6 +66,7 @@ Create `.env.local` with the local values printed by `supabase start`:
 ACCOUNT_TOKEN_HASH_SECRET=<generated 32-byte base64 secret>
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY>
+SUPABASE_JWT_SECRET=<JWT_SECRET>
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY>
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
@@ -80,6 +81,9 @@ pnpm exec supabase status -o env
 `NEXT_PUBLIC_SUPABASE_URL` should match `SUPABASE_URL`. Add
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` to enable Supabase Realtime invalidation in the
 browser. Without the public key, the live table still works through polling.
+`SUPABASE_JWT_SECRET` signs short-lived browser tokens for private Realtime
+channels. Use the local `JWT_SECRET` printed by `supabase status`; never expose
+it through a `NEXT_PUBLIC_` variable.
 Keep production Supabase credentials out of local `.env.local`.
 `NEXT_PUBLIC_SITE_URL` is optional locally. Set it to the deployed origin in
 production when you want Open Graph images to resolve to a canonical URL; Vercel
@@ -188,6 +192,7 @@ Production environment variables:
 ACCOUNT_TOKEN_HASH_SECRET=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_JWT_SECRET=
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_PUBLIC_SITE_URL=
@@ -249,5 +254,6 @@ message boundaries.
   tokens with `ACCOUNT_TOKEN_HASH_SECRET`.
 - Supabase base tables are RLS-enabled and default-deny for browser clients.
 - Browser-facing state is cut into public, self-private, and role-private views.
-- Realtime payloads should carry notification reasons only; clients reload views
-  from the API after a notification.
+- Realtime uses short-lived server-signed grants and private channels. Payloads
+  carry notification reasons only; clients reload views from the API after a
+  notification.

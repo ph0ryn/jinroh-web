@@ -155,7 +155,6 @@ function createSummary(
     isHost: player.isHost,
     lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
     players: [...(overrides.players ?? [player])],
-    realtime: null,
     roleCatalog: [],
     rolePrivate: null,
     self: null,
