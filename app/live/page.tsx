@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
+import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
+import { useLiveEffectQueue } from "@/app/live/effects/useLiveEffectQueue";
 import {
   apiFetch,
   getLiveRoomUrl,
@@ -163,10 +165,18 @@ export default function LivePage() {
   const nextRoomRequestIdRef = useRef(0);
   const appliedRoomSnapshotRef = useRef<AppliedRoomSnapshot | null>(null);
   const isBusyRef = useRef(false);
+  const liveShellRef = useRef<HTMLElement>(null);
   const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [setupPendingAction, setSetupPendingAction] = useState<SetupPendingAction>(null);
   const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
+  const {
+    acceptSummary: acceptEffectSummary,
+    activeCue,
+    clearEffects,
+    completeActiveCue,
+    replayRole,
+  } = useLiveEffectQueue();
 
   const dismissToast = useCallback(() => {
     if (toastDismissTimerRef.current !== null) {
@@ -221,12 +231,13 @@ export default function LivePage() {
   );
 
   const beginRoomSession = useCallback(() => {
+    clearEffects();
     roomSessionIdRef.current += 1;
     nextCurrentRoomRequestIdRef.current += 1;
     appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = null;
-  }, []);
+  }, [clearEffects]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -306,30 +317,34 @@ export default function LivePage() {
     return createIdentityToken();
   }
 
-  const clearCurrentRoom = useCallback((options: ClearCurrentRoomOptions = {}) => {
-    roomSessionIdRef.current += 1;
-    nextCurrentRoomRequestIdRef.current += 1;
-    appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
-    appliedRoomSnapshotRef.current = null;
-    ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
-    roomSummaryRef.current = null;
-    removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
-    setRoomSummary(null);
-    setIsCurrentRoomReady(true);
-    setPendingRoomSwitch(null);
+  const clearCurrentRoom = useCallback(
+    (options: ClearCurrentRoomOptions = {}) => {
+      clearEffects();
+      roomSessionIdRef.current += 1;
+      nextCurrentRoomRequestIdRef.current += 1;
+      appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
+      appliedRoomSnapshotRef.current = null;
+      ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
+      roomSummaryRef.current = null;
+      removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
+      setRoomSummary(null);
+      setIsCurrentRoomReady(true);
+      setPendingRoomSwitch(null);
 
-    if (!(options.preserveRoomCodeInput ?? false)) {
-      setRoomCodeInput("");
-    }
+      if (!(options.preserveRoomCodeInput ?? false)) {
+        setRoomCodeInput("");
+      }
 
-    setTargetByActionKey({});
-    setIsNightConversationOpen(false);
-    setIsPublicLogOpen(false);
-    setNightConversationDraft("");
-    setIsStartSettingsOpen(false);
-    setIsLeaveConfirmationOpen(false);
-    window.requestAnimationFrame(() => window.scrollTo({ left: 0, top: 0 }));
-  }, []);
+      setTargetByActionKey({});
+      setIsNightConversationOpen(false);
+      setIsPublicLogOpen(false);
+      setNightConversationDraft("");
+      setIsStartSettingsOpen(false);
+      setIsLeaveConfirmationOpen(false);
+      window.requestAnimationFrame(() => window.scrollTo({ left: 0, top: 0 }));
+    },
+    [clearEffects],
+  );
 
   const resetInvalidIdentity = useCallback(
     (nextStatusMessage = invalidIdentityStatusMessage) => {
@@ -442,6 +457,7 @@ export default function LivePage() {
         sessionId: requestContext.sessionId,
         snapshotRevision: nextSummary.snapshotRevision,
       };
+      acceptEffectSummary(nextSummary);
       roomSummaryRef.current = nextSummary;
       setRoomSummary(nextSummary);
       setIsCurrentRoomReady(true);
@@ -453,6 +469,7 @@ export default function LivePage() {
       return true;
     },
     [
+      acceptEffectSummary,
       clearCurrentRoom,
       displayName,
       isRoomRequestContextCurrent,
@@ -1316,7 +1333,7 @@ export default function LivePage() {
       : getLiveRoomUrl(roomSummary.code, liveOrigin);
 
   return (
-    <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
+    <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood} ref={liveShellRef}>
       <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
         <div className="liveHeroTitle">
           <h1 className={isGameSurface ? "srOnly" : undefined}>
@@ -1490,6 +1507,7 @@ export default function LivePage() {
               onOpenNightConversation={() => setIsNightConversationOpen(true)}
               onOpenPublicLog={() => setIsPublicLogOpen(true)}
               onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+              onRevealRole={replayRole}
               onSendNightConversation={handleSendNightConversation}
               onSubmitAction={handleSubmitAction}
               onTargetChange={(actionKey, playerId) =>
@@ -1531,6 +1549,13 @@ export default function LivePage() {
         />
       )}
 
+      <LiveGameEffects
+        activeCue={activeCue}
+        shellRef={liveShellRef}
+        summary={roomSummary}
+        t={t}
+        onComplete={completeActiveCue}
+      />
       <LiveToastRegion toast={toast} t={t} onDismiss={dismissToast} />
     </main>
   );

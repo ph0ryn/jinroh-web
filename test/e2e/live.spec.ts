@@ -47,10 +47,12 @@ test("players can create, join, start, and finish first night through the UI", a
     await expect(startButton).toBeEnabled();
     await startButton.click();
 
+    await expect(host.page.locator('[data-live-effect="role"]')).toBeVisible();
+
     for (const player of players) {
       await expect(player.page.locator('.liveShell[data-live-mood="night"]')).toBeVisible();
       await expect(player.page.getByLabel("Live game table")).toBeVisible();
-      await expect(player.page.getByText("Your role", { exact: true })).toBeVisible();
+      await expect(player.page.getByRole("button", { name: "Reveal role card" })).toBeVisible();
       await expect(player.page.getByRole("button", { name: "Leave room" })).toHaveCount(0);
     }
 

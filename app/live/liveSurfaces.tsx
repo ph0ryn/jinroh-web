@@ -28,17 +28,14 @@ import {
   formatPhaseCountdown,
   getActionButtonLabel,
   getActionPanelTitle,
-  getLiveMood,
-  getLiveTableTitle,
   getPlayerInitial,
   getPlayPhaseGuidance,
-  getRoundTableSeatPosition,
 } from "./livePresentation";
-import { getLiveSeatPresentation } from "./liveSeatPresentation";
+import { LiveRoundTable } from "./liveRoundTable";
 import { useFollowScrollEnd } from "./useFollowScrollEnd";
 import { useModalDialog } from "./useModalDialog";
 
-import type { CSSProperties, FormEvent, KeyboardEvent, ReactNode } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export type LiveToastTone = "error" | "info" | "success" | "warning";
 
@@ -65,6 +62,7 @@ type LivePlaySurfaceProps = {
   readonly onOpenNightConversation: () => void;
   readonly onOpenPublicLog: () => void;
   readonly onRequestLeaveRoom: () => void;
+  readonly onRevealRole: () => void;
   readonly onSendNightConversation: (conversation: NightConversationView) => void;
   readonly onSubmitAction: (action: PublicAction) => void;
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
@@ -622,6 +620,7 @@ export function LivePlaySurface({
   onOpenNightConversation,
   onOpenPublicLog,
   onRequestLeaveRoom,
+  onRevealRole,
   onSendNightConversation,
   onSubmitAction,
   onTargetChange,
@@ -635,6 +634,11 @@ export function LivePlaySurface({
     : null;
   const publicEventCount = summary.game?.events.length ?? 0;
   const privateEvents = hasCurrentPlayer ? (summary.self?.events ?? []) : [];
+  const selfResult = summary.status === "ended" ? (summary.self?.result ?? null) : null;
+  const selfRole =
+    summary.self?.roleId === null || summary.self?.roleId === undefined
+      ? null
+      : getLocalizedRole(t, summary.self.roleId);
 
   return (
     <>
@@ -667,15 +671,20 @@ export function LivePlaySurface({
           </div>
         </section>
 
-        {!hasCurrentPlayer ||
-        summary.self?.roleId === null ||
-        summary.self?.roleId === undefined ? null : (
-          <section
-            className="livePanel liveSelfRolePanel"
-            aria-label={`${t.live.player.yourRole}: ${getLocalizedRole(t, summary.self.roleId).name}`}
-          >
-            <span>{t.live.player.yourRole}</span>
-            <strong>{getLocalizedRole(t, summary.self.roleId).name}</strong>
+        {!hasCurrentPlayer || selfRole === null ? null : (
+          <section className="livePanel liveSelfRolePanel" aria-label={t.live.effects.role.reveal}>
+            <button
+              aria-describedby="live-self-role-identity"
+              className="secondaryButton liveRoleRevealButton"
+              type="button"
+              onClick={onRevealRole}
+            >
+              <span aria-hidden="true">◇</span>
+              <strong>{t.live.effects.role.reveal}</strong>
+            </button>
+            <p className="srOnly" id="live-self-role-identity">
+              {t.live.effects.role.identity(selfRole.name)}
+            </p>
           </section>
         )}
 
@@ -732,6 +741,15 @@ export function LivePlaySurface({
           </button>
         </div>
 
+        {selfResult === null ? null : (
+          <section className="livePanel" aria-label={t.live.effects.victory.resultLabel}>
+            <div className="livePanelHeading">
+              <span>{t.live.effects.victory.resultLabel}</span>
+              <strong>{t.game.playerResult[selfResult]}</strong>
+            </div>
+          </section>
+        )}
+
         {summary.status === "ended" && hasCurrentPlayer ? (
           <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
             <button
@@ -778,69 +796,6 @@ export function LivePlaySurface({
         </LivePopupDialog>
       ) : null}
     </>
-  );
-}
-
-function LiveRoundTable({
-  summary,
-  t,
-}: {
-  readonly summary: RoomSummary;
-  readonly t: Localization;
-}) {
-  const playerCount = summary.players.length;
-
-  return (
-    <div className="tableBoard liveTableBoard">
-      <div className="tableSurface liveTableSurface">
-        <div className="tableCenter liveTableCenter">
-          <span className={`liveTablePhaseIcon ${getLiveMood(summary)}`} aria-hidden="true" />
-          <strong>{getLiveTableTitle(summary, t)}</strong>
-        </div>
-
-        {summary.players.map((player, index) => {
-          const position = getRoundTableSeatPosition(index, playerCount);
-          const seatPresentation = getLiveSeatPresentation(player, summary, t);
-          const seatStyle: CSSProperties & {
-            readonly "--seat-x": string;
-            readonly "--seat-y": string;
-          } = {
-            "--seat-x": `${position.x}%`,
-            "--seat-y": `${position.y}%`,
-          };
-
-          const seatClassName = [
-            "seat",
-            "liveTableSeat",
-            seatPresentation.state,
-            player.isHost ? "host" : "",
-            player.isCurrent ? "selected" : "",
-          ]
-            .filter(Boolean)
-            .join(" ");
-
-          return (
-            <div
-              className={seatClassName}
-              key={player.id}
-              style={seatStyle}
-              aria-label={[player.displayName, ...seatPresentation.ariaLabels].join(", ")}
-            >
-              <span className="seatNumber">{index + 1}</span>
-              <span className="avatar" aria-hidden="true">
-                {getPlayerInitial(player.displayName)}
-              </span>
-              <span className="seatLabel">
-                <strong>{player.displayName}</strong>
-                {seatPresentation.visibleLabel === null ? null : (
-                  <small>{seatPresentation.visibleLabel}</small>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

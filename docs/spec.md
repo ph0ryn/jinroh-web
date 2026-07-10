@@ -515,6 +515,16 @@ Phase 1 には主に Home / Lobby / Game board / Result の画面がある。
 - 対象 role group だけが見られる role private view
 - 投票、処刑、結果表示
 - ロビー、昼、投票、処刑、夜、結果の状態に合わせた背景、明るさ、雰囲気
+- ゲーム開始時の自分の役職、phase 遷移、公開された死亡、勝敗確定を伝える
+  transient effect
+
+transient effect は受理済みの最新 Room state と公開 event history から導出し、
+役職、現在 phase、timer、生死、勝敗などの persistent state 表示を置き換えない。
+複数の更新をまとめて受理した場合、phase effect は過去の章を順番に再生せず、
+最新 state と一致する phase だけを表示する。死亡と勝敗の通知は省略しない。
+自分の役職は初回演出後も明示的な再確認操作から表示できる。
+OS の reduced motion 設定では、移動、回転、拡散を使わず短い静止表示で同じ情報を
+伝える。
 
 Night conversation は role private view の一部である。
 対象 Role を持つ Player だけが開ける。

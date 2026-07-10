@@ -496,6 +496,47 @@ export const jaLocalization = {
       meta: (count: number) => `${count}件のイベント`,
       title: "公開ログ",
     },
+    effects: {
+      death: {
+        kicker: "死亡報告",
+        message: (playerNames: readonly string[]) => {
+          if (playerNames.length === 0) {
+            return "プレイヤーが死亡しました";
+          }
+
+          return `${playerNames.join("、")}が死亡しました`;
+        },
+      },
+      phase: {
+        code: {
+          day: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+          execution: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+          night: (nightNumber: number) => `NIGHT ${String(nightNumber).padStart(2, "0")}`,
+          voting: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+        },
+        label: (phaseName: string) => `${phaseName}フェーズ`,
+        title: {
+          day: "朝になりました",
+          execution: "処刑が始まります",
+          night: "夜になりました",
+          voting: "投票の時間です",
+        },
+      },
+      role: {
+        assignment: "役職カード",
+        identity: (roleName: string) => `現在の役職は${roleName}です。`,
+        kicker: "あなたの役職",
+        reveal: "役職カードを確認",
+      },
+      victory: {
+        announcement: (title: string, result: string | null) =>
+          result === null ? title : `${title}。あなたの結果：${result}`,
+        kicker: "最終結果",
+        resultLabel: "あなたの結果",
+        subtitle: "勝敗が確定しました。結果と公開ログを確認してください。",
+        title: (winner: string) => `${winner}の勝利`,
+      },
+    },
     privateEventLog: {
       meta: (count: number) => `${count}件の非公開結果`,
       title: "あなたへの結果",

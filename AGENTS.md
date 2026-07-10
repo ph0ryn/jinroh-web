@@ -49,6 +49,23 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   base64 encoded 32-byte HMAC key.
 - Keep user-supplied display names as text. Do not render them as HTML.
 
+## Live Animation Boundaries
+
+- Implement new time-based `/live` motion with GSAP and the shared registration
+  in `app/live/effects/liveGsap.ts`.
+- Keep animation cues, queueing, and choreography under `app/live/effects/`.
+  Do not attach animations directly to polling, realtime callbacks, or API
+  handlers.
+- Derive cues only from room snapshots after request ordering and stale-response
+  checks have accepted them. Realtime messages remain invalidation signals.
+- Give each effect component one scoped `useGSAP()` timeline and let React remain
+  the source of truth for game state and final CSS classes.
+- Use CSS Modules for static effect layout and appearance. Do not add CSS
+  keyframes or CSS-driven timing for new `/live` game animations.
+- Every effect must provide a reduced-motion timeline, clean up on unmount or
+  room changes, avoid blocking input, and preserve a non-transient way to read
+  current game state.
+
 ## Role Architecture Boundaries
 
 Keep role behavior owned by `Role` classes and `RoleRegistry`.

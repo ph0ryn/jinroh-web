@@ -2244,6 +2244,12 @@ a {
   opacity: 0.68;
 }
 
+.liveTableSeat.eliminated .avatar {
+  filter: grayscale(0.55) brightness(0.72);
+  opacity: 0.68;
+  transform: scale(0.9);
+}
+
 .liveTableSeat.execution .avatar,
 .liveTableSeat.speaking .avatar {
   border-color: var(--live-accent);
@@ -2309,23 +2315,31 @@ a {
 }
 
 .liveSelfRolePanel {
-  align-items: center;
-  display: flex;
+  padding: 0;
+}
+
+.liveRoleRevealButton {
   gap: 12px;
-  justify-content: space-between;
-  padding: 12px 14px;
+  justify-content: flex-start;
+  width: 100%;
 }
 
-.liveSelfRolePanel span {
-  color: var(--live-muted);
-  font-size: 0.78rem;
-  font-weight: 820;
-  text-transform: uppercase;
-}
-
-.liveSelfRolePanel strong {
+.liveRoleRevealButton span {
+  align-items: center;
+  border: 1px solid rgba(var(--live-accent-rgb), 0.38);
+  border-radius: 50%;
   color: var(--live-accent);
-  font-size: 1rem;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.liveRoleRevealButton strong {
+  color: var(--paper-100);
+  font-size: 0.9rem;
 }
 
 .livePopupActions {

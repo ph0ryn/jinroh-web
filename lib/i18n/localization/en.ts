@@ -504,6 +504,54 @@ export const enLocalization = {
       meta: (count: number) => `${count} events`,
       title: "Public log",
     },
+    effects: {
+      death: {
+        kicker: "DEATH REPORT",
+        message: (playerNames: readonly string[]) => {
+          if (playerNames.length === 0) {
+            return "A player has died";
+          }
+
+          if (playerNames.length === 1) {
+            return `${playerNames[0]} has died`;
+          }
+
+          const leadingNames = playerNames.slice(0, -1).join(", ");
+          const finalName = playerNames.at(-1);
+
+          return `${leadingNames} and ${finalName} have died`;
+        },
+      },
+      phase: {
+        code: {
+          day: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+          execution: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+          night: (nightNumber: number) => `NIGHT ${String(nightNumber).padStart(2, "0")}`,
+          voting: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+        },
+        label: (phaseName: string) => `${phaseName} phase`,
+        title: {
+          day: "Dawn has come",
+          execution: "The execution begins",
+          night: "Night has fallen",
+          voting: "Voting is open",
+        },
+      },
+      role: {
+        assignment: "ROLE ASSIGNMENT",
+        identity: (roleName: string) => `Your current role is ${roleName}.`,
+        kicker: "Your role",
+        reveal: "Reveal role card",
+      },
+      victory: {
+        announcement: (title: string, result: string | null) =>
+          result === null ? title : `${title}. Your result: ${result}`,
+        kicker: "FINAL OUTCOME",
+        resultLabel: "Your result",
+        subtitle: "The result is final. Review the outcome and public log.",
+        title: (winner: string) => `Victory: ${winner}`,
+      },
+    },
     privateEventLog: {
       meta: (count: number) => `${count} private result${count === 1 ? "" : "s"}`,
       title: "Private results",
