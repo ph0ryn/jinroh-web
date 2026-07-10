@@ -31,15 +31,19 @@ export function I18nProvider({ children }: { readonly children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const storedLocale = readStoredLocale();
+    const timerId = window.setTimeout(() => {
+      const storedLocale = readStoredLocale();
 
-    if (storedLocale !== null) {
-      setCurrentLocale(storedLocale);
-      syncDocumentLocale(storedLocale);
-      return;
-    }
+      if (storedLocale !== null) {
+        setCurrentLocale(storedLocale);
+        syncDocumentLocale(storedLocale);
+        return;
+      }
 
-    syncDocumentLocale(DEFAULT_LOCALE);
+      syncDocumentLocale(DEFAULT_LOCALE);
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
   }, []);
 
   const value = useMemo<I18nContextValue>(
