@@ -121,6 +121,11 @@ Account は、ブラウザに紐づく匿名 identity である。
 
 - アプリは必要になったときに Account を自動作成する。
 - Account はアカウントトークンを通じて、リロード後に戻ってこられる。
+- Account は同時に最大 1 つの Room だけを現在の Room として持つ。
+- 現在の Room は DB の `accounts.current_room_id` を正本とし、Browser の保存値や
+  Player の接続状態から推測しない。
+- `disconnected` または `ended` でも、明示的に退出するか Room が `disbanded`
+  になるまで現在の Room を維持する。
 - 内部 Account ID はサーバー専用である。
 - Account ID は表示しない。
 - Account ID はブラウザへ返さない。
@@ -237,9 +242,12 @@ left
 
 状態の意味:
 
-- `joined`: 現在参加中
-- `disconnected`: 一時的に不在
+- `joined`: Room に接続中
+- `disconnected`: Room との接続が一時的に途絶えている
 - `left`: 意図的にルームから退出した
+
+Player の状態は Room 内の参加履歴と接続状態を表す。
+Account が現在どの Room に入室しているかの正本ではない。
 
 ### Host
 
@@ -260,9 +268,11 @@ Room を作成した Account が最初のホストである。
 
 Room が作成されるとき:
 
+- 作成者 Account に現在の Room がないことを確認する
 - 作成者 Account がホストになる
 - Room は `lobby` で開始する
 - ホスト Player が作成される
+- 作成した Room を Account の現在の Room として保存する
 - request された表示名は、ホスト Player の表示名として snapshot される
 - request された目標参加人数は、Room の開始条件として snapshot される
 - Room に 30 分後のロビー有効期限が設定される
@@ -275,12 +285,38 @@ Account が Room に参加するとき:
 
 - 公開コードで Room を探す
 - まずロビーの期限切れ状態を確認する
+- Account に現在の Room がなければ、参加先を現在の Room として保存する
+- Account の現在の Room が参加先と同じ場合、既存の Player を再利用する
+- Account の現在の Room が参加先と異なる場合、確認なしの参加を拒否する
 - 新規 Player は Room の目標参加人数を超えて参加できない
 - 新しい Player は Room が `lobby` の間だけ参加できる
 - 既存の Player は Room が `lobby` または `playing` の間に再参加できる
 - request された表示名は、新しい Player を作成するときだけ snapshot する
 - room event が記録される
 - 状態が変わったことをルームメンバーへ通知する
+
+### 現在の Room と切り替え
+
+要件:
+
+- `LIVE-ROOM-001`: Account は同時に最大 1 つの現在の Room だけを持つ。
+- `LIVE-ROOM-002`: `lobby`、`playing`、`ended` の Room は、明示的に退出するか
+  `disbanded` になるまで現在の Room であり続ける。
+- `LIVE-ROOM-003`: `joined` と `disconnected` の切り替えは、現在の Room を
+  変更しない。
+- `LIVE-ROOM-004`: 同じ Room への再参加では既存 Player を再利用する。
+- `LIVE-ROOM-005`: 別 Room の作成または参加は、現在の Room から退出することを
+  明示的に確認するまで実行しない。
+- `LIVE-ROOM-006`: `playing` 中は退出も Room の切り替えもできない。
+- `LIVE-ROOM-007`: `lobby` または `ended` からの切り替えは、旧 Room の退出と
+  新 Room の作成または参加を 1 transaction で行う。新 Room への操作が失敗した
+  場合、旧 Room の所属を維持する。
+- `LIVE-ROOM-008`: Browser は起動時および状態変更通知の受信後に、認証済み
+  Account の現在の Room を application server から再取得する。
+- `LIVE-ROOM-009`: 複数タブから同時に操作されても、DB は単一 Room 所属を
+  保証し、各タブは同じ現在の Room へ収束する。
+- `LIVE-ROOM-010`: Account ID、内部 Room ID、token、秘密情報は、現在の Room
+  API、Realtime、タブ間通知の payload に含めない。
 
 ### 開始
 
@@ -305,6 +341,7 @@ Player が退出するとき:
 - Room が `playing` の間は退出できない
 - すでに `left` の Player は再度退出できない
 - Player は left としてマークされる
+- Account の現在の Room を解除する
 - player-left event が記録される
 - 状態が変わったことをルームメンバーへ通知する
 - ロビーのホストが退出し、他の Player が残っている場合はホストを移譲する
@@ -322,6 +359,7 @@ Player が退出するとき:
 - すべての Room 読み取りまたは Room 変更は、まずロビーが期限切れかどうかを
   確認するべきである
 - 期限切れのロビーは `disbanded` になる
+- `disbanded` になった Room を現在の Room とする Account の所属を解除する
 - Room は永続ストレージに残る
 - room-disbanded event が記録される
 - スケジュールされたクリーンアップが存在しても、リクエスト時の期限切れ確認は
@@ -337,7 +375,7 @@ Room を開いている Browser は heartbeat を送る。
 - heartbeat が一定時間途絶えた `joined` Player は `disconnected` になる
 - `disconnected` Player が再び heartbeat または join を行うと `joined` に戻る
 - `left` Player は heartbeat で復帰せず、明示的な join を使う
-- 接続状態は参加状態であり、生死や role assignment とは分ける
+- Player の接続状態は Account の現在の Room、生死、role assignment とは分ける
 
 ## リアルタイムモデル
 
@@ -523,7 +561,7 @@ Next.js API から再読み込みする。
 - 既存の Player は Room 開始後に再参加してもよい。
 - Player の表示名は Room 内で固定される。
 - 表示名 preference は Account ではなく browser local storage に保存する。
-- 同じ Account が複数の Room に参加してもよい。
+- 同じ Account が同時に現在の Room として持てるのは 1 Room だけである。
 - リアルタイムメッセージは状態変更の成功後に送信する。
 - Realtime payload は invalidation 用の reason と safe room identifier だけを持つ。
 - 初期対応人数は 3 から 10 人であり、Room 作成時に開始人数を選ぶ。
