@@ -82,6 +82,7 @@ export type PublicPhaseFocus =
     };
 
 export type PublicGameEvent = {
+  id: string;
   kind: string;
   payload: Record<string, unknown>;
   createdAt: string;

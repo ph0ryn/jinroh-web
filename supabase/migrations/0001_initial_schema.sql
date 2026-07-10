@@ -409,13 +409,16 @@ declare
   v_reconnected boolean := false;
   v_room public.rooms%rowtype;
 begin
-  select *
+  select rooms.*
   into v_room
   from public.rooms
+  join public.players
+    on players.room_id = rooms.id
   where rooms.public_room_code = p_room_code
+    and players.account_id = p_account_id
   order by rooms.created_at desc
   limit 1
-  for update;
+  for update of rooms;
 
   if not found then
     raise exception 'Room not found.';
@@ -851,6 +854,7 @@ CREATE OR REPLACE FUNCTION "public"."app_leave_room"("p_account_id" bigint, "p_r
 declare
   v_notification_reason text := 'player_left';
   v_player public.players%rowtype;
+  v_remaining_player public.players%rowtype;
   v_room public.rooms%rowtype;
 begin
   select *
@@ -889,6 +893,10 @@ begin
     );
   end if;
 
+  if v_room.status = 'playing' then
+    raise exception 'Players cannot leave while the game is in progress.';
+  end if;
+
   select *
   into v_player
   from public.players
@@ -898,6 +906,10 @@ begin
 
   if not found then
     raise exception 'Current account is not a room player.';
+  end if;
+
+  if v_player.status = 'left' then
+    raise exception 'Current account has already left the room.';
   end if;
 
   update public.players
@@ -915,30 +927,46 @@ begin
   )
   values (p_account_id, v_player.id, 'player_left', '{}'::jsonb, v_room.id);
 
-  if v_room.status = 'lobby' and v_room.host_account_id = p_account_id then
-    update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
-    where rooms.id = v_room.id
-      and rooms.status = 'lobby'
-    returning * into v_room;
+  if v_room.status in ('lobby', 'ended') then
+    select *
+    into v_remaining_player
+    from public.players
+    where players.room_id = v_room.id
+      and players.status in ('joined', 'disconnected')
+    order by players.joined_at asc, players.id asc
+    limit 1;
 
-    insert into public.room_events (
-      actor_account_id,
-      actor_player_id,
-      event_kind,
-      payload,
-      room_id
-    )
-    values (
-      p_account_id,
-      v_player.id,
-      'room_disbanded',
-      '{"reason":"host_left_lobby"}'::jsonb,
-      v_room.id
-    );
+    if not found and v_room.status = 'lobby' then
+      update public.rooms
+      set disbanded_at = now(),
+          status = 'disbanded'
+      where rooms.id = v_room.id
+        and rooms.status = 'lobby'
+      returning * into v_room;
 
-    v_notification_reason := 'room_disbanded';
+      insert into public.room_events (
+        actor_account_id,
+        actor_player_id,
+        event_kind,
+        payload,
+        room_id
+      )
+      values (
+        p_account_id,
+        v_player.id,
+        'room_disbanded',
+        '{"reason":"last_player_left_lobby"}'::jsonb,
+        v_room.id
+      );
+
+      v_notification_reason := 'room_disbanded';
+    elsif found and v_room.host_account_id = p_account_id then
+      update public.rooms
+      set host_account_id = v_remaining_player.account_id
+      where rooms.id = v_room.id
+        and rooms.status in ('lobby', 'ended')
+      returning * into v_room;
+    end if;
   end if;
 
   return query

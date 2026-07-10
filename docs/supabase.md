@@ -308,6 +308,8 @@ Room status。
 - target player count は 3 から 10 の整数
 - lobby Room は30分以内に開始されなければ期限切れ
 - 期限切れの Room は物理削除せず `disbanded` にする
+- lobby host が退出した場合は最初に参加した残存 Player の Account に host を移譲する
+- lobby Room は最後の Player が退出した場合だけ `disbanded` にする
 - host account reference は Browser に返さない
 - realtime topic は public room code から作らない
 - realtime topic は参加済み Account にだけ返す
@@ -406,7 +408,7 @@ commit 後に Realtime 通知を送る。
 同じ transaction で行う。
 
 - Account を認証する
-- public room code で Room を取得して lock する
+- public room code と Account の Player 所属で Room を取得して lock する
 - lobby 期限切れを確認し、必要なら `disbanded` にする
 - 新規 Player または `left` / `disconnected` Player の再参加で target player count を超えないことを確認する
 - 新規 Player は `lobby` の間だけ作成する
@@ -446,11 +448,18 @@ commit 後に Realtime 通知を送る。
 同じ transaction で行う。
 
 - Account を認証する
+- public room code で Room を取得して lock する
 - Account に対応する Player を取得する
+- Room が `playing` の場合は拒否する
+- Player がすでに `left` の場合は拒否する
 - Player を `left` にする
 - `player_left` event を記録する
-- host が `lobby` から退出した場合、Room を `disbanded` にする
+- Room が `lobby` で、host が退出した場合は、`joined_at`, Player ID の順で
+  最初の `joined` / `disconnected` Player の Account に host を移譲する
+- Room が `ended` の場合も、残存 Player がいる間は同じ規則で host を移譲する
+- Room が `lobby` で、残存 Player がいない場合だけ Room を `disbanded` にする
 - disband した場合は `room_disbanded` event も記録する
+- Room が `ended` で残存 Player がいない場合は status と最後の host account reference を維持する
 
 commit 後に Realtime 通知を送る。
 

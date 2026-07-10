@@ -1748,6 +1748,7 @@ async function getPublicEvents(
     .eq("room_id", roomId)
     .eq("visibility", "public")
     .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .returns<GameEventRecord[]>();
 
   if (error !== null) {
@@ -1756,6 +1757,7 @@ async function getPublicEvents(
 
   return data.map((event) => ({
     createdAt: event.created_at,
+    id: String(event.id),
     kind: event.event_kind,
     payload: toPublicEventPayload(event.payload, players),
   }));

@@ -243,15 +243,16 @@ left
 
 ### Host
 
-Room を作成した Account がホストである。
+Room を作成した Account が最初のホストである。
 
 ルール:
 
-- ホスト権限は作成者 Account に属する。
-- ホスト移譲は初期基盤に含めない。
+- ホスト権限は現在のホスト Account に属する。
 - ホスト判定には認証済み Account を使う。
 - ホスト表示にはホストの Player を使ってよい。
-- ホストがロビー状態の Room から退出した場合、その Room は解散される。
+- 退出可能な Room でホストが退出した場合、残っている `joined` または `disconnected`
+  Player のうち、参加日時、Player ID の順で先頭の Account にホストを移譲する。
+- ロビーは最後の Player が退出した場合だけ解散される。
 
 ## Room ライフサイクル
 
@@ -301,11 +302,15 @@ Room が開始されるとき:
 
 Player が退出するとき:
 
+- Room が `playing` の間は退出できない
+- すでに `left` の Player は再度退出できない
 - Player は left としてマークされる
 - player-left event が記録される
 - 状態が変わったことをルームメンバーへ通知する
-- 退出する Account がホストで、Room がまだ `lobby` の場合、その Room は
-  解散される
+- ロビーのホストが退出し、他の Player が残っている場合はホストを移譲する
+- 終了済み Room のホストが退出し、他の Player が残っている場合もホストを移譲する
+- ロビーの最後の Player が退出した場合だけ Room を解散する
+- 終了済み Room から最後の Player が退出しても Room は `ended` のままとし、最後のホスト参照を保持する
 
 ### 期限切れ
 
@@ -511,8 +516,9 @@ Next.js API から再読み込みする。
 - HTTP server と API は Next.js on Vercel で実装する。
 - Room コードは 6 桁の数字文字列である。
 - Account token は匿名 bearer credential の名前である。
-- ホスト移譲はサポートしない。
-- ホストがロビーから退出すると Room は解散される。
+- ロビーのホスト退出時は、最初に参加した残存 Player へホストを移譲する。
+- ロビーは最後の Player が退出したときだけ解散する。
+- ゲーム中は退出できず、終了後は退出できる。
 - 新しい Player は Room 開始後に参加できない。
 - 既存の Player は Room 開始後に再参加してもよい。
 - Player の表示名は Room 内で固定される。

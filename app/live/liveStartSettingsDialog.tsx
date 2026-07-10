@@ -40,8 +40,9 @@ import {
   type RuleSetNumberField,
   type StartRuleSetSettings,
 } from "./liveStartSettings";
+import { useModalDialog } from "./useModalDialog";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 type StartSettingsTab = "general" | "roles" | "timers";
 
@@ -69,6 +70,7 @@ export function StartSettingsDialog({
     ...settings,
     roleCounts: { ...settings.roleCounts },
   }));
+  const { dialogRef, initialFocusRef } = useModalDialog(onClose);
   const canApplySettings =
     getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts, t)
       .length === 0;
@@ -124,6 +126,37 @@ export function StartSettingsDialog({
     onClose();
   }
 
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: StartSettingsTab): void {
+    const currentIndex = START_SETTINGS_TABS.indexOf(tab);
+    let nextIndex: number | null = null;
+
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % START_SETTINGS_TABS.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + START_SETTINGS_TABS.length) % START_SETTINGS_TABS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = START_SETTINGS_TABS.length - 1;
+    }
+
+    if (nextIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    const nextTab = START_SETTINGS_TABS[nextIndex];
+
+    if (nextTab === undefined) {
+      return;
+    }
+
+    setActiveTab(nextTab);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`start-settings-${nextTab}-tab`)?.focus();
+    });
+  }
+
   return (
     <div
       className="liveModalBackdrop liveSettingsBackdrop"
@@ -138,7 +171,9 @@ export function StartSettingsDialog({
         id="start-settings-dialog"
         aria-labelledby="start-settings-title"
         aria-modal="true"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="liveSettingsHeader">
           <div>
@@ -151,6 +186,7 @@ export function StartSettingsDialog({
             <button
               className="secondaryButton liveIconButton"
               aria-label={t.live.buttons.closeSettings}
+              ref={initialFocusRef}
               type="button"
               onClick={onClose}
             >
@@ -168,8 +204,10 @@ export function StartSettingsDialog({
               id={`start-settings-${tab}-tab`}
               key={tab}
               role="tab"
+              tabIndex={activeTab === tab ? 0 : -1}
               type="button"
               onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab)}
             >
               {t.live.settings.tabs[tab]}
             </button>

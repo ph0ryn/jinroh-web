@@ -1,5 +1,7 @@
 import { expect, test } from "playwright/test";
 
+import { apiFetch, createApiPlayer, createStartedRoom, readJsonResponse } from "./support/api";
+
 import type { Browser, BrowserContext, Page } from "playwright/test";
 
 type BrowserPlayer = {
@@ -49,6 +51,7 @@ test("players can create, join, start, and finish first night through the UI", a
       await expect(player.page.locator('.liveShell[data-live-mood="night"]')).toBeVisible();
       await expect(player.page.getByLabel("Live game table")).toBeVisible();
       await expect(player.page.getByText("Your role", { exact: true })).toBeVisible();
+      await expect(player.page.getByRole("button", { name: "Leave room" })).toHaveCount(0);
     }
 
     for (const [index, player] of players.entries()) {
@@ -72,6 +75,211 @@ test("players can create, join, start, and finish first night through the UI", a
   } finally {
     await Promise.all(players.map(({ context }) => context.close()));
   }
+});
+
+test("leaving a lobby requires confirmation and transfers host controls", async ({ browser }) => {
+  const consoleErrors: string[] = [];
+  const players = await Promise.all(
+    ["Aster", "Birch", "Cedar"].map((name) => createBrowserPlayer(browser, name, consoleErrors)),
+  );
+  const [host, player2, player3] = players;
+
+  if (host === undefined || player2 === undefined || player3 === undefined) {
+    throw new Error("Lobby leave players were not created.");
+  }
+
+  try {
+    const roomCode = await createAndJoinLobby(host.page, [player2.page, player3.page]);
+    const settingsButton = host.page.getByRole("button", { name: "Settings" });
+
+    await settingsButton.click();
+
+    const settingsDialog = host.page.getByRole("dialog", { name: "Game settings" });
+
+    await expect(settingsDialog).toBeVisible();
+    await expect(settingsDialog.getByRole("button", { name: "Close settings" })).toBeFocused();
+    await expect.poll(() => host.page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+
+    await host.page.keyboard.press("Shift+Tab");
+    await expect(settingsDialog.getByRole("button", { name: "Apply settings" })).toBeFocused();
+    await host.page.keyboard.press("Tab");
+    await expect(settingsDialog.getByRole("button", { name: "Close settings" })).toBeFocused();
+
+    await host.page.keyboard.press("Escape");
+
+    await expect(settingsDialog).toHaveCount(0);
+    await expect(settingsButton).toBeFocused();
+    await expect
+      .poll(() => host.page.evaluate(() => document.body.style.overflow))
+      .not.toBe("hidden");
+
+    const leaveButton = host.page.getByRole("button", { name: "Leave room" });
+
+    await leaveButton.click();
+
+    const leaveDialog = host.page.getByRole("dialog", { name: "Leave this room?" });
+
+    await expect(leaveDialog).toBeVisible();
+    await expect(leaveDialog.getByRole("button", { name: "Close Leave this room?" })).toBeFocused();
+    await leaveDialog.getByRole("button", { name: "Cancel" }).click();
+
+    await expect(leaveDialog).toHaveCount(0);
+    await expect(host.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(roomCode);
+    await expect(leaveButton).toBeFocused();
+
+    await leaveButton.click();
+    await expect(leaveDialog).toBeVisible();
+    await host.page.keyboard.press("Escape");
+    await expect(leaveDialog).toHaveCount(0);
+    await expect(leaveButton).toBeFocused();
+
+    await host.page.setViewportSize({ height: 500, width: 390 });
+    await host.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => host.page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+    await leaveButton.click();
+    await leaveDialog.getByRole("button", { name: "Leave room", exact: true }).click();
+
+    await expect(host.page.locator('.liveShell[data-live-mood="setup"]')).toBeVisible();
+    await expect(host.page.getByRole("button", { name: "Create room" })).toBeVisible();
+    await expect.poll(() => host.page.evaluate(() => window.scrollY)).toBe(0);
+    await expect(player2.page.getByText("Host controls", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(player2.page.getByRole("button", { name: "Settings" })).toBeVisible();
+    await expect(player3.page.getByText("Player controls", { exact: true })).toBeVisible();
+    await expect(player3.page.getByRole("button", { name: "Settings" })).toHaveCount(0);
+
+    expect(consoleErrors).toEqual([]);
+  } finally {
+    await Promise.all(players.map(({ context }) => context.close()));
+  }
+});
+
+test("creating with Enter exposes a scoped busy state", async ({ browser }) => {
+  const consoleErrors: string[] = [];
+  const host = await createBrowserPlayer(browser, "Dawn", consoleErrors);
+  let releaseCreateRequest = (): void => {};
+  let markCreateRequestStarted = (): void => {};
+  const createRequestGate = new Promise<void>((resolve) => {
+    releaseCreateRequest = resolve;
+  });
+  const createRequestStarted = new Promise<void>((resolve) => {
+    markCreateRequestStarted = resolve;
+  });
+
+  await host.page.route("**/api/rooms", async (route) => {
+    markCreateRequestStarted();
+    await createRequestGate;
+    await route.continue();
+  });
+
+  try {
+    await host.page.getByLabel("Players").press("Enter");
+    await createRequestStarted;
+
+    const pendingButton = host.page.getByRole("button", { name: "Creating room..." });
+    const pendingForm = host.page.locator('form[aria-busy="true"]').filter({
+      has: pendingButton,
+    });
+
+    await expect(pendingButton).toBeDisabled();
+    await expect(pendingForm).toHaveCount(1);
+    await expect(host.page.getByLabel("Display name")).toBeDisabled();
+    await expect(host.page.getByLabel("Players")).toBeDisabled();
+    await expect(host.page.getByRole("button", { name: "Join room" })).toBeDisabled();
+
+    releaseCreateRequest();
+
+    await expect(host.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+      /^\d{6}$/u,
+    );
+    expect(consoleErrors).toEqual([]);
+  } finally {
+    releaseCreateRequest();
+    await host.context.close();
+  }
+});
+
+test("joining with Enter exposes a scoped busy state", async ({ browser, request }) => {
+  const host = await createApiPlayer(request, "host", "Elm");
+  const room = await apiFetch<{ code: string }>(request, "/api/rooms", {
+    body: { displayName: host.displayName, targetPlayerCount: 3 },
+    method: "POST",
+    token: host.token,
+  });
+  const consoleErrors: string[] = [];
+  const joiner = await createBrowserPlayer(browser, "Fir", consoleErrors);
+  let releaseJoinRequest = (): void => {};
+  let markJoinRequestStarted = (): void => {};
+  const joinRequestGate = new Promise<void>((resolve) => {
+    releaseJoinRequest = resolve;
+  });
+  const joinRequestStarted = new Promise<void>((resolve) => {
+    markJoinRequestStarted = resolve;
+  });
+
+  await joiner.page.route(`**/api/rooms/${room.code}/join`, async (route) => {
+    markJoinRequestStarted();
+    await joinRequestGate;
+    await route.continue();
+  });
+
+  try {
+    await fillRoomCode(joiner.page, room.code);
+    await joiner.page.getByRole("textbox", { name: "Room code digit 6" }).press("Enter");
+    await joinRequestStarted;
+
+    const pendingButton = joiner.page.getByRole("button", { name: "Joining room..." });
+    const pendingForm = joiner.page.locator('form[aria-busy="true"]').filter({
+      has: pendingButton,
+    });
+
+    await expect(pendingButton).toBeDisabled();
+    await expect(pendingForm).toHaveCount(1);
+    await expect(joiner.page.getByLabel("Display name")).toBeDisabled();
+    await expect(joiner.page.getByRole("button", { name: "Create room" })).toBeDisabled();
+
+    releaseJoinRequest();
+
+    await expect(joiner.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+      room.code,
+    );
+    expect(consoleErrors).toEqual([]);
+  } finally {
+    releaseJoinRequest();
+    await joiner.context.close();
+  }
+});
+
+test("the leave API rejects players while a game is in progress", async ({ request }) => {
+  const { players, roomCode } = await createStartedRoom(request, ["Gale", "Harbor", "Iris"]);
+  const host = players[0];
+
+  if (host === undefined) {
+    throw new Error("Started room host was not created.");
+  }
+
+  const leaveResponse = await readJsonResponse<{
+    readonly error: { readonly code: string; readonly message: string };
+  }>(request, `/api/rooms/${roomCode}/leave`, {
+    body: {},
+    method: "POST",
+    token: host.token,
+  });
+
+  expect(leaveResponse).toEqual({
+    body: { error: { code: "conflict", message: "Leave failed." } },
+    status: 409,
+  });
+
+  const summary = await apiFetch<{
+    readonly currentPlayerId: string | null;
+    readonly status: string;
+  }>(request, `/api/rooms/${roomCode}`, { token: host.token });
+
+  expect(summary.status).toBe("playing");
+  expect(summary.currentPlayerId).not.toBeNull();
 });
 
 async function createBrowserPlayer(
@@ -100,4 +308,27 @@ async function fillRoomCode(page: Page, roomCode: string): Promise<void> {
   for (const [index, digit] of roomCode.split("").entries()) {
     await page.getByRole("textbox", { name: `Room code digit ${index + 1}` }).fill(digit);
   }
+}
+
+async function createAndJoinLobby(host: Page, guests: readonly Page[]): Promise<string> {
+  await host.getByLabel("Players").selectOption(String(guests.length + 1));
+  await host.getByRole("button", { name: "Create room" }).click();
+
+  const inviteCode = host.locator('[aria-label="Room invite tools"] strong');
+
+  await expect(inviteCode).toHaveText(/^\d{6}$/u);
+
+  const roomCode = (await inviteCode.textContent())?.trim();
+
+  if (roomCode === undefined || !/^\d{6}$/u.test(roomCode)) {
+    throw new Error("UI did not render a six-digit room code.");
+  }
+
+  for (const guest of guests) {
+    await fillRoomCode(guest, roomCode);
+    await guest.getByRole("button", { name: "Join room" }).click();
+    await expect(guest.locator('[aria-label="Room invite tools"] strong')).toHaveText(roomCode);
+  }
+
+  return roomCode;
 }
