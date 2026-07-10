@@ -24,6 +24,7 @@ const ALICE: PublicPlayer = {
   id: "player-alice",
   isCurrent: true,
   isHost: true,
+  revealedRoleId: null,
   status: "joined",
 };
 
@@ -33,6 +34,7 @@ const BOB: PublicPlayer = {
   id: "player-bob",
   isCurrent: false,
   isHost: false,
+  revealedRoleId: null,
   status: "joined",
 };
 
@@ -42,6 +44,7 @@ const CAROL: PublicPlayer = {
   id: "player-carol",
   isCurrent: false,
   isHost: false,
+  revealedRoleId: null,
   status: "joined",
 };
 
@@ -85,8 +88,8 @@ describe("projectLiveEffectCues", () => {
     expect(projectLiveEffectCues(null, summary)).toEqual([]);
   });
 
-  it("orders the role before the initial phase when a lobby starts playing", () => {
-    const lobby = createSummary({ status: "lobby" });
+  it("orders the role before the initial phase when a waiting room starts playing", () => {
+    const waiting = createSummary({ status: "waiting" });
     const playing = createSummary({
       events: createInitialEvents(),
       phase: "night",
@@ -94,7 +97,7 @@ describe("projectLiveEffectCues", () => {
       snapshotRevision: 2,
       status: "playing",
     });
-    const cues = projectLiveEffectCues(lobby, playing);
+    const cues = projectLiveEffectCues(waiting, playing);
 
     expect(cues.map((cue) => cue.kind)).toEqual(["role", "phase"]);
     expect(cues[0]).toMatchObject({ eventIds: ["event-start"], roleId: "villager" });
@@ -515,7 +518,7 @@ function createSummary(options: SummaryOptions): RoomSummary {
       : null,
     hostPlayerId: ALICE.id,
     isHost: true,
-    lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
+    waitingExpiresAt: "2099-01-01T00:00:00.000Z",
     players: [ALICE, BOB, CAROL],
     roleCatalog: [],
     rolePrivate: null,

@@ -21,17 +21,23 @@ import {
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
-import { formatDateTime, formatPrivateEvent, formatPublicEvent } from "./liveEventPresentation";
 import {
+  formatDateTime,
+  formatPrivateEvent,
+  formatPublicEvent,
+  formatWinner,
+} from "./liveEventPresentation";
+import {
+  canStartRoom,
   countJoinedPlayers,
   formatActionProgress,
   formatPhaseCountdown,
   getActionButtonLabel,
   getActionPanelTitle,
+  getControlHint,
   getPlayerInitial,
   getPlayPhaseGuidance,
 } from "./livePresentation";
-import { LiveRoundTable } from "./liveRoundTable";
 import { useFollowScrollEnd } from "./useFollowScrollEnd";
 import { useModalDialog } from "./useModalDialog";
 
@@ -46,7 +52,23 @@ export type LiveToast = {
 
 export type SetupPendingAction = "create" | "join" | null;
 
-type LivePlaySurfaceProps = {
+type LiveWaitingSurfaceProps = {
+  readonly copiedRoomCode: string | null;
+  readonly isBusy: boolean;
+  readonly isSettingsOpen: boolean;
+  readonly roomStatusLabel: string;
+  readonly roomUrl: string | null;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onOpenSettings: () => void;
+  readonly onRefreshRoom: () => void;
+  readonly onRequestLeaveRoom: () => void;
+  readonly onShareRoom: (roomCode: string) => void;
+  readonly onStartGame: () => void;
+};
+
+type LivePlayingSurfaceProps = {
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
@@ -61,14 +83,24 @@ type LivePlaySurfaceProps = {
   readonly onNightConversationDraftChange: (value: string) => void;
   readonly onOpenNightConversation: () => void;
   readonly onOpenPublicLog: () => void;
-  readonly onRequestLeaveRoom: () => void;
   readonly onRevealRole: () => void;
   readonly onSendNightConversation: (conversation: NightConversationView) => void;
   readonly onSubmitAction: (action: PublicAction) => void;
   readonly onTargetChange: (actionKey: string, playerId: string) => void;
 };
 
-type LiveSetupSurfaceProps = {
+type LiveEndedSurfaceProps = {
+  readonly isBusy: boolean;
+  readonly isPublicLogOpen: boolean;
+  readonly locale: Locale;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onClosePublicLog: () => void;
+  readonly onOpenPublicLog: () => void;
+  readonly onRequestLeaveRoom: () => void;
+};
+
+type LiveEntrySurfaceProps = {
   readonly displayName: string;
   readonly isBusy: boolean;
   readonly pendingAction: SetupPendingAction;
@@ -190,7 +222,7 @@ function LivePopupDialog({
   );
 }
 
-export function LiveSetupSurface({
+export function LiveEntrySurface({
   displayName,
   isBusy,
   pendingAction,
@@ -202,7 +234,7 @@ export function LiveSetupSurface({
   onJoinRoom,
   onRoomCodeChange,
   onTargetPlayerCountChange,
-}: LiveSetupSurfaceProps) {
+}: LiveEntrySurfaceProps) {
   const roomCodeInputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const roomCodeDigits = Array.from({ length: 6 }, (unusedValue, index) => {
     void unusedValue;
@@ -297,7 +329,7 @@ export function LiveSetupSurface({
   }
 
   return (
-    <section className="liveSetupSurface" aria-label={t.live.aria.roomSetup}>
+    <section className="liveEntrySurface" aria-label={t.live.aria.roomSetup}>
       <section className="liveSetupActionGrid" aria-label={t.live.aria.roomActions}>
         <article className="liveSetupPanel liveSetupProfilePanel">
           <div className="liveSetupPanelHeader">
@@ -570,7 +602,7 @@ export function RoomInviteTools({
   );
 }
 
-export function LobbyRequirements({
+export function WaitingRequirements({
   summary,
   t,
 }: {
@@ -585,7 +617,7 @@ export function LobbyRequirements({
   );
 
   return (
-    <div className="liveLobbyRequirements">
+    <div className="liveWaitingRequirements">
       <div>
         <span>{t.live.invite.requirement}</span>
         <strong>
@@ -604,7 +636,116 @@ export function LobbyRequirements({
   );
 }
 
-export function LivePlaySurface({
+export function LiveWaitingSurface({
+  copiedRoomCode,
+  isBusy,
+  isSettingsOpen,
+  roomStatusLabel,
+  roomUrl,
+  summary,
+  t,
+  onCopyRoomCode,
+  onOpenSettings,
+  onRefreshRoom,
+  onRequestLeaveRoom,
+  onShareRoom,
+  onStartGame,
+}: LiveWaitingSurfaceProps) {
+  const canStartGame = !isBusy && canStartRoom(summary);
+  const controlHint = getControlHint(summary, isBusy, t);
+
+  return (
+    <div className="livePlaySideStack liveWaitingSideStack">
+      <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
+        <div className="livePanelHeading">
+          <span>{t.live.aria.invite}</span>
+          <div className="livePanelHeadingActions">
+            <strong>{roomStatusLabel}</strong>
+            <button
+              className="secondaryButton liveCompactButton"
+              type="button"
+              onClick={onRefreshRoom}
+              disabled={isBusy}
+            >
+              {t.live.buttons.refresh}
+            </button>
+          </div>
+        </div>
+
+        <RoomInviteTools
+          copiedRoomCode={copiedRoomCode}
+          roomUrl={roomUrl}
+          summary={summary}
+          t={t}
+          onCopyRoomCode={onCopyRoomCode}
+          onShareRoom={onShareRoom}
+        />
+        <WaitingRequirements summary={summary} t={t} />
+      </section>
+
+      <section className="livePanel liveControlPanel" aria-label={t.live.aria.waitingControls}>
+        <div className="livePanelHeading">
+          <span>
+            {summary.isHost ? t.live.waiting.hostControls : t.live.waiting.playerControls}
+          </span>
+          <div className="livePanelHeadingActions">
+            <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
+            {summary.isHost ? (
+              <button
+                className="secondaryButton liveCompactButton"
+                aria-controls="start-settings-dialog"
+                aria-expanded={isSettingsOpen}
+                aria-haspopup="dialog"
+                type="button"
+                onClick={onOpenSettings}
+              >
+                {t.live.buttons.settings}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="liveWaitingPanel">
+          <strong>
+            {summary.isHost
+              ? t.live.waiting.startWhenEveryoneSeated
+              : t.live.waiting.waitingForHost}
+          </strong>
+          {canStartGame ? null : <p>{controlHint}</p>}
+        </div>
+
+        <div className="liveWaitingActions">
+          {summary.isHost ? (
+            <button
+              className="primaryLiveButton"
+              aria-describedby={canStartGame ? undefined : "control-hint"}
+              type="button"
+              onClick={onStartGame}
+              disabled={!canStartGame}
+            >
+              {t.live.buttons.startGame}
+            </button>
+          ) : null}
+          <button
+            className="dangerButton"
+            type="button"
+            onClick={onRequestLeaveRoom}
+            disabled={isBusy}
+          >
+            {t.live.buttons.leaveRoom}
+          </button>
+        </div>
+        {canStartGame ? null : (
+          <p className="srOnly" id="control-hint">
+            {controlHint}
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export function LivePlayingSurface({
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
@@ -619,12 +760,11 @@ export function LivePlaySurface({
   onNightConversationDraftChange,
   onOpenNightConversation,
   onOpenPublicLog,
-  onRequestLeaveRoom,
   onRevealRole,
   onSendNightConversation,
   onSubmitAction,
   onTargetChange,
-}: LivePlaySurfaceProps) {
+}: LivePlayingSurfaceProps) {
   const hasCurrentPlayer = summary.currentPlayerId !== null;
   const actionProgress = summary.game?.actionProgress ?? null;
   const phaseEndsAt = summary.game?.phaseEndsAt ?? null;
@@ -634,7 +774,6 @@ export function LivePlaySurface({
     : null;
   const publicEventCount = summary.game?.events.length ?? 0;
   const privateEvents = hasCurrentPlayer ? (summary.self?.events ?? []) : [];
-  const selfResult = summary.status === "ended" ? (summary.self?.result ?? null) : null;
   const selfRole =
     summary.self?.roleId === null || summary.self?.roleId === undefined
       ? null
@@ -642,10 +781,6 @@ export function LivePlaySurface({
 
   return (
     <>
-      <section className="livePanel livePlayTablePanel" aria-label={t.live.aria.liveGameTable}>
-        <LiveRoundTable summary={summary} t={t} />
-      </section>
-
       <div className="livePlaySideStack">
         <section className="livePanel livePlayPhasePanel" aria-label={t.live.aria.currentPhase}>
           <div className="livePanelHeading">
@@ -740,28 +875,6 @@ export function LivePlaySurface({
             <em>{publicEventCount}</em>
           </button>
         </div>
-
-        {selfResult === null ? null : (
-          <section className="livePanel" aria-label={t.live.effects.victory.resultLabel}>
-            <div className="livePanelHeading">
-              <span>{t.live.effects.victory.resultLabel}</span>
-              <strong>{t.game.playerResult[selfResult]}</strong>
-            </div>
-          </section>
-        )}
-
-        {summary.status === "ended" && hasCurrentPlayer ? (
-          <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
-            <button
-              className="dangerButton"
-              type="button"
-              onClick={onRequestLeaveRoom}
-              disabled={isBusy}
-            >
-              {t.live.buttons.leaveRoom}
-            </button>
-          </section>
-        ) : null}
       </div>
 
       {nightConversation !== null && isNightConversationOpen ? (
@@ -784,18 +897,107 @@ export function LivePlaySurface({
         </LivePopupDialog>
       ) : null}
 
-      {isPublicLogOpen ? (
-        <LivePopupDialog
-          id="public-log-dialog"
-          meta={t.live.eventLog.meta(publicEventCount)}
-          t={t}
-          title={t.live.eventLog.title}
-          onClose={onClosePublicLog}
-        >
-          <EventLog locale={locale} summary={summary} t={t} />
-        </LivePopupDialog>
-      ) : null}
+      <PublicLogDialog
+        isOpen={isPublicLogOpen}
+        locale={locale}
+        summary={summary}
+        t={t}
+        onClose={onClosePublicLog}
+      />
     </>
+  );
+}
+
+export function LiveEndedSurface({
+  isBusy,
+  isPublicLogOpen,
+  locale,
+  summary,
+  t,
+  onClosePublicLog,
+  onOpenPublicLog,
+  onRequestLeaveRoom,
+}: LiveEndedSurfaceProps) {
+  const publicEventCount = summary.game?.events.length ?? 0;
+  const selfResult = summary.self?.result ?? null;
+  const winner = formatWinner(summary.game?.winnerTeam ?? null, t);
+
+  return (
+    <>
+      <div className="livePlaySideStack">
+        <section className="livePanel" aria-label={t.live.page.result}>
+          <div className="livePanelHeading">
+            <span>{t.live.page.result}</span>
+            <strong>{t.live.effects.victory.title(winner)}</strong>
+          </div>
+
+          {selfResult === null ? null : (
+            <div className="livePlayPhaseCard" aria-label={t.live.effects.victory.resultLabel}>
+              <div>
+                <span>{t.live.effects.victory.resultLabel}</span>
+                <strong>{t.game.playerResult[selfResult]}</strong>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
+          <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
+            {t.live.buttons.publicLog}
+            <em>{publicEventCount}</em>
+          </button>
+        </div>
+
+        <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
+          <button
+            className="dangerButton"
+            type="button"
+            onClick={onRequestLeaveRoom}
+            disabled={isBusy}
+          >
+            {t.live.buttons.leaveRoom}
+          </button>
+        </section>
+      </div>
+
+      <PublicLogDialog
+        isOpen={isPublicLogOpen}
+        locale={locale}
+        summary={summary}
+        t={t}
+        onClose={onClosePublicLog}
+      />
+    </>
+  );
+}
+
+function PublicLogDialog({
+  isOpen,
+  locale,
+  summary,
+  t,
+  onClose,
+}: {
+  readonly isOpen: boolean;
+  readonly locale: Locale;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onClose: () => void;
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <LivePopupDialog
+      id="public-log-dialog"
+      meta={t.live.eventLog.meta(summary.game?.events.length ?? 0)}
+      t={t}
+      title={t.live.eventLog.title}
+      onClose={onClose}
+    >
+      <EventLog locale={locale} summary={summary} t={t} />
+    </LivePopupDialog>
   );
 }
 
@@ -819,51 +1021,6 @@ function PhaseCountdown({
   }, [phaseEndsAt]);
 
   return <>{formatPhaseCountdown(phaseEndsAt, currentTimeMs, t)}</>;
-}
-
-export function PlayerSeatGrid({
-  summary,
-  t,
-}: {
-  readonly summary: RoomSummary;
-  readonly t: Localization;
-}) {
-  const joinedPlayers = summary.players.filter((player) => player.status === "joined");
-  const emptySeats = Array.from(
-    { length: Math.max(summary.targetPlayerCount - joinedPlayers.length, 0) },
-    (unusedValue, index) => {
-      void unusedValue;
-
-      return index + joinedPlayers.length + 1;
-    },
-  );
-
-  return (
-    <div className="liveSeatGrid" aria-label={t.live.aria.lobbySeats}>
-      {joinedPlayers.map((player, index) => (
-        <div className={player.isCurrent ? "liveSeatCard current" : "liveSeatCard"} key={player.id}>
-          <span className="liveAvatar" aria-hidden="true">
-            {player.displayName.slice(0, 1)}
-          </span>
-          <span>
-            <strong>{player.displayName}</strong>
-            <small>{t.live.lobby.seat(index + 1)}</small>
-          </span>
-          <em>{player.isHost ? t.live.lobby.host : t.live.lobby.player}</em>
-        </div>
-      ))}
-      {emptySeats.map((seatNumber) => (
-        <div className="liveSeatCard empty" key={`empty-${seatNumber}`}>
-          <span className="liveAvatar" aria-hidden="true" />
-          <span>
-            <strong>{t.live.lobby.openSeat}</strong>
-            <small>{t.live.lobby.seat(seatNumber)}</small>
-          </span>
-          <em>{t.live.lobby.open}</em>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function NightConversationPanel({

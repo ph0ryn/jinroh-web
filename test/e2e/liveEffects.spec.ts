@@ -1,5 +1,8 @@
 import { expect, test } from "playwright/test";
 
+import { getLocalizedRole } from "@/lib/i18n/localization";
+import { enLocalization } from "@/lib/i18n/localization/en";
+
 import { apiFetch, createStartedRoom, type ApiPlayer } from "./support/api";
 
 import type { PublicAction, RoomSummary } from "@/lib/shared/game";
@@ -35,6 +38,7 @@ test("role, phase, death, and victory effects play once in game order", async ({
 
   await expect(page.locator('.liveShell[data-live-mood="night"]')).toBeVisible();
   await expect(page.locator('[data-live-effect="role"]')).toBeVisible();
+  await expect(page.locator("[data-live-round-table] [data-live-role-id]")).toHaveCount(0);
   const roleRevealButton = page.getByRole("button", { name: "Reveal role card" });
 
   await expect(roleRevealButton).toBeVisible();
@@ -85,7 +89,15 @@ test("role, phase, death, and victory effects play once in game order", async ({
   const victoryEffect = page.locator('[data-live-effect="victory"]');
 
   await expect(victoryEffect).toBeVisible({ timeout: 8_000 });
-  const endedSummary = await readRoomSummary(request, roomCode, host);
+  const endedSummaries = await Promise.all(
+    players.map((player) => readRoomSummary(request, roomCode, player)),
+  );
+  const endedSummary = endedSummaries[0];
+
+  if (endedSummary === undefined) {
+    throw new Error("Effect test did not receive the final room summary.");
+  }
+
   const expectedPlayerResult = endedSummary.self?.result;
 
   if (expectedPlayerResult === null || expectedPlayerResult === undefined) {
@@ -103,6 +115,31 @@ test("role, phase, death, and victory effects play once in game order", async ({
     `Your result: ${localizedPlayerResult}`,
   );
   await expect(page.getByLabel("Your result")).toContainText(localizedPlayerResult);
+  const revealedRoles = Object.fromEntries(
+    endedSummary.players.map((player) => [player.id, player.revealedRoleId]),
+  );
+
+  expect(Object.values(revealedRoles).every((roleId) => roleId !== null)).toBe(true);
+  expect(
+    endedSummaries.every(
+      (summary) =>
+        JSON.stringify(
+          Object.fromEntries(summary.players.map((player) => [player.id, player.revealedRoleId])),
+        ) === JSON.stringify(revealedRoles),
+    ),
+  ).toBe(true);
+
+  for (const player of endedSummary.players) {
+    if (player.revealedRoleId === null) {
+      throw new Error(`Final role was not revealed for ${player.displayName}.`);
+    }
+
+    const seat = page.locator(`[data-live-player-id="${player.id}"]`);
+
+    await expect(seat).toHaveAttribute("data-live-role-id", player.revealedRoleId);
+    await expect(seat).toContainText(getLocalizedRole(enLocalization, player.revealedRoleId).name);
+  }
+
   await expect(victoryEffect).toHaveAttribute("data-effect-victory-particles", "none");
   await expect(
     victoryEffect.locator(
@@ -111,6 +148,9 @@ test("role, phase, death, and victory effects play once in game order", async ({
   ).toHaveCount(0);
   await page.reload();
   await expect(page.getByLabel("Your result")).toContainText(localizedPlayerResult);
+  await expect(page.locator("[data-live-round-table] [data-live-role-id]")).toHaveCount(
+    endedSummary.players.length,
+  );
   await expect(page.locator("[data-live-effect-announcement]")).toBeEmpty();
   await expect(page.getByRole("button", { name: "Leave room" })).toBeVisible({ timeout: 8_000 });
   expect(consoleErrors).toEqual([]);

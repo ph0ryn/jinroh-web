@@ -42,7 +42,7 @@ create trigger rooms_bump_view_revision
     status,
     host_account_id,
     realtime_topic,
-    lobby_expires_at,
+    waiting_expires_at,
     target_player_count
   on public.rooms
   for each row execute function public.bump_room_view_revision_on_room_update();

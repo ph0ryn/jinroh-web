@@ -100,11 +100,6 @@ export function useLiveEffectQueue(): LiveEffectQueue {
 
   const acceptSummary = useCallback(
     (summary: RoomSummary) => {
-      if (summary.status === "disbanded") {
-        resetQueue();
-        return;
-      }
-
       const acceptedSummary = acceptedSummaryRef.current;
       const changedEffectSession =
         acceptedSummary !== null &&

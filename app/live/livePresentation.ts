@@ -1,19 +1,10 @@
-import {
-  getLocalizedActionButtonLabel,
-  getLocalizedActionProgressLabel,
-  type Localization,
-} from "@/lib/i18n/localization";
+import { getLocalizedActionButtonLabel, type Localization } from "@/lib/i18n/localization";
 
 import { formatPhaseTitle, formatWinner } from "./liveEventPresentation";
 
 import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 
-type LiveMood = "closed" | "day" | "execution" | "lobby" | "night" | "result" | "setup" | "voting";
-
-type RoundTableSeatPosition = {
-  readonly x: number;
-  readonly y: number;
-};
+type LiveMood = "day" | "execution" | "night" | "result" | "setup" | "voting" | "waiting";
 
 export type LiveGuidance = {
   readonly label: string;
@@ -25,16 +16,12 @@ export function getLiveMood(summary: RoomSummary | null): LiveMood {
     return "setup";
   }
 
-  if (summary.status === "disbanded") {
-    return "closed";
-  }
-
   if (summary.game?.status === "ended") {
     return "result";
   }
 
-  if (summary.status === "lobby") {
-    return "lobby";
+  if (summary.status === "waiting") {
+    return "waiting";
   }
 
   return summary.game?.phase ?? "setup";
@@ -45,8 +32,8 @@ export function getLiveGridClassName(summary: RoomSummary | null): string {
     return "liveGrid liveGridSetup";
   }
 
-  if (summary.status === "lobby") {
-    return "liveGrid liveGridLobby";
+  if (summary.status === "waiting") {
+    return "liveGrid livePlayGrid liveGridWaiting";
   }
 
   return "liveGrid livePlayGrid";
@@ -57,12 +44,8 @@ export function getLivePageTitle(summary: RoomSummary | null, t: Localization): 
     return t.live.page.roomSetup;
   }
 
-  if (summary.status === "lobby") {
+  if (summary.status === "waiting") {
     return t.live.page.room(summary.code);
-  }
-
-  if (summary.status === "disbanded") {
-    return t.live.page.roomClosed;
   }
 
   if (summary.game?.status === "ended") {
@@ -73,12 +56,12 @@ export function getLivePageTitle(summary: RoomSummary | null, t: Localization): 
 }
 
 export function getLiveTableTitle(summary: RoomSummary, t: Localization): string {
-  if (summary.status === "disbanded") {
-    return t.live.table.closed;
-  }
-
   if (summary.game?.status === "ended") {
     return t.live.page.result;
+  }
+
+  if (summary.status === "waiting") {
+    return t.game.phase.waiting;
   }
 
   return formatPhaseTitle(summary.game?.phase ?? null, t);
@@ -104,27 +87,6 @@ export function getActionPanelTitle(summary: RoomSummary, t: Localization): stri
   return t.game.actions.action;
 }
 
-export function getRoundTableSeatPosition(
-  index: number,
-  totalPlayers: number,
-): RoundTableSeatPosition {
-  const safeTotalPlayers = Math.max(totalPlayers, 1);
-  let radius = 42;
-
-  if (safeTotalPlayers <= 4) {
-    radius = 38;
-  } else if (safeTotalPlayers <= 6) {
-    radius = 40;
-  }
-
-  const angle = -Math.PI / 2 + (index / safeTotalPlayers) * Math.PI * 2;
-
-  return {
-    x: Number((50 + Math.cos(angle) * radius).toFixed(3)),
-    y: Number((50 + Math.sin(angle) * radius).toFixed(3)),
-  };
-}
-
 export function getPlayerInitial(displayName: string): string {
   return displayName.trim().slice(0, 1).toLocaleUpperCase("en") || "?";
 }
@@ -136,10 +98,6 @@ export function getPlayPhaseGuidance(
 ): LiveGuidance {
   if (isBusy) {
     return t.live.phasePanel.syncing;
-  }
-
-  if (summary.status === "disbanded") {
-    return t.live.phasePanel.closed;
   }
 
   if (summary.game?.status === "ended") {
@@ -165,76 +123,6 @@ export function getPlayPhaseGuidance(
   return t.live.phasePanel.game;
 }
 
-export function getLiveGuidance(
-  summary: RoomSummary | null,
-  actionCount: number,
-  isBusy: boolean,
-  t: Localization,
-): LiveGuidance {
-  if (isBusy) {
-    return t.live.guidance.syncing;
-  }
-
-  if (summary === null) {
-    return t.live.guidance.setup;
-  }
-
-  if (summary.status === "disbanded") {
-    return t.live.guidance.closed;
-  }
-
-  if (summary.game?.status === "ended") {
-    return t.live.guidance.result(formatWinner(summary.game.winnerTeam, t));
-  }
-
-  if (summary.status === "lobby") {
-    const joinedPlayerCount = countJoinedPlayers(summary);
-
-    if (!summary.isHost) {
-      return t.live.guidance.lobby(joinedPlayerCount, summary.targetPlayerCount);
-    }
-
-    if (joinedPlayerCount < summary.targetPlayerCount) {
-      return t.live.guidance.invite(summary.targetPlayerCount - joinedPlayerCount);
-    }
-
-    if (joinedPlayerCount > summary.targetPlayerCount) {
-      return t.live.guidance.full;
-    }
-
-    return t.live.guidance.ready;
-  }
-
-  if (actionCount > 0) {
-    const openActionCount =
-      summary.self?.actions.filter((action) => action.status === "open").length ?? 0;
-
-    if (openActionCount > 0) {
-      return t.live.guidance.yourTurn;
-    }
-  }
-
-  if (summary.game?.actionProgress?.visibility === "public") {
-    return t.live.guidance.progress(
-      summary.game.actionProgress.submitted,
-      summary.game.actionProgress.required,
-      getLocalizedActionProgressLabel(t, summary.game.actionProgress.kind),
-    );
-  }
-
-  if (summary.game?.actionProgress?.visibility === "hidden") {
-    return t.live.guidance.privateNight(
-      getLocalizedActionProgressLabel(t, summary.game.actionProgress.kind),
-    );
-  }
-
-  if (summary.isHost) {
-    return t.live.guidance.host;
-  }
-
-  return t.live.guidance.waiting;
-}
-
 export function getStartHint(
   summary: RoomSummary | null,
   isBusy: boolean,
@@ -252,8 +140,8 @@ export function getStartHint(
     return t.live.hints.hostOnlyStart;
   }
 
-  if (summary.status !== "lobby") {
-    return t.live.hints.startInLobby;
+  if (summary.status !== "waiting") {
+    return t.live.hints.startInWaiting;
   }
 
   const joinedPlayerCount = countJoinedPlayers(summary);
@@ -278,19 +166,15 @@ export function getControlHint(
     return t.live.hints.controlsNeedRoom;
   }
 
-  if (summary.status === "lobby") {
+  if (summary.status === "waiting") {
     return getStartHint(summary, isBusy, t);
-  }
-
-  if (summary.status === "disbanded") {
-    return t.live.hints.roomClosed;
   }
 
   return t.live.hints.reviewResult;
 }
 
 export function canStartRoom(summary: RoomSummary | null): boolean {
-  if (summary === null || !summary.isHost || summary.status !== "lobby") {
+  if (summary === null || !summary.isHost || summary.status !== "waiting") {
     return false;
   }
 
@@ -326,6 +210,10 @@ export function formatRoomStatus(summary: RoomSummary | null, t: Localization): 
 
   if (summary.game?.status === "ended") {
     return t.home.panel.ended;
+  }
+
+  if (summary.status === "waiting") {
+    return t.live.roomStatus.status.waiting;
   }
 
   const status = t.live.roomStatus.status[summary.status];

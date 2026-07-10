@@ -23,15 +23,12 @@ import {
   writeStorage,
 } from "@/app/live/liveClient";
 import {
-  canStartRoom,
-  countJoinedPlayers,
   formatRoomStatus,
-  getControlHint,
   getLiveGridClassName,
-  getLiveGuidance,
   getLiveMood,
   getLivePageTitle,
 } from "@/app/live/livePresentation";
+import { LiveRoundTable } from "@/app/live/liveRoundTable";
 import {
   buildStartRuleSetInput,
   DEFAULT_START_RULE_SET_SETTINGS,
@@ -40,12 +37,11 @@ import {
 import { StartSettingsDialog } from "@/app/live/liveStartSettingsDialog";
 import {
   LeaveRoomDialog,
-  LivePlaySurface,
-  LiveSetupSurface,
+  LiveEndedSurface,
+  LivePlayingSurface,
+  LiveEntrySurface,
   LiveToastRegion,
-  LobbyRequirements,
-  PlayerSeatGrid,
-  RoomInviteTools,
+  LiveWaitingSurface,
   SwitchRoomDialog,
   type LiveToast,
   type LiveToastTone,
@@ -63,6 +59,8 @@ import {
   type RoomSummary,
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
+
+import type { ReactNode } from "react";
 
 type IdentityResponse = {
   token: string;
@@ -107,6 +105,8 @@ type RoomSwitchIntent =
       readonly targetRoomCode: string;
     };
 
+type RoomBoundSurfaceStatus = "ended" | "playing" | "waiting";
+
 type RealtimeBroadcastEnvelope = {
   readonly payload?: unknown;
 };
@@ -120,7 +120,7 @@ const ROOM_SYNC_INTERVAL_MS = 4_000;
 const TOAST_DEFAULT_DURATION_MS = 4_800;
 const TOAST_IMPORTANT_DURATION_MS = 7_000;
 const LIVE_MOOD_BACKGROUND_SOURCES = [
-  "/images/jinroh-lobby-same-angle.jpg",
+  "/images/jinroh-waiting-same-angle.jpg",
   "/images/jinroh-day-same-angle.jpg",
   "/images/jinroh-voting-same-angle.jpg",
   "/images/jinroh-night.jpg",
@@ -130,7 +130,6 @@ const LIVE_MOOD_BACKGROUND_SOURCES = [
 export default function LivePage() {
   const { locale, t } = useI18n();
   const invalidIdentityStatusMessage = t.live.room.identityExpired;
-  const roomClosedStatusMessage = t.live.room.closed;
   const [identityToken, setIdentityToken] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("Sora");
   const [roomCodeInput, setRoomCodeInput] = useState("");
@@ -441,15 +440,6 @@ export default function LivePage() {
         return false;
       }
 
-      if (nextSummary.status === "disbanded") {
-        clearCurrentRoom({
-          ignoredRoomCode: nextSummary.code,
-          preserveRoomCodeInput: true,
-        });
-        showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-        return false;
-      }
-
       writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
       appliedRoomSnapshotRef.current = {
         requestId: requestContext.requestId,
@@ -468,14 +458,7 @@ export default function LivePage() {
 
       return true;
     },
-    [
-      acceptEffectSummary,
-      clearCurrentRoom,
-      displayName,
-      isRoomRequestContextCurrent,
-      roomClosedStatusMessage,
-      showToast,
-    ],
+    [acceptEffectSummary, displayName, isRoomRequestContextCurrent],
   );
 
   const syncCurrentRoom = useCallback(
@@ -944,10 +927,6 @@ export default function LivePage() {
         return;
       }
 
-      if (currentRoom.status !== "lobby" && currentRoom.status !== "ended") {
-        return;
-      }
-
       setPendingRoomSwitch({
         request:
           intent.kind === "create"
@@ -1313,17 +1292,24 @@ export default function LivePage() {
   const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
   const selfActions = isCurrentRoomParticipant ? (roomSummary.self?.actions ?? []) : [];
   const roomStatusLabel = formatRoomStatus(roomSummary, t);
-  const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy, t);
-  const canStartGame = isCurrentRoomParticipant && !isBusy && canStartRoom(roomSummary);
   const canConfigureStartSettings =
-    isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "lobby";
+    isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "waiting";
   const canLeaveRoom =
-    isCurrentRoomParticipant && (roomSummary.status === "lobby" || roomSummary.status === "ended");
-  const isGameSurface =
-    roomSummary !== null &&
+    isCurrentRoomParticipant &&
+    (roomSummary.status === "waiting" || roomSummary.status === "ended");
+  let roomBoundSurfaceStatus: RoomBoundSurfaceStatus | null = null;
+
+  if (isCurrentRoomParticipant && roomSummary.status === "waiting") {
+    roomBoundSurfaceStatus = "waiting";
+  } else if (
+    isCurrentRoomParticipant &&
     roomSummary.game !== null &&
-    (roomSummary.status === "playing" || roomSummary.status === "ended");
-  const controlHint = getControlHint(roomSummary, isBusy, t);
+    (roomSummary.status === "playing" || roomSummary.status === "ended")
+  ) {
+    roomBoundSurfaceStatus = roomSummary.status;
+  }
+
+  const isGameSurface = roomBoundSurfaceStatus === "playing" || roomBoundSurfaceStatus === "ended";
   const liveMood = getLiveMood(roomSummary);
   const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
   const liveGridClassName = getLiveGridClassName(roomSummary);
@@ -1331,6 +1317,7 @@ export default function LivePage() {
     "liveShell",
     `liveMood-${liveMood}`,
     isGameSurface ? "liveShellGame" : "",
+    roomSummary?.status === "waiting" ? "liveShellTable" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -1338,6 +1325,65 @@ export default function LivePage() {
     liveOrigin === null || roomSummary === null
       ? null
       : getLiveRoomUrl(roomSummary.code, liveOrigin);
+  let roomBoundSurface: ReactNode = null;
+
+  if (roomSummary !== null && roomBoundSurfaceStatus === "waiting") {
+    roomBoundSurface = (
+      <LiveWaitingSurface
+        copiedRoomCode={copiedInviteRoomCode}
+        isBusy={isBusy}
+        isSettingsOpen={isStartSettingsOpen}
+        roomStatusLabel={roomStatusLabel}
+        roomUrl={roomInviteUrl}
+        summary={roomSummary}
+        t={t}
+        onCopyRoomCode={handleCopyRoomCode}
+        onOpenSettings={() => setIsStartSettingsOpen(true)}
+        onRefreshRoom={handleRefreshRoom}
+        onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+        onShareRoom={handleShareRoom}
+        onStartGame={handleStartGame}
+      />
+    );
+  } else if (roomSummary !== null && roomBoundSurfaceStatus === "playing") {
+    roomBoundSurface = (
+      <LivePlayingSurface
+        isBusy={isBusy}
+        isNightConversationOpen={isNightConversationOpen}
+        isPublicLogOpen={isPublicLogOpen}
+        nightConversationDraft={nightConversationDraft}
+        selfActions={selfActions}
+        summary={roomSummary}
+        targetByActionKey={targetByActionKey}
+        locale={locale}
+        t={t}
+        onCloseNightConversation={() => setIsNightConversationOpen(false)}
+        onClosePublicLog={() => setIsPublicLogOpen(false)}
+        onNightConversationDraftChange={setNightConversationDraft}
+        onOpenNightConversation={() => setIsNightConversationOpen(true)}
+        onOpenPublicLog={() => setIsPublicLogOpen(true)}
+        onRevealRole={replayRole}
+        onSendNightConversation={handleSendNightConversation}
+        onSubmitAction={handleSubmitAction}
+        onTargetChange={(actionKey, playerId) =>
+          setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
+        }
+      />
+    );
+  } else if (roomSummary !== null && roomBoundSurfaceStatus === "ended") {
+    roomBoundSurface = (
+      <LiveEndedSurface
+        isBusy={isBusy}
+        isPublicLogOpen={isPublicLogOpen}
+        locale={locale}
+        summary={roomSummary}
+        t={t}
+        onClosePublicLog={() => setIsPublicLogOpen(false)}
+        onOpenPublicLog={() => setIsPublicLogOpen(true)}
+        onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+      />
+    );
+  }
 
   return (
     <main className={liveShellClassName} data-live-mood={liveMood} ref={liveShellRef}>
@@ -1351,32 +1397,21 @@ export default function LivePage() {
         <LanguageSwitcher />
       </section>
 
-      {isGameSurface ? null : (
-        <>
-          {isRoomEntryAvailable ? (
-            <LiveSetupSurface
-              displayName={displayName}
-              isBusy={isBusy}
-              pendingAction={setupPendingAction}
-              roomCodeInput={roomCodeInput}
-              t={t}
-              targetPlayerCount={targetPlayerCount}
-              onCreateRoom={handleCreateRoom}
-              onDisplayNameChange={handleDisplayNameChange}
-              onJoinRoom={handleJoinRoom}
-              onRoomCodeChange={handleRoomCodeChange}
-              onTargetPlayerCountChange={handleTargetPlayerCountChange}
-            />
-          ) : (
-            <div className="liveTopStack liveTopStackCompact">
-              <section className="liveStatusBar" aria-live="polite">
-                <span>{liveGuidance.label}</span>
-                <strong>{liveGuidance.message}</strong>
-              </section>
-            </div>
-          )}
-        </>
-      )}
+      {isRoomEntryAvailable ? (
+        <LiveEntrySurface
+          displayName={displayName}
+          isBusy={isBusy}
+          pendingAction={setupPendingAction}
+          roomCodeInput={roomCodeInput}
+          t={t}
+          targetPlayerCount={targetPlayerCount}
+          onCreateRoom={handleCreateRoom}
+          onDisplayNameChange={handleDisplayNameChange}
+          onJoinRoom={handleJoinRoom}
+          onRoomCodeChange={handleRoomCodeChange}
+          onTargetPlayerCountChange={handleTargetPlayerCountChange}
+        />
+      ) : null}
 
       {isRoomEntryAvailable ? null : (
         <div className={liveGridClassName}>
@@ -1392,136 +1427,20 @@ export default function LivePage() {
             </section>
           ) : null}
 
-          {roomSummary?.status === "lobby" && isCurrentRoomParticipant ? (
-            <>
-              <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
-                <div className="livePanelHeading">
-                  <span>{t.live.aria.invite}</span>
-                  <div className="livePanelHeadingActions">
-                    <strong>{roomStatusLabel}</strong>
-                    <button
-                      className="secondaryButton liveCompactButton"
-                      type="button"
-                      onClick={handleRefreshRoom}
-                      disabled={isBusy}
-                    >
-                      {t.live.buttons.refresh}
-                    </button>
-                  </div>
-                </div>
-
-                <RoomInviteTools
-                  copiedRoomCode={copiedInviteRoomCode}
-                  roomUrl={roomInviteUrl}
-                  summary={roomSummary}
-                  t={t}
-                  onCopyRoomCode={handleCopyRoomCode}
-                  onShareRoom={handleShareRoom}
-                />
-                <LobbyRequirements summary={roomSummary} t={t} />
-              </section>
-
-              <section className="livePanel liveSeatPanel" aria-label={t.live.aria.lobbySeats}>
-                <div className="livePanelHeading">
-                  <span>{t.game.phase.lobby}</span>
-                  <strong>
-                    {t.live.lobby.seated(
-                      countJoinedPlayers(roomSummary),
-                      roomSummary.targetPlayerCount,
-                    )}
-                  </strong>
-                </div>
-                <PlayerSeatGrid summary={roomSummary} t={t} />
-              </section>
-            </>
-          ) : null}
-
-          {roomSummary?.status === "lobby" && isCurrentRoomParticipant ? (
-            <section className="livePanel liveControlPanel" aria-label={t.live.aria.lobbyControls}>
-              <div className="livePanelHeading">
-                <span>
-                  {roomSummary.isHost ? t.live.lobby.hostControls : t.live.lobby.playerControls}
-                </span>
-                <div className="livePanelHeadingActions">
-                  <strong>{roomSummary.isHost ? t.live.lobby.host : t.live.lobby.player}</strong>
-                  {canConfigureStartSettings ? (
-                    <button
-                      className="secondaryButton liveCompactButton"
-                      aria-controls="start-settings-dialog"
-                      aria-expanded={isStartSettingsOpen}
-                      aria-haspopup="dialog"
-                      type="button"
-                      onClick={() => setIsStartSettingsOpen(true)}
-                    >
-                      {t.live.buttons.settings}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="liveLobbyPanel">
-                <strong>
-                  {roomSummary.isHost
-                    ? t.live.lobby.startWhenEveryoneSeated
-                    : t.live.lobby.waitingForHost}
-                </strong>
-                {canStartGame ? null : <p>{controlHint}</p>}
-              </div>
-
-              <div className="liveLobbyActions">
-                {roomSummary.isHost ? (
-                  <button
-                    className="primaryLiveButton"
-                    aria-describedby={canStartGame ? undefined : "control-hint"}
-                    type="button"
-                    onClick={handleStartGame}
-                    disabled={!canStartGame}
-                  >
-                    {t.live.buttons.startGame}
-                  </button>
-                ) : null}
-                <button
-                  className="dangerButton"
-                  type="button"
-                  onClick={() => setIsLeaveConfirmationOpen(true)}
-                  disabled={isBusy}
-                >
-                  {t.live.buttons.leaveRoom}
-                </button>
-              </div>
-              {canStartGame ? null : (
-                <p className="srOnly" id="control-hint">
-                  {controlHint}
-                </p>
-              )}
+          {roomSummary !== null && roomBoundSurfaceStatus !== null ? (
+            <section
+              className={
+                roomBoundSurfaceStatus === "waiting"
+                  ? "livePlayTablePanel liveWaitingTablePanel"
+                  : "livePlayTablePanel"
+              }
+              aria-label={t.live.aria.roundTable}
+            >
+              <LiveRoundTable summary={roomSummary} t={t} />
             </section>
           ) : null}
 
-          {roomSummary !== null && isGameSurface ? (
-            <LivePlaySurface
-              isBusy={isBusy}
-              isNightConversationOpen={isNightConversationOpen}
-              isPublicLogOpen={isPublicLogOpen}
-              nightConversationDraft={nightConversationDraft}
-              selfActions={selfActions}
-              summary={roomSummary}
-              targetByActionKey={targetByActionKey}
-              locale={locale}
-              t={t}
-              onCloseNightConversation={() => setIsNightConversationOpen(false)}
-              onClosePublicLog={() => setIsPublicLogOpen(false)}
-              onNightConversationDraftChange={setNightConversationDraft}
-              onOpenNightConversation={() => setIsNightConversationOpen(true)}
-              onOpenPublicLog={() => setIsPublicLogOpen(true)}
-              onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
-              onRevealRole={replayRole}
-              onSendNightConversation={handleSendNightConversation}
-              onSubmitAction={handleSubmitAction}
-              onTargetChange={(actionKey, playerId) =>
-                setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
-              }
-            />
-          ) : null}
+          {roomBoundSurface}
         </div>
       )}
 

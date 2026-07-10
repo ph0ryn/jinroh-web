@@ -8,11 +8,11 @@ export type Team = string;
 
 export type PlayerResult = "win" | "lose" | "draw" | "special";
 
-export type RoomStatus = "lobby" | "playing" | "disbanded" | "ended";
+export type RoomStatus = "waiting" | "playing" | "ended";
 
 export type PlayerStatus = "joined" | "disconnected" | "left";
 
-export type GameStatus = "waiting" | "assigning_roles" | "playing" | "ended";
+export type GameStatus = "assigning_roles" | "playing" | "ended";
 
 export type GamePhase = "night" | "day" | "voting" | "execution";
 
@@ -35,7 +35,7 @@ export type RoomSummary = {
   code: string;
   snapshotRevision: number;
   status: RoomStatus;
-  lobbyExpiresAt: string;
+  waitingExpiresAt: string;
   targetPlayerCount: number;
   hostPlayerId: string | null;
   currentPlayerId: string | null;
@@ -73,6 +73,7 @@ export type PublicPlayer = {
   alive: boolean | null;
   isHost: boolean;
   isCurrent: boolean;
+  revealedRoleId: RoleId | null;
 };
 
 export type PublicGameView = {

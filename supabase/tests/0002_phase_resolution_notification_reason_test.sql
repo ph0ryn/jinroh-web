@@ -41,16 +41,28 @@ begin
   where rooms.public_room_code = p_room_code
   returning rooms.id into v_room_id;
 
-  update public.game_states
-  set status = 'playing',
-      phase = p_current_phase,
-      phase_instance_id = v_current_phase_instance_id,
-      phase_started_at = now() - interval '2 minutes',
-      phase_ends_at = now() - interval '1 minute',
-      day_number = 1,
-      night_number = 1,
-      revision = 0
-  where game_states.room_id = v_room_id;
+  insert into public.game_states (
+    day_number,
+    night_number,
+    phase,
+    phase_ends_at,
+    phase_instance_id,
+    phase_started_at,
+    revision,
+    room_id,
+    status
+  )
+  values (
+    1,
+    1,
+    p_current_phase,
+    now() - interval '1 minute',
+    v_current_phase_instance_id,
+    now() - interval '2 minutes',
+    0,
+    v_room_id,
+    'playing'
+  );
 
   select resolved.notification_reason
   into v_notification_reason

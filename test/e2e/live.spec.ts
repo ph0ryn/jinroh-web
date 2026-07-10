@@ -26,8 +26,12 @@ test("players can create, join, start, and finish first night through the UI", a
     await host.page.getByLabel("Players").selectOption("3");
     await host.page.getByRole("button", { name: "Create room" }).click();
     const inviteCode = host.page.locator('[aria-label="Room invite tools"] strong');
+    const roundTable = host.page.locator("[data-live-round-table]");
 
     await expect(inviteCode).toHaveText(/^\d{6}$/u);
+    await expect(roundTable).toBeVisible();
+    await expect(roundTable.locator('[data-live-seat-state="occupied"]')).toHaveCount(1);
+    await expect(roundTable.locator('[data-live-seat-state="empty"]')).toHaveCount(2);
     const roomCode = (await inviteCode.textContent())?.trim();
 
     if (roomCode === undefined || !/^\d{6}$/u.test(roomCode)) {
@@ -42,18 +46,36 @@ test("players can create, join, start, and finish first night through the UI", a
       );
     }
 
+    await expect(roundTable.locator('[data-live-seat-state="occupied"]')).toHaveCount(3);
+    await expect(roundTable.locator('[data-live-seat-state="empty"]')).toHaveCount(0);
+    await expect(roundTable.locator("[data-live-role-id]")).toHaveCount(0);
+    const waitingSeatMapping = await getPlayerSeatMapping(host.page);
+
+    for (const player of players) {
+      const orientation = await readCurrentSeatOrientation(player.page);
+
+      expect(Math.abs(orientation.currentSeatCenterX - orientation.tableCenterX)).toBeLessThan(1);
+      expect(orientation.currentSeatCenterY).toBeGreaterThan(orientation.tableCenterY);
+    }
+
     const startButton = host.page.getByRole("button", { name: "Start game" });
 
     await expect(startButton).toBeEnabled();
     await startButton.click();
 
     await expect(host.page.locator('[data-live-effect="role"]')).toBeVisible();
+    await expect(roundTable.locator("[data-live-role-id]")).toHaveCount(0);
+    await expect.poll(() => getPlayerSeatMapping(host.page)).toEqual(waitingSeatMapping);
 
     for (const player of players) {
       await expect(player.page.locator('.liveShell[data-live-mood="night"]')).toBeVisible();
-      await expect(player.page.getByLabel("Live game table")).toBeVisible();
+      await expect(player.page.getByLabel("Round table")).toBeVisible();
       await expect(player.page.getByRole("button", { name: "Reveal role card" })).toBeVisible();
       await expect(player.page.getByRole("button", { name: "Leave room" })).toHaveCount(0);
+      const orientation = await readCurrentSeatOrientation(player.page);
+
+      expect(Math.abs(orientation.currentSeatCenterX - orientation.tableCenterX)).toBeLessThan(1);
+      expect(orientation.currentSeatCenterY).toBeGreaterThan(orientation.tableCenterY);
     }
 
     for (const [index, player] of players.entries()) {
@@ -79,7 +101,9 @@ test("players can create, join, start, and finish first night through the UI", a
   }
 });
 
-test("leaving a lobby requires confirmation and transfers host controls", async ({ browser }) => {
+test("leaving while waiting requires confirmation and transfers host controls", async ({
+  browser,
+}) => {
   const consoleErrors: string[] = [];
   const players = await Promise.all(
     ["Aster", "Birch", "Cedar"].map((name) => createBrowserPlayer(browser, name, consoleErrors)),
@@ -87,11 +111,11 @@ test("leaving a lobby requires confirmation and transfers host controls", async 
   const [host, player2, player3] = players;
 
   if (host === undefined || player2 === undefined || player3 === undefined) {
-    throw new Error("Lobby leave players were not created.");
+    throw new Error("Waiting-room leave players were not created.");
   }
 
   try {
-    const roomCode = await createAndJoinLobby(host.page, [player2.page, player3.page]);
+    const roomCode = await createAndJoinWaitingRoom(host.page, [player2.page, player3.page]);
     const settingsButton = host.page.getByRole("button", { name: "Settings" });
 
     await settingsButton.click();
@@ -315,29 +339,53 @@ test("the desktop round table uses the available play area", async ({ page, requ
   await expect(tableBoard).toBeVisible();
   await expect(tableSurface).toBeVisible();
 
-  const geometry = await page.evaluate(() => {
-    const board = document.querySelector<HTMLElement>(".livePlayTablePanel .liveTableBoard");
-    const surface = document.querySelector<HTMLElement>(".livePlayTablePanel .liveTableSurface");
-
-    if (board === null || surface === null) {
-      throw new Error("Round table geometry was not rendered.");
-    }
-
-    const boardRect = board.getBoundingClientRect();
-    const surfaceRect = surface.getBoundingClientRect();
-
-    return {
-      boardBottom: boardRect.bottom,
-      boardHeight: boardRect.height,
-      surfaceHeight: surfaceRect.height,
-      surfaceWidth: surfaceRect.width,
-    };
-  });
+  const geometry = await readRoundTableGeometry(page);
 
   expect(geometry.boardHeight).toBeGreaterThan(650);
   expect(geometry.boardBottom).toBeGreaterThan(760);
-  expect(geometry.surfaceWidth).toBe(620);
+  expect(geometry.surfaceWidth).toBeGreaterThan(geometry.boardHeight * 0.8);
   expect(Math.abs(geometry.surfaceWidth - geometry.surfaceHeight)).toBeLessThan(1);
+  expect(geometry.seatsOutsideBoard).toEqual([]);
+  expect(geometry.overlappingSeatPairs).toEqual([]);
+});
+
+test("the ten-player round table keeps every seat readable on mobile", async ({
+  page,
+  request,
+}) => {
+  const { players } = await createStartedRoom(
+    request,
+    Array.from({ length: 10 }, (unusedValue, index) => {
+      void unusedValue;
+
+      return `Player ${index + 1}`;
+    }),
+  );
+  const host = players[0];
+
+  if (host === undefined) {
+    throw new Error("Ten-player round table host was not created.");
+  }
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.addInitScript(
+    ({ identityToken }) => {
+      window.localStorage.setItem("jinrohWeb.identityToken", identityToken);
+      window.localStorage.setItem("jinrohWeb.locale", "en");
+    },
+    { identityToken: host.token },
+  );
+  await page.goto("/live");
+  const roundTable = page.locator('[data-live-round-table][data-seat-density="compact"]');
+
+  await expect(roundTable).toBeVisible();
+  await expect(roundTable.locator('[data-live-seat-state="occupied"]')).toHaveCount(10);
+
+  const geometry = await readRoundTableGeometry(page);
+
+  expect(Math.abs(geometry.surfaceWidth - geometry.surfaceHeight)).toBeLessThan(1);
+  expect(geometry.seatsOutsideBoard).toEqual([]);
+  expect(geometry.overlappingSeatPairs).toEqual([]);
 });
 
 async function createBrowserPlayer(
@@ -368,7 +416,100 @@ async function fillRoomCode(page: Page, roomCode: string): Promise<void> {
   }
 }
 
-async function createAndJoinLobby(host: Page, guests: readonly Page[]): Promise<string> {
+async function getPlayerSeatMapping(page: Page): Promise<Record<string, string>> {
+  return page
+    .locator("[data-live-round-table]")
+    .evaluate((table) =>
+      Object.fromEntries(
+        [...table.querySelectorAll<HTMLElement>("[data-live-player-id]")].map((seat) => [
+          seat.dataset["livePlayerId"] ?? "",
+          seat.dataset["liveSeatNumber"] ?? "",
+        ]),
+      ),
+    );
+}
+
+async function readRoundTableGeometry(page: Page): Promise<{
+  readonly boardBottom: number;
+  readonly boardHeight: number;
+  readonly overlappingSeatPairs: readonly string[];
+  readonly seatsOutsideBoard: readonly string[];
+  readonly surfaceHeight: number;
+  readonly surfaceWidth: number;
+}> {
+  return page.locator("[data-live-round-table]").evaluate((board) => {
+    const surface = board.querySelector<HTMLElement>(".liveTableSurface");
+
+    if (surface === null) {
+      throw new Error("Round table surface was not rendered.");
+    }
+
+    const boardRect = board.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const seatRects = [...board.querySelectorAll<HTMLElement>("[data-live-seat-number]")].map(
+      (seat) => ({
+        id: seat.dataset["liveSeatNumber"] ?? "unknown",
+        rect: seat.getBoundingClientRect(),
+      }),
+    );
+    const seatsOutsideBoard = seatRects.flatMap(({ id, rect }) =>
+      rect.left < boardRect.left - 1 ||
+      rect.right > boardRect.right + 1 ||
+      rect.top < boardRect.top - 1 ||
+      rect.bottom > boardRect.bottom + 1
+        ? [id]
+        : [],
+    );
+    const overlappingSeatPairs = seatRects.flatMap((seat, index) =>
+      seatRects.slice(index + 1).flatMap((candidate) => {
+        const overlaps =
+          seat.rect.left < candidate.rect.right - 1 &&
+          seat.rect.right > candidate.rect.left + 1 &&
+          seat.rect.top < candidate.rect.bottom - 1 &&
+          seat.rect.bottom > candidate.rect.top + 1;
+
+        return overlaps ? [`${seat.id}:${candidate.id}`] : [];
+      }),
+    );
+
+    return {
+      boardBottom: boardRect.bottom,
+      boardHeight: boardRect.height,
+      overlappingSeatPairs,
+      seatsOutsideBoard,
+      surfaceHeight: surfaceRect.height,
+      surfaceWidth: surfaceRect.width,
+    };
+  });
+}
+
+async function readCurrentSeatOrientation(page: Page): Promise<{
+  readonly currentSeatCenterX: number;
+  readonly currentSeatCenterY: number;
+  readonly tableCenterX: number;
+  readonly tableCenterY: number;
+}> {
+  return page.locator("[data-live-round-table]").evaluate((board) => {
+    const surface = board.querySelector<HTMLElement>(".liveTableSurface");
+    const currentSeat = board.querySelector<HTMLElement>(".liveTableSeat.selected");
+
+    if (surface === null || currentSeat === null) {
+      throw new Error("Current player seat orientation was not rendered.");
+    }
+
+    const surfaceRect = surface.getBoundingClientRect();
+    const currentSeatRect = currentSeat.getBoundingClientRect();
+
+    return {
+      currentSeatCenterX: currentSeatRect.left + currentSeatRect.width / 2,
+      currentSeatCenterY: currentSeatRect.top + currentSeatRect.height / 2,
+      tableCenterX: surfaceRect.left + surfaceRect.width / 2,
+      tableCenterY: surfaceRect.top + surfaceRect.height / 2,
+    };
+  });
+}
+
+async function createAndJoinWaitingRoom(host: Page, guests: readonly Page[]): Promise<string> {
   await host.getByLabel("Players").selectOption(String(guests.length + 1));
   await host.getByRole("button", { name: "Create room" }).click();
 

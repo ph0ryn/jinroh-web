@@ -177,7 +177,7 @@ export function StartSettingsDialog({
       >
         <div className="liveSettingsHeader">
           <div>
-            <span>{t.live.lobby.hostControls}</span>
+            <span>{t.live.waiting.hostControls}</span>
             <h2 id="start-settings-title">{t.live.settings.title}</h2>
             <p>{t.live.settings.description}</p>
           </div>
@@ -301,7 +301,7 @@ function StartRuleSetPanel({
     roleCounts === null ? [] : getActiveRoleSpecificOptions(roleCatalog, roleCounts);
   const isRoleMixValid = roleValidationMessages.length === 0;
   const displayedRoleValidationMessages = isRoleMixValid
-    ? [t.live.settings.validation.validForLobby]
+    ? [t.live.settings.validation.validForWaiting]
     : roleValidationMessages;
   const flowItems = getSettingsFlowItems(settings, t);
 

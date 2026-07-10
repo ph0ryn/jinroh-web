@@ -23,7 +23,8 @@ returns table(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamp with time zone,
+  waiting_expires_at timestamp with time zone,
+  started_at timestamp with time zone,
   actor_player_id bigint,
   notification_reason text
 )
@@ -79,7 +80,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -103,7 +105,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -141,7 +144,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -167,7 +171,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -271,7 +276,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_host_player.id,
       case
         when p_final_outcome is not null then 'game_ended'::text

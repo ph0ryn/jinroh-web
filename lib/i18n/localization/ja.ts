@@ -231,10 +231,6 @@ export const jaLocalization = {
           body: "部屋に参加すると役職ごとの指示が読み込まれます。",
           title: "非公開アクションなし",
         },
-        roomClosed: {
-          body: "この部屋は閉じられています。続けるには新しい部屋を作成または参加してください。",
-          title: "部屋は終了済み",
-        },
         waitingForStart: {
           body: "ホストがゲームを開始すると非公開アクションが表示されます。",
           title: "開始待ち",
@@ -248,7 +244,7 @@ export const jaLocalization = {
       day: "昼",
       execution: "処刑",
       game: "ゲーム",
-      lobby: "ロビー",
+      waiting: "待機中",
       night: "夜",
       result: "結果",
       setup: "準備",
@@ -350,7 +346,7 @@ export const jaLocalization = {
       day: { detail: "議論", label: "昼", mobileLabel: "昼" },
       execution: { detail: "公開", label: "処刑", mobileLabel: "処刑" },
       home: { detail: "作成または復帰", label: "ホーム", mobileLabel: "ホーム" },
-      lobby: { detail: "部屋準備", label: "ロビー", mobileLabel: "ロビー" },
+      waiting: { detail: "部屋準備", label: "待機中", mobileLabel: "待機中" },
       night: { detail: "役職アクション", label: "夜", mobileLabel: "夜" },
       result: { detail: "結果", label: "結果", mobileLabel: "結果" },
       voting: { detail: "投票", label: "投票", mobileLabel: "投票" },
@@ -372,7 +368,7 @@ export const jaLocalization = {
     room: {
       code: (roomCode: string) => `部屋 ${roomCode}`,
       codeLabel: "部屋コード",
-      createBody: "ロビーを開いてホストになり、6桁コードでプレイヤーを招待します。",
+      createBody: "部屋を作ってホストになり、6桁コードでプレイヤーを招待します。",
       createTitle: "部屋を作る",
       joinTitle: "コードで参加",
     },
@@ -413,12 +409,12 @@ export const jaLocalization = {
         summary: "部屋を作り、6桁コードで参加し、共有ゲーム状態を整えます。",
         title: "テーブルを進行",
       },
-      lobby: {
-        notice: "開始されないロビーは期限切れになります。ホスト操作はサーバーで認可されます。",
+      waiting: {
+        notice: "開始されない部屋は期限切れになります。ホスト操作はサーバーで認可されます。",
         primaryAction: "ゲーム開始",
         secondaryAction: "部屋コードをコピー",
         summary: "ホストは参加者確認、ルール調整、全員揃った時点での開始ができます。",
-        title: "ロビー",
+        title: "待機中",
       },
       night: {
         notice: "夜アクションは非公開です。リアルタイム通知は状態の再取得だけを促します。",
@@ -448,9 +444,7 @@ export const jaLocalization = {
       commonPhaseTiming: "ゲームの制限時間",
       currentPhase: "現在の場面",
       invite: "招待",
-      liveGameTable: "進行中ゲームテーブル",
-      lobbyControls: "ロビー操作",
-      lobbySeats: "ロビー席",
+      roundTable: "円卓",
       nightConversation: "夜会話",
       notifications: "通知",
       popupPanels: "ポップアップパネル",
@@ -462,6 +456,7 @@ export const jaLocalization = {
       roomSetup: "部屋準備",
       roomState: "部屋状態",
       settingsSections: "設定セクション",
+      waitingControls: "待機中の操作",
     },
     buttons: {
       applySettings: "設定を適用",
@@ -541,46 +536,12 @@ export const jaLocalization = {
       meta: (count: number) => `${count}件の非公開結果`,
       title: "あなたへの結果",
     },
-    guidance: {
-      closed: { label: "終了", message: "この部屋は解散済みです。" },
-      full: { label: "定員超過", message: "参加人数を定員以内にしてください。" },
-      host: {
-        label: "ホスト",
-        message: "全員の行動が終わったら、ゲームを進めてください。",
-      },
-      invite: (count: number) => ({
-        label: "招待",
-        message: `開始にはあと ${count}人 必要です。`,
-      }),
-      lobby: (joined: number, target: number) => ({
-        label: "ロビー",
-        message: `${joined}/${target} 席が埋まっています。ホストを待っています。`,
-      }),
-      privateNight: (label: string) => ({ label: "非公開の夜", message: label }),
-      progress: (submitted: number, required: number, label: string) => ({
-        label: "進捗",
-        message: `${submitted}/${required} ${label}`,
-      }),
-      ready: { label: "準備完了", message: "選択された席がすべて埋まりました。開始できます。" },
-      result: (winner: string) => ({
-        label: "結果",
-        message: `${winner}の勝利です。準備できたら新しい部屋を開始してください。`,
-      }),
-      setup: { label: "準備", message: "部屋を作るか、6桁コードで参加してください。" },
-      syncing: { label: "更新中", message: "最新の部屋情報を読み込んでいます。" },
-      waiting: { label: "待機中", message: "他のプレイヤーまたはホストを待っています。" },
-      yourTurn: {
-        label: "あなたの番",
-        message: "下に表示された役職アクションを選んでください。",
-      },
-    },
     hints: {
       controlsNeedRoom: "先に部屋を作るか、部屋に参加してください。",
       hostOnlyStart: "ゲーム開始はホストだけが行えます。",
       reviewResult: "このテーブルの結果を確認してください。",
-      roomClosed: "この部屋は閉じられています。",
       startAfterSync: "更新が終わると開始できます。",
-      startInLobby: "開始できるのは部屋がロビーの間だけです。",
+      startInWaiting: "開始できるのは部屋が待機中の間だけです。",
       startNeedsRoom: "開始する前に部屋を作成または参加してください。",
       startWhenSeated: "全員が着席したらゲームを開始してください。",
       tooManyPlayers: "参加人数が選択した定員を超えています。",
@@ -607,7 +568,7 @@ export const jaLocalization = {
         share: "参加するプレイヤーに部屋コードを共有してください。",
       },
     },
-    lobby: {
+    waiting: {
       host: "ホスト",
       hostControls: "ホスト操作",
       open: "空き",
@@ -641,14 +602,12 @@ export const jaLocalization = {
     page: {
       result: "結果",
       room: (roomCode: string) => `部屋 ${roomCode}`,
-      roomClosed: "部屋は終了済み",
       roomSetup: "部屋準備",
     },
     player: {
       yourRole: "あなたの役職",
     },
     phasePanel: {
-      closed: { label: "終了", message: "このテーブルは閉じられています。" },
       day: { label: "昼", message: "朝が訪れました。話し合い、投票に備えてください。" },
       execution: { label: "処刑", message: "処刑される者の最後の言葉を待っています。" },
       game: { label: "ゲーム", message: "現在の状況を読み込んでいます。" },
@@ -662,7 +621,6 @@ export const jaLocalization = {
     },
     room: {
       checkingCurrent: "現在入室中の部屋を確認しています...",
-      closed: "部屋は終了済みです。部屋を作成または参加してください。",
       created: (roomCode: string) =>
         `部屋 ${roomCode} を作成しました。プレイヤーにコードを共有してください。`,
       currentChanged: "入室中の部屋が変わったため、最新の部屋を表示しました。",
@@ -690,15 +648,14 @@ export const jaLocalization = {
     roomStatus: {
       noRoom: "部屋なし",
       status: {
-        disbanded: "終了済み",
         ended: "終了",
-        lobby: "ロビー",
         playing: "進行中",
+        waiting: "待機中",
       },
       value: (status: string, phase: string) => `${status} / ${phase}`,
     },
     setup: {
-      createHint: "新しいロビーを開き、ホストとしてゲームを準備します。",
+      createHint: "新しい部屋を作り、ホストとしてゲームを準備します。",
       createTitle: "部屋を作る",
       displayName: "表示名",
       guest: "ゲスト",
@@ -815,7 +772,7 @@ export const jaLocalization = {
         needsAdjustment: "調整が必要",
         readyToApply: "適用できます",
         removeRoles: (count: number) => `役職人数を${count}人分減らしてください。`,
-        validForLobby: "このロビーの役職数は有効です。",
+        validForWaiting: "この部屋の役職人数は有効です。",
       },
       description: "初夜が始まる前に部屋の進行を調整します。",
     },
@@ -825,7 +782,6 @@ export const jaLocalization = {
       realtimeFailed: "自動更新が一時的に止まりました。定期的に情報を更新しています。",
     },
     table: {
-      closed: "終了済み",
       gameStateLoading: "ゲームの状況を読み込んでいます。",
       noticeDay: "話し合いが終わったら、投票へ進む準備をしてください。",
       noticeExecution: "処刑される者の最後の言葉を待っています。",

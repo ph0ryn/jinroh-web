@@ -20,7 +20,10 @@ begin
     join public.rooms
       on rooms.id = players.room_id
     where players.status in ('joined', 'disconnected')
-      and rooms.status in ('lobby', 'playing', 'ended')
+      and (
+        rooms.status in ('waiting', 'playing')
+        or (rooms.status = 'ended' and rooms.started_at is not null)
+      )
     group by players.account_id
     having count(distinct players.room_id) > 1
   ) then
@@ -39,7 +42,10 @@ from (
   join public.rooms
     on rooms.id = players.room_id
   where players.status in ('joined', 'disconnected')
-    and rooms.status in ('lobby', 'playing', 'ended')
+    and (
+      rooms.status in ('waiting', 'playing')
+      or (rooms.status = 'ended' and rooms.started_at is not null)
+    )
   group by players.account_id
 ) as active_memberships
 where accounts.id = active_memberships.account_id;
@@ -53,6 +59,7 @@ as $$
 declare
   v_active_room_count integer;
   v_current_room_id bigint;
+  v_current_room_started_at timestamptz;
   v_current_room_status text;
   v_has_current_player boolean;
 begin
@@ -72,7 +79,10 @@ begin
     on rooms.id = players.room_id
   where players.account_id = p_account_id
     and players.status in ('joined', 'disconnected')
-    and rooms.status in ('lobby', 'playing', 'ended');
+    and (
+      rooms.status in ('waiting', 'playing')
+      or (rooms.status = 'ended' and rooms.started_at is not null)
+    );
 
   if v_current_room_id is null then
     if v_active_room_count <> 0 then
@@ -84,8 +94,8 @@ begin
     return;
   end if;
 
-  select rooms.status
-  into v_current_room_status
+  select rooms.started_at, rooms.status
+  into v_current_room_started_at, v_current_room_status
   from public.rooms
   where rooms.id = v_current_room_id;
 
@@ -98,7 +108,10 @@ begin
   )
   into v_has_current_player;
 
-  if v_current_room_status not in ('lobby', 'playing', 'ended')
+  if not (
+      v_current_room_status in ('waiting', 'playing')
+      or (v_current_room_status = 'ended' and v_current_room_started_at is not null)
+    )
     or not coalesce(v_has_current_player, false)
     or v_active_room_count <> 1
   then
@@ -200,14 +213,17 @@ create constraint trigger rooms_validate_account_current_room
   deferrable initially deferred
   for each row execute function public.app_validate_account_current_room();
 
-create function public.app_release_current_room_on_disband()
+create function public.app_release_current_room_on_waiting_end()
 returns trigger
 language plpgsql
 security invoker
 set search_path = public
 as $$
 begin
-  if old.status is not distinct from new.status or new.status <> 'disbanded' then
+  if old.status <> 'waiting'
+    or new.status <> 'ended'
+    or new.started_at is not null
+  then
     return new;
   end if;
 
@@ -235,11 +251,15 @@ begin
 end;
 $$;
 
-create trigger rooms_release_current_room_on_disband
+create trigger rooms_release_current_room_on_waiting_end
   after update of status on public.rooms
   for each row
-  when (old.status is distinct from new.status and new.status = 'disbanded')
-  execute function public.app_release_current_room_on_disband();
+  when (
+    old.status = 'waiting'
+    and new.status = 'ended'
+    and new.started_at is null
+  )
+  execute function public.app_release_current_room_on_waiting_end();
 
 create function public.app_sync_current_room_from_player()
 returns trigger
@@ -249,6 +269,7 @@ set search_path = public
 as $$
 declare
   v_current_room_id bigint;
+  v_new_room_started_at timestamptz;
   v_new_room_status text;
 begin
   if tg_op = 'DELETE' then
@@ -293,12 +314,14 @@ begin
   end if;
 
   if new.status in ('joined', 'disconnected') then
-    select rooms.status
-    into v_new_room_status
+    select rooms.started_at, rooms.status
+    into v_new_room_started_at, v_new_room_status
     from public.rooms
     where rooms.id = new.room_id;
 
-    if v_new_room_status in ('lobby', 'playing', 'ended') then
+    if v_new_room_status in ('waiting', 'playing')
+      or (v_new_room_status = 'ended' and v_new_room_started_at is not null)
+    then
       select accounts.current_room_id
       into v_current_room_id
       from public.accounts
@@ -328,21 +351,21 @@ revoke all on function public.app_assert_account_current_room(bigint)
   from public, anon, authenticated;
 revoke all on function public.app_validate_account_current_room()
   from public, anon, authenticated;
-revoke all on function public.app_release_current_room_on_disband()
+revoke all on function public.app_release_current_room_on_waiting_end()
   from public, anon, authenticated;
 revoke all on function public.app_sync_current_room_from_player()
   from public, anon, authenticated;
 
 grant execute on function public.app_assert_account_current_room(bigint) to service_role;
 grant execute on function public.app_validate_account_current_room() to service_role;
-grant execute on function public.app_release_current_room_on_disband() to service_role;
+grant execute on function public.app_release_current_room_on_waiting_end() to service_role;
 grant execute on function public.app_sync_current_room_from_player() to service_role;
 
 create or replace function public.app_create_room(
   p_account_id bigint,
   p_public_room_code text,
   p_realtime_topic text,
-  p_lobby_expires_at timestamptz,
+  p_waiting_expires_at timestamptz,
   p_public_player_id text,
   p_display_name text,
   p_target_player_count integer
@@ -352,7 +375,8 @@ create or replace function public.app_create_room(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text
 )
@@ -387,7 +411,7 @@ begin
 
   insert into public.rooms (
     host_account_id,
-    lobby_expires_at,
+    waiting_expires_at,
     public_room_code,
     realtime_topic,
     status,
@@ -395,10 +419,10 @@ begin
   )
   values (
     p_account_id,
-    p_lobby_expires_at,
+    p_waiting_expires_at,
     p_public_room_code,
     p_realtime_topic,
-    'lobby',
+    'waiting',
     p_target_player_count
   )
   returning * into v_room;
@@ -423,9 +447,6 @@ begin
   set current_room_id = v_room.id
   where accounts.id = p_account_id;
 
-  insert into public.game_states (room_id, status)
-  values (v_room.id, 'waiting');
-
   insert into public.realtime_topics (room_id, scope, topic)
   values (v_room.id, 'room', p_realtime_topic);
 
@@ -445,7 +466,8 @@ begin
     v_room.status,
     v_room.host_account_id,
     v_room.realtime_topic,
-    v_room.lobby_expires_at,
+    v_room.waiting_expires_at,
+    v_room.started_at,
     v_player_id,
     'room_created'::text;
 end;
@@ -462,7 +484,8 @@ create or replace function public.app_join_room(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text
 )
@@ -481,7 +504,7 @@ begin
   from public.rooms
   where rooms.public_room_code = p_room_code
   order by
-    case when rooms.status in ('lobby', 'playing') then 0 else 1 end,
+    case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
     rooms.created_at desc
   limit 1
   for update;
@@ -490,11 +513,11 @@ begin
     raise exception using errcode = 'P0001', message = 'room_not_found';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     raise exception using errcode = 'P0001', message = 'room_expired';
   end if;
 
-  if v_room.status not in ('lobby', 'playing') then
+  if v_room.status not in ('waiting', 'playing') then
     raise exception using errcode = 'P0001', message = 'room_not_joinable';
   end if;
 
@@ -551,7 +574,7 @@ begin
     where players.id = v_player.id
     returning * into v_player;
   else
-    if v_room.status <> 'lobby' then
+    if v_room.status <> 'waiting' then
       raise exception using errcode = 'P0001', message = 'room_not_joinable';
     end if;
 
@@ -604,7 +627,8 @@ begin
     v_room.status,
     v_room.host_account_id,
     v_room.realtime_topic,
-    v_room.lobby_expires_at,
+    v_room.waiting_expires_at,
+    v_room.started_at,
     v_player.id,
     v_event_kind;
 end;
@@ -619,7 +643,8 @@ create function public.app_leave_current_room_locked(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text
 )
@@ -658,12 +683,12 @@ begin
     raise exception using errcode = 'P0001', message = 'room_switch_forbidden';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -676,8 +701,8 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
 
@@ -688,13 +713,14 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       null::bigint,
-      'room_disbanded'::text;
+      'waiting_room_ended'::text;
     return;
   end if;
 
-  if v_room.status not in ('lobby', 'ended') then
+  if v_room.status not in ('waiting', 'ended') then
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
@@ -750,12 +776,12 @@ begin
   order by players.joined_at asc, players.id asc
   limit 1;
 
-  if not found and v_room.status = 'lobby' then
+  if not found and v_room.status = 'waiting' then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -768,17 +794,17 @@ begin
     values (
       p_account_id,
       v_player.id,
-      'room_disbanded',
-      '{"reason":"last_player_left_lobby"}'::jsonb,
+      'room_ended',
+      '{"reason":"last_player_left_waiting_room"}'::jsonb,
       v_room.id
     );
 
-    v_notification_reason := 'room_disbanded';
+    v_notification_reason := 'waiting_room_ended';
   elsif found and v_room.host_account_id = p_account_id then
     update public.rooms
     set host_account_id = v_remaining_player.account_id
     where rooms.id = v_room.id
-      and rooms.status in ('lobby', 'ended')
+      and rooms.status in ('waiting', 'ended')
     returning * into v_room;
   end if;
 
@@ -789,7 +815,8 @@ begin
     v_room.status,
     v_room.host_account_id,
     v_room.realtime_topic,
-    v_room.lobby_expires_at,
+    v_room.waiting_expires_at,
+    v_room.started_at,
     v_player.id,
     v_notification_reason;
 end;
@@ -804,7 +831,8 @@ create or replace function public.app_leave_room(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text
 )
@@ -841,7 +869,8 @@ create or replace function public.app_heartbeat_room_player(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text
 )
@@ -882,12 +911,12 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -900,8 +929,8 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
 
@@ -912,13 +941,14 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       null::bigint,
-      'room_disbanded'::text;
+      'waiting_room_ended'::text;
     return;
   end if;
 
-  if v_room.status not in ('lobby', 'playing') then
+  if v_room.status not in ('waiting', 'playing') then
     return query
     select
       v_room.id,
@@ -926,7 +956,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       null::bigint,
       null::text;
     return;
@@ -1017,7 +1048,8 @@ begin
     v_room.status,
     v_room.host_account_id,
     v_room.realtime_topic,
-    v_room.lobby_expires_at,
+    v_room.waiting_expires_at,
+    v_room.started_at,
     v_player.id,
     v_notification_reason;
 end;
@@ -1031,7 +1063,8 @@ create function public.app_get_current_room(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text
 )
@@ -1078,12 +1111,12 @@ begin
     return;
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -1096,8 +1129,8 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
 
@@ -1108,9 +1141,10 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       null::bigint,
-      'room_disbanded'::text;
+      'waiting_room_ended'::text;
     return;
   end if;
 
@@ -1128,7 +1162,8 @@ begin
     v_room.status,
     v_room.host_account_id,
     v_room.realtime_topic,
-    v_room.lobby_expires_at,
+    v_room.waiting_expires_at,
+    v_room.started_at,
     v_player_id,
     null::text;
 end;
@@ -1139,7 +1174,7 @@ create function public.app_switch_create_room(
   p_expected_current_room_code text,
   p_public_room_code text,
   p_realtime_topic text,
-  p_lobby_expires_at timestamptz,
+  p_waiting_expires_at timestamptz,
   p_public_player_id text,
   p_display_name text,
   p_target_player_count integer
@@ -1149,7 +1184,8 @@ create function public.app_switch_create_room(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text,
   source_id bigint,
@@ -1157,7 +1193,8 @@ create function public.app_switch_create_room(
   source_status text,
   source_host_account_id bigint,
   source_realtime_topic text,
-  source_lobby_expires_at timestamptz,
+  source_waiting_expires_at timestamptz,
+  source_started_at timestamptz,
   source_actor_player_id bigint,
   source_notification_reason text
 )
@@ -1222,7 +1259,7 @@ begin
     p_account_id,
     p_public_room_code,
     p_realtime_topic,
-    p_lobby_expires_at,
+    p_waiting_expires_at,
     p_public_player_id,
     p_display_name,
     p_target_player_count
@@ -1235,7 +1272,8 @@ begin
     v_target_result.status,
     v_target_result.host_account_id,
     v_target_result.realtime_topic,
-    v_target_result.lobby_expires_at,
+    v_target_result.waiting_expires_at,
+    v_target_result.started_at,
     v_target_result.actor_player_id,
     v_target_result.notification_reason,
     v_source_result.id,
@@ -1243,7 +1281,8 @@ begin
     v_source_result.status,
     v_source_result.host_account_id,
     v_source_result.realtime_topic,
-    v_source_result.lobby_expires_at,
+    v_source_result.waiting_expires_at,
+    v_source_result.started_at,
     v_source_result.actor_player_id,
     v_source_result.notification_reason;
 end;
@@ -1261,7 +1300,8 @@ create function public.app_switch_join_room(
   status text,
   host_account_id bigint,
   realtime_topic text,
-  lobby_expires_at timestamptz,
+  waiting_expires_at timestamptz,
+  started_at timestamptz,
   actor_player_id bigint,
   notification_reason text,
   source_id bigint,
@@ -1269,7 +1309,8 @@ create function public.app_switch_join_room(
   source_status text,
   source_host_account_id bigint,
   source_realtime_topic text,
-  source_lobby_expires_at timestamptz,
+  source_waiting_expires_at timestamptz,
+  source_started_at timestamptz,
   source_actor_player_id bigint,
   source_notification_reason text
 )
@@ -1300,7 +1341,7 @@ begin
   from public.rooms
   where rooms.public_room_code = p_target_room_code
   order by
-    case when rooms.status in ('lobby', 'playing') then 0 else 1 end,
+    case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
     rooms.created_at desc
   limit 1;
 
@@ -1350,11 +1391,11 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
-  if v_target_room.status = 'lobby' and v_target_room.lobby_expires_at <= now() then
+  if v_target_room.status = 'waiting' and v_target_room.waiting_expires_at <= now() then
     raise exception using errcode = 'P0001', message = 'room_expired';
   end if;
 
-  if v_target_room.status <> 'lobby' then
+  if v_target_room.status <> 'waiting' then
     raise exception using errcode = 'P0001', message = 'room_not_joinable';
   end if;
 
@@ -1378,7 +1419,8 @@ begin
     v_target_result.status,
     v_target_result.host_account_id,
     v_target_result.realtime_topic,
-    v_target_result.lobby_expires_at,
+    v_target_result.waiting_expires_at,
+    v_target_result.started_at,
     v_target_result.actor_player_id,
     v_target_result.notification_reason,
     v_source_result.id,
@@ -1386,7 +1428,8 @@ begin
     v_source_result.status,
     v_source_result.host_account_id,
     v_source_result.realtime_topic,
-    v_source_result.lobby_expires_at,
+    v_source_result.waiting_expires_at,
+    v_source_result.started_at,
     v_source_result.actor_player_id,
     v_source_result.notification_reason;
 end;
@@ -1425,7 +1468,10 @@ begin
   from public.rooms
   where rooms.id = v_current_room_id
     and rooms.public_room_code = p_room_code
-    and rooms.status in ('lobby', 'playing', 'ended');
+    and (
+      rooms.status in ('waiting', 'playing')
+      or (rooms.status = 'ended' and rooms.started_at is not null)
+    );
 
   if not found then
     raise exception using errcode = 'P0001', message = 'current_room_changed';
@@ -1460,7 +1506,10 @@ as $$
      and accounts.current_room_id = players.room_id
     join public.rooms
       on rooms.id = players.room_id
-     and rooms.status in ('lobby', 'playing', 'ended')
+     and (
+       rooms.status in ('waiting', 'playing')
+       or (rooms.status = 'ended' and rooms.started_at is not null)
+     )
     join public.realtime_grant_topics
       on realtime_grant_topics.grant_id = realtime_grants.id
     join public.realtime_topics
