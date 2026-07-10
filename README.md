@@ -64,6 +64,7 @@ Create `.env.local` with the local values printed by `supabase start`:
 
 ```sh
 ACCOUNT_TOKEN_HASH_SECRET=<generated 32-byte base64 secret>
+MAINTENANCE_SECRET=<random secret containing at least 32 bytes>
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY>
 SUPABASE_JWT_SECRET=<JWT_SECRET>
@@ -174,6 +175,7 @@ Optional maintenance endpoint for cron or manual cleanup:
 
 ```sh
 curl -X POST http://localhost:3000/api/maintenance/expire-lobbies \
+  -H "authorization: Bearer $MAINTENANCE_SECRET" \
   -H "content-type: application/json" \
   -d '{"limit":50}'
 ```
@@ -190,6 +192,7 @@ Production environment variables:
 
 ```sh
 ACCOUNT_TOKEN_HASH_SECRET=
+MAINTENANCE_SECRET=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
@@ -214,7 +217,9 @@ E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e:security
 ```
 
 If using scheduled cleanup, call `/api/maintenance/expire-lobbies` from a
-trusted cron job. The endpoint is idempotent for already-expired lobbies.
+trusted cron job with `Authorization: Bearer <MAINTENANCE_SECRET>`. The secret
+must contain at least 32 bytes. The endpoint is idempotent for already-expired
+lobbies.
 
 ## Validation
 

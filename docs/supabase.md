@@ -483,6 +483,8 @@ Lobby expiration は正しさの一部。
 scheduled cleanup はあってもよいが、正しさの入口にしない。
 `app_cleanup_expired_lobbies` は、放置された expired lobby を batch で
 `disbanded` にし、`room_disbanded` event を記録する maintenance 用入口である。
+Next.js の maintenance endpoint は server-only `MAINTENANCE_SECRET` を Bearer
+credential として検証し、未認証の caller からこの RPC を実行させない。
 
 ## Game Tables
 

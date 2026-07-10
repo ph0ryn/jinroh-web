@@ -1,11 +1,18 @@
 import { cleanupExpiredLobbies } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
+import { isAuthorizedMaintenanceRequest } from "@/lib/server/maintenanceAuth";
 
 type CleanupExpiredLobbiesBody = {
   limit?: unknown;
 };
 
 export async function POST(request: Request): Promise<Response> {
+  const authenticationFailure = getAuthenticationFailure(request);
+
+  if (authenticationFailure !== null) {
+    return authenticationFailure;
+  }
+
   const body = await readJson<CleanupExpiredLobbiesBody>(request);
   const parsedLimit = parseLimit(body?.limit);
 
@@ -17,6 +24,16 @@ export async function POST(request: Request): Promise<Response> {
     return jsonOk(await cleanupExpiredLobbies(parsedLimit.limit));
   } catch {
     return jsonError("server_error", "Expired lobby cleanup failed.", 500);
+  }
+}
+
+function getAuthenticationFailure(request: Request): Response | null {
+  try {
+    return isAuthorizedMaintenanceRequest(request)
+      ? null
+      : jsonError("unauthorized", "Valid maintenance credentials are required.", 401);
+  } catch {
+    return jsonError("server_error", "Maintenance authentication is not configured.", 500);
   }
 }
 

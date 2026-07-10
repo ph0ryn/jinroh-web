@@ -33,6 +33,16 @@ export function getSupabaseJwtSecret(): string {
   return readRequiredEnv("SUPABASE_JWT_SECRET");
 }
 
+export function getMaintenanceSecret(): string {
+  const maintenanceSecret = readRequiredEnv("MAINTENANCE_SECRET");
+
+  if (Buffer.byteLength(maintenanceSecret, "utf8") < 32) {
+    throw new Error("MAINTENANCE_SECRET must contain at least 32 bytes.");
+  }
+
+  return maintenanceSecret;
+}
+
 function readRequiredEnv(key: string): string {
   const value = process.env[key];
 
