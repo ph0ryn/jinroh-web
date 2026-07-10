@@ -237,8 +237,8 @@ and security coverage sequentially. The individual commands remain available:
 `test:e2e`, `test:e2e:roles`, `test:e2e:security`, and
 `E2E_RULESET=ordered_speech E2E_PORT=3015 node scripts/e2e-live-smoke.mjs`.
 
-`test:e2e:roles` launches eight isolated browser contexts and verifies the
-default role set, role-private night actions, night conversation visibility,
+`test:e2e:roles` launches eight isolated browser contexts and verifies a
+configured role mix, role-private night actions, night conversation visibility,
 non-member rejection, and read-only chat after night. To test an already
 running deployment, pass `E2E_BASE_URL=https://...` to the E2E command.
 

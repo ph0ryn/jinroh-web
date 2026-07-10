@@ -172,7 +172,7 @@ function indexRoleOwners(entries) {
 }
 
 function assertRequiredRoles(roleOwners) {
-  for (const roleId of ["fox", "guard", "madman", "seer", "werewolf"]) {
+  for (const roleId of ["guard", "madman", "seer", "werewolf"]) {
     if (!roleOwners.has(roleId)) {
       throw new Error(`Expected ${roleId} in eight-player default setup.`);
     }

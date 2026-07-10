@@ -130,6 +130,11 @@ async function runRoleCoverage(baseUrl, supabase) {
 
     await refresh(host.page);
     await waitSeated(host.page, players.length, players.length);
+    await host.page.getByRole("button", { name: "Settings" }).click();
+    await host.page.getByRole("tab", { name: "Roles" }).click();
+    await host.page.getByRole("button", { name: "Decrease Villager" }).click();
+    await host.page.getByRole("button", { name: "Increase Fox" }).click();
+    await host.page.getByRole("button", { name: "Apply settings" }).click();
     await host.page.getByRole("button", { name: "Start game" }).click();
     await waitPhase(host.page, "night");
     await refreshAll(players.slice(1));
@@ -141,7 +146,7 @@ async function runRoleCoverage(baseUrl, supabase) {
 
     for (const roleId of requiredRoles) {
       if (!roleOwners.has(roleId)) {
-        throw new Error(`Expected role ${roleId} in eight-player default setup.`);
+        throw new Error(`Expected role ${roleId} in the configured eight-player setup.`);
       }
     }
 

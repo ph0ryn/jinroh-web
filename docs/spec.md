@@ -22,7 +22,7 @@ Phase 1 のマイルストーンでは、匿名ロビー基盤から実ゲーム
 - 開始されなかったルームのクリーンアップ
 - 役職割り当て
 - First night / Night / Day / Voting / Execution / Result の進行
-- Werewolf / Villager / Madman / Seer / Guard / Fox の初期役職セット
+- Werewolf / Villager / Madman / Seer / Guard / Fox を開始時に選択できる役職
 - 夜 action、投票、処刑、勝敗判定
 - role-private night conversation
 - 秘密情報を切り出した public / self private / role private view
@@ -521,7 +521,7 @@ Next.js API から再読み込みする。
 - リアルタイムメッセージは状態変更の成功後に送信する。
 - Realtime payload は invalidation 用の reason と safe room identifier だけを持つ。
 - 初期対応人数は 3 から 10 人であり、Room 作成時に開始人数を選ぶ。
-- 初期 Role は Werewolf / Villager / Madman / Seer / Guard / Fox である。
+- 開始時に選択できる Role は Werewolf / Villager / Madman / Seer / Guard / Fox である。
 - RuleSet はゲーム開始時に固定する。
 - First night は user-visible phase として `night` を使い、`nightNumber === 1`
   で通常夜と区別する。

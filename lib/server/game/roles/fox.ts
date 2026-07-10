@@ -36,7 +36,9 @@ export class FoxRole extends Role {
   override readonly team = Team.Fox;
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
-    return context.playerCount >= 8 ? 1 : 0;
+    void context;
+
+    return 0;
   }
 
   override countAs(context: PlayerRoleContext): CountGroup {
