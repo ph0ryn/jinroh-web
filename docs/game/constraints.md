@@ -40,6 +40,9 @@
 - winner judgement は setup contribution としてゲーム開始時に固定する
 - winner judgement は priority の小さい順に評価する
 - PlayerResult は最終 state 固定後に評価する
+- Playing / Ended の全Playerは、登録済みRoleのassignmentとalive stateを1件ずつ持つ
+- Ended の全Playerは、固定済みfinal outcomeに対応するPlayerResultを1件ずつ持つ
+- assignment、alive state、PlayerResultの欠損や未知Roleをdefault値で補完しない
 - Account ID をゲームロジックに出さない
 - Player ID をゲーム内の主体として使う
 - phase は `night`、`day`、`voting`、`execution` のユーザー表示用状態に限定する
@@ -146,6 +149,8 @@
 - 妖狐のような高 priority winner judgement は、成立した場合に他 Team の勝利を上書きできる
 - `Team.Fox` の winner judgement は、FoxRole を持つ1人の生存を見て成立する
 - PlayerResult は最終 state 固定後にだけ評価される
+- assignmentまたはalive stateが欠損した保存状態ではview表示とphase解決を失敗させる
+- final outcomeのPlayerResultが欠損した場合は`lose`へ補完せず終了処理を失敗させる
 - final outcome はゲーム終了時に固定され、表示のたびに再計算されない
 - GameEvent history から前回行動や使用済み能力を判定できる
 - DeathReason によって処刑死、襲撃死、反撃死を区別できる

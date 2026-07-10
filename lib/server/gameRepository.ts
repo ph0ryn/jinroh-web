@@ -658,10 +658,18 @@ async function resolveRoom(account: AccountRecord, roomCode: string): Promise<Ro
     p_player_results:
       finalOutcome === null
         ? []
-        : runtimePlayers.map((runtimePlayer) => ({
-            player_id: Number.parseInt(runtimePlayer.playerId, 10),
-            result: finalOutcome.playerResultsByPlayerId[runtimePlayer.playerId] ?? "lose",
-          })),
+        : runtimePlayers.map((runtimePlayer) => {
+            const result = finalOutcome.playerResultsByPlayerId[runtimePlayer.playerId];
+
+            if (result === undefined) {
+              throw new Error("Final outcome is missing a player result.");
+            }
+
+            return {
+              player_id: Number.parseInt(runtimePlayer.playerId, 10),
+              result,
+            };
+          }),
     p_room_code: roomCode,
   });
   const resolvedRoom = toRoomRecord(transactionResult);
@@ -718,6 +726,15 @@ async function buildRoomViewByRoom(
     getPlayerResults(supabase, currentRoom.id),
     getNightConversationMessages(supabase, currentRoom.id),
   ]);
+  assertPersistedGameState(
+    currentRoom,
+    state,
+    players,
+    assignments,
+    playerStates,
+    outcome,
+    results,
+  );
   const currentPlayer =
     players.find((player) => player.account_id === account.id && player.status === "joined") ??
     null;
@@ -739,11 +756,7 @@ async function buildRoomViewByRoom(
   }));
   const currentAssignment =
     currentPlayer === null ? null : (assignmentByPlayer.get(currentPlayer.id) ?? null);
-  const registeredRoleIds = new Set(getRoleIds());
-  const currentRoleId =
-    currentAssignment !== null && registeredRoleIds.has(currentAssignment.role_id)
-      ? currentAssignment.role_id
-      : null;
+  const currentRoleId = currentAssignment?.role_id ?? null;
   const [events, visiblePrivateEvents] = await Promise.all([
     getPublicEvents(supabase, currentRoom.id, players),
     currentPlayer === null
@@ -811,6 +824,61 @@ async function buildRoomViewByRoom(
     status: currentRoom.status,
     targetPlayerCount: currentRoom.target_player_count,
   };
+}
+
+function assertPersistedGameState(
+  room: RoomRecord,
+  state: GameStateRecord | null,
+  players: readonly PlayerRecord[],
+  assignments: readonly RoleAssignmentRecord[],
+  playerStates: readonly GamePlayerStateRecord[],
+  outcome: FinalOutcomeRecord | null,
+  results: readonly PlayerResultRecord[],
+): void {
+  if (room.status !== "playing" && room.status !== "ended") {
+    return;
+  }
+
+  const expectedGameStatus = room.status === "ended" ? "ended" : "playing";
+
+  if (state?.status !== expectedGameStatus) {
+    throw new Error("Stored room and game statuses are inconsistent.");
+  }
+
+  const playerIds = new Set(players.map((player) => player.id));
+  const assignedPlayerIds = new Set(assignments.map((assignment) => assignment.player_id));
+  const statePlayerIds = new Set(playerStates.map((playerState) => playerState.player_id));
+  const registeredRoleIds = new Set(getRoleIds());
+
+  if (
+    players.length === 0 ||
+    assignments.length !== players.length ||
+    playerStates.length !== players.length ||
+    assignedPlayerIds.size !== players.length ||
+    statePlayerIds.size !== players.length ||
+    assignments.some(
+      (assignment) =>
+        !playerIds.has(assignment.player_id) || !registeredRoleIds.has(assignment.role_id),
+    ) ||
+    playerStates.some((playerState) => !playerIds.has(playerState.player_id))
+  ) {
+    throw new Error("Stored player runtime state is incomplete or invalid.");
+  }
+
+  if (room.status !== "ended") {
+    return;
+  }
+
+  const resultPlayerIds = new Set(results.map((result) => result.player_id));
+
+  if (
+    outcome === null ||
+    results.length !== players.length ||
+    resultPlayerIds.size !== players.length ||
+    results.some((result) => !playerIds.has(result.player_id))
+  ) {
+    throw new Error("Stored final game result is incomplete or invalid.");
+  }
 }
 
 function getSharedRoleCatalog(): RoleCatalogItem[] {
@@ -1551,13 +1619,27 @@ async function getRuntimePlayers(
   const stateByPlayer = new Map(playerStates.map((state) => [state.player_id, state]));
   const registeredRoleIds = new Set(getRoleIds());
 
-  return assignments
-    .filter((assignment) => registeredRoleIds.has(assignment.role_id))
-    .map((assignment) => ({
-      alive: stateByPlayer.get(assignment.player_id)?.alive ?? true,
+  if (
+    assignments.length === 0 ||
+    assignments.length !== playerStates.length ||
+    stateByPlayer.size !== assignments.length
+  ) {
+    throw new Error("Stored player runtime state is incomplete.");
+  }
+
+  return assignments.map((assignment) => {
+    const playerState = stateByPlayer.get(assignment.player_id);
+
+    if (playerState === undefined || !registeredRoleIds.has(assignment.role_id)) {
+      throw new Error("Stored player runtime state is invalid.");
+    }
+
+    return {
+      alive: playerState.alive,
       playerId: String(assignment.player_id),
       roleId: assignment.role_id,
-    }));
+    };
+  });
 }
 
 async function getCurrentActions(
