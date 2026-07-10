@@ -4,8 +4,15 @@ import { NextResponse } from "next/server";
 export type ApiErrorCode =
   | "bad_request"
   | "conflict"
+  | "current_room_changed"
+  | "current_room_exists"
   | "forbidden"
   | "not_found"
+  | "room_expired"
+  | "room_full"
+  | "room_not_found"
+  | "room_not_joinable"
+  | "room_switch_forbidden"
   | "server_error"
   | "unauthorized";
 

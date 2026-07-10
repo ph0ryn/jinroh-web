@@ -1,6 +1,7 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { joinRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
+import { roomApiErrorResponse } from "@/lib/server/roomApiError";
 
 type JoinRoomBody = {
   displayName?: unknown;
@@ -29,7 +30,7 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
 
   try {
     return jsonOk(await joinRoom(auth.account, roomCode, body.displayName));
-  } catch {
-    return jsonError("conflict", "Join failed.", 409);
+  } catch (error) {
+    return roomApiErrorResponse(error) ?? jsonError("conflict", "Join failed.", 409);
   }
 }

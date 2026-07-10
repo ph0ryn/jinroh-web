@@ -1,6 +1,7 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { createRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
+import { roomApiErrorResponse } from "@/lib/server/roomApiError";
 import { DEFAULT_TARGET_PLAYER_COUNT, MAX_ROOM_PLAYERS, MIN_ROOM_PLAYERS } from "@/lib/shared/game";
 
 type CreateRoomBody = {
@@ -35,8 +36,8 @@ export async function POST(request: Request): Promise<Response> {
     return jsonOk(await createRoom(auth.account, body.displayName, targetPlayerCount), {
       status: 201,
     });
-  } catch {
-    return jsonError("server_error", "Failed to create room.", 500);
+  } catch (error) {
+    return roomApiErrorResponse(error) ?? jsonError("server_error", "Failed to create room.", 500);
   }
 }
 

@@ -48,6 +48,24 @@ export type RoomSummary = {
   rolePrivate: RolePrivateView | null;
 };
 
+export type CurrentRoomResponse = {
+  room: RoomSummary | null;
+};
+
+export type SwitchRoomRequest =
+  | {
+      kind: "create";
+      expectedCurrentRoomCode: string;
+      displayName: string;
+      targetPlayerCount: number;
+    }
+  | {
+      kind: "join";
+      expectedCurrentRoomCode: string;
+      targetRoomCode: string;
+      displayName: string;
+    };
+
 export type PublicPlayer = {
   id: string;
   displayName: string;

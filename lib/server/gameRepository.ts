@@ -23,6 +23,7 @@ import {
   type RuleSet,
   type RuleSetInput,
   type SelfPrivateView,
+  type SwitchRoomRequest,
 } from "@/lib/shared/game";
 import { isValidRuleSetNumber, RULE_SET_NUMBER_FIELDS } from "@/lib/shared/ruleSetConstraints";
 
@@ -48,13 +49,17 @@ import {
   type PlayerRuntimeState,
   type SubmittedAction,
 } from "./gameEngine";
-import { RoomNotFoundError } from "./gameRepositoryErrors";
+import { RoomNotFoundError, toGameRepositoryError } from "./gameRepositoryErrors";
 import { createServiceClient } from "./supabase";
 
 type SupabaseClient = ReturnType<typeof createServiceClient>;
 
 type AccountRecord = {
   id: number;
+};
+
+type AccountCurrentRoomRecord = {
+  current_room_id: number | null;
 };
 
 type TokenRecord = {
@@ -75,6 +80,17 @@ type RoomRecord = {
 type RoomMutationResultRecord = Omit<RoomRecord, "target_player_count" | "view_revision"> & {
   actor_player_id: number | null;
   notification_reason: string | null;
+};
+
+type RoomSwitchMutationResultRecord = RoomMutationResultRecord & {
+  source_actor_player_id: number | null;
+  source_host_account_id: number;
+  source_id: number;
+  source_lobby_expires_at: string;
+  source_notification_reason: string | null;
+  source_public_room_code: string;
+  source_realtime_topic: string;
+  source_status: RoomStatus;
 };
 
 type PlayerRecord = {
@@ -334,6 +350,61 @@ export async function joinRoom(
   return getRoomViewByRoom(supabase, account, room);
 }
 
+export async function getCurrentRoom(account: AccountRecord): Promise<RoomSummary | null> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .rpc("app_get_current_room", { p_account_id: account.id })
+    .maybeSingle<RoomMutationResultRecord>();
+
+  if (error !== null) {
+    throw toGameRepositoryError(error.message);
+  }
+
+  if (data === null) {
+    return null;
+  }
+
+  const room = toRoomRecord(data);
+
+  try {
+    await broadcastMutationResult(supabase, room, data);
+  } catch {
+    // The database mutation remains authoritative when invalidation delivery fails.
+  }
+
+  if (room.status === "disbanded") {
+    return null;
+  }
+
+  await resolveRoom({ id: room.host_account_id }, room.public_room_code);
+
+  return getRoomViewByRoom(supabase, account, room);
+}
+
+export async function switchRoom(
+  account: AccountRecord,
+  request: SwitchRoomRequest,
+): Promise<RoomSummary> {
+  const supabase = createServiceClient();
+
+  await cleanupExpiredLobbiesWithClient(supabase, 50);
+
+  const transactionResult =
+    request.kind === "create"
+      ? await switchToCreatedRoom(supabase, account, request)
+      : await switchToJoinedRoom(supabase, account, request);
+  const targetRoom = toRoomRecord(transactionResult);
+  const sourceResult = toSourceRoomMutationResult(transactionResult);
+  const sourceRoom = toRoomRecord(sourceResult);
+
+  await Promise.allSettled([
+    broadcastMutationResult(supabase, sourceRoom, sourceResult),
+    broadcastMutationResult(supabase, targetRoom, transactionResult),
+  ]);
+
+  return getRoomViewByRoom(supabase, account, targetRoom);
+}
+
 export async function getRoomView(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
@@ -558,7 +629,7 @@ export async function submitNightConversationMessage(
 async function resolveRoom(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
-  await requireJoinedPlayerForAccount(supabase, room.id, account.id);
+  await requireActivePlayerForAccount(supabase, room.id, account.id);
 
   if (room.host_account_id !== account.id) {
     throw new Error("Only the host can advance the phase.");
@@ -706,6 +777,7 @@ async function buildRoomViewByRoom(
   currentRoom: RoomRecord,
 ): Promise<RoomSummary> {
   const [
+    accountCurrentRoomId,
     players,
     state,
     assignments,
@@ -716,6 +788,7 @@ async function buildRoomViewByRoom(
     results,
     nightConversationMessages,
   ] = await Promise.all([
+    getAccountCurrentRoomId(supabase, account.id),
     getPlayers(supabase, currentRoom.id),
     getGameState(supabase, currentRoom.id),
     getAssignments(supabase, currentRoom.id),
@@ -736,8 +809,10 @@ async function buildRoomViewByRoom(
     results,
   );
   const currentPlayer =
-    players.find((player) => player.account_id === account.id && player.status === "joined") ??
-    null;
+    accountCurrentRoomId === currentRoom.id
+      ? (players.find((player) => player.account_id === account.id && player.status !== "left") ??
+        null)
+      : null;
   const isHost = currentPlayer !== null && currentRoom.host_account_id === account.id;
   const assignmentByPlayer = new Map(
     assignments.map((assignment) => [assignment.player_id, assignment]),
@@ -1473,6 +1548,23 @@ async function expireLobbyIfNeeded(
   return expiredRoom;
 }
 
+async function getAccountCurrentRoomId(
+  supabase: SupabaseClient,
+  accountId: number,
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("current_room_id")
+    .eq("id", accountId)
+    .single<AccountCurrentRoomRecord>();
+
+  if (error !== null) {
+    throw new Error(error.message);
+  }
+
+  return data.current_room_id;
+}
+
 async function getPlayerForAccount(
   supabase: SupabaseClient,
   roomId: number,
@@ -1514,6 +1606,20 @@ async function requireJoinedPlayerForAccount(
   const player = await requirePlayerForAccount(supabase, roomId, accountId);
 
   if (player.status !== "joined") {
+    throw new Error("Current account is not an active room player.");
+  }
+
+  return player;
+}
+
+async function requireActivePlayerForAccount(
+  supabase: SupabaseClient,
+  roomId: number,
+  accountId: number,
+): Promise<PlayerRecord> {
+  const player = await requirePlayerForAccount(supabase, roomId, accountId);
+
+  if (player.status === "left") {
     throw new Error("Current account is not an active room player.");
   }
 
@@ -2053,10 +2159,80 @@ async function callRoomMutationRpc(
   const { data, error } = await supabase.rpc(functionName, args).single<RoomMutationResultRecord>();
 
   if (error !== null) {
-    throw new Error(error.message);
+    throw toGameRepositoryError(error.message);
   }
 
   return data;
+}
+
+async function switchToCreatedRoom(
+  supabase: SupabaseClient,
+  account: AccountRecord,
+  request: Extract<SwitchRoomRequest, { kind: "create" }>,
+): Promise<RoomSwitchMutationResultRecord> {
+  if (
+    !Number.isInteger(request.targetPlayerCount) ||
+    request.targetPlayerCount < MIN_ROOM_PLAYERS ||
+    request.targetPlayerCount > MAX_ROOM_PLAYERS
+  ) {
+    throw new Error("Target player count is out of range.");
+  }
+
+  const { data, error } = await supabase
+    .rpc("app_switch_create_room", {
+      p_account_id: account.id,
+      p_display_name: normalizeDisplayName(request.displayName),
+      p_expected_current_room_code: request.expectedCurrentRoomCode.trim().toUpperCase(),
+      p_lobby_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      p_public_player_id: createPublicPlayerId(),
+      p_public_room_code: await createUniqueRoomCode(supabase),
+      p_realtime_topic: `room:${randomBytes(24).toString("base64url")}`,
+      p_target_player_count: request.targetPlayerCount,
+    })
+    .single<RoomSwitchMutationResultRecord>();
+
+  if (error !== null) {
+    throw toGameRepositoryError(error.message);
+  }
+
+  return data;
+}
+
+async function switchToJoinedRoom(
+  supabase: SupabaseClient,
+  account: AccountRecord,
+  request: Extract<SwitchRoomRequest, { kind: "join" }>,
+): Promise<RoomSwitchMutationResultRecord> {
+  const { data, error } = await supabase
+    .rpc("app_switch_join_room", {
+      p_account_id: account.id,
+      p_display_name: normalizeDisplayName(request.displayName),
+      p_expected_current_room_code: request.expectedCurrentRoomCode.trim().toUpperCase(),
+      p_public_player_id: createPublicPlayerId(),
+      p_target_room_code: request.targetRoomCode.trim().toUpperCase(),
+    })
+    .single<RoomSwitchMutationResultRecord>();
+
+  if (error !== null) {
+    throw toGameRepositoryError(error.message);
+  }
+
+  return data;
+}
+
+function toSourceRoomMutationResult(
+  record: RoomSwitchMutationResultRecord,
+): RoomMutationResultRecord {
+  return {
+    actor_player_id: record.source_actor_player_id,
+    host_account_id: record.source_host_account_id,
+    id: record.source_id,
+    lobby_expires_at: record.source_lobby_expires_at,
+    notification_reason: record.source_notification_reason,
+    public_room_code: record.source_public_room_code,
+    realtime_topic: record.source_realtime_topic,
+    status: record.source_status,
+  };
 }
 
 async function cleanupExpiredLobbiesWithClient(

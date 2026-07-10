@@ -1,6 +1,7 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { leaveRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk } from "@/lib/server/http";
+import { roomApiErrorResponse } from "@/lib/server/roomApiError";
 
 type RouteContext = {
   params: Promise<{
@@ -19,7 +20,7 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
 
   try {
     return jsonOk(await leaveRoom(auth.account, roomCode));
-  } catch {
-    return jsonError("conflict", "Leave failed.", 409);
+  } catch (error) {
+    return roomApiErrorResponse(error) ?? jsonError("conflict", "Leave failed.", 409);
   }
 }
