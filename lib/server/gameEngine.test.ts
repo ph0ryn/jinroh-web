@@ -43,7 +43,11 @@ describe("game engine", () => {
         (event) => event.visibility === "public",
       );
 
-      expect(publicInitialEvents).toHaveLength(1);
+      expect(publicInitialEvents.map((event) => event.kind)).toEqual([
+        "game_started",
+        "phase_changed",
+      ]);
+      expect(publicInitialEvents[1]?.payload).toEqual({ phase: "night" });
       expect(
         publicInitialEvents.some((event) => JSON.stringify(event.payload).includes("role")),
       ).toBe(false);
@@ -149,6 +153,11 @@ describe("game engine", () => {
 
     expect(resolution.nextPhase).toBe("day");
     expect(resolution.deaths).toEqual([{ playerId: "3", reason: "attack" }]);
+    expect(resolution.events.at(-1)).toMatchObject({
+      kind: "phase_changed",
+      payload: { phase: "day" },
+    });
+    expect(resolution.events.at(-1)?.payload).toEqual({ phase: "day" });
   });
 
   it("keeps fox alive against a werewolf attack", () => {
@@ -279,6 +288,7 @@ describe("game engine", () => {
     expect(resolution.nextPhase).toBe("day");
     expect(resolution.actionsToOpen).toHaveLength(1);
     expect(resolution.actionsToOpen[0]?.key).toContain("end-speech:1:1:");
+    expect(resolution.events).toEqual([]);
   });
 
   it("advances ordered speech using persisted slot order", () => {
@@ -345,6 +355,13 @@ describe("game engine", () => {
 
     expect(resolution.nextPhase).toBe("voting");
     expect(resolution.actionsToOpen.every((action) => action.kind === "vote")).toBe(true);
+    expect(resolution.events).toEqual([
+      expect.objectContaining({
+        kind: "phase_changed",
+        payload: { phase: "voting" },
+      }),
+    ]);
+    expect(resolution.events[0]?.payload).toEqual({ phase: "voting" });
   });
 
   it("keeps voter targets out of count-only public vote payloads", () => {
@@ -369,9 +386,42 @@ describe("game engine", () => {
       ruleSet,
     });
     const voteEvent = resolution.events.find((event) => event.kind === "vote_resolved");
+    const phaseEvent = resolution.events.find((event) => event.kind === "phase_changed");
 
+    expect(resolution.events.map((event) => event.kind)).toEqual([
+      "vote_resolved",
+      "phase_changed",
+    ]);
     expect(voteEvent?.payload).toMatchObject({ executionCandidatePlayerId: "2" });
     expect(voteEvent?.payload["acceptedVotes"]).toBeUndefined();
+    expect(phaseEvent?.payload).toEqual({ phase: "execution" });
+  });
+
+  it("moves a tied vote directly to night with one phase event", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "3", roleId: "villager" },
+      { alive: true, playerId: "4", roleId: "villager" },
+    ];
+    const resolution = resolvePhase({
+      actions: [
+        { actorPlayerId: "1", kind: "vote", targetPlayerId: "2" },
+        { actorPlayerId: "2", kind: "vote", targetPlayerId: "1" },
+      ],
+      currentPhase: "voting",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(players.length),
+    });
+
+    expect(resolution.nextPhase).toBe("night");
+    expect(resolution.events.map((event) => event.kind)).toEqual([
+      "vote_resolved",
+      "phase_changed",
+    ]);
+    expect(resolution.events.at(-1)?.payload).toEqual({ phase: "night" });
   });
 
   it("includes voter targets in voter-to-target public vote payloads", () => {
@@ -474,6 +524,7 @@ describe("game engine", () => {
         targetKind: "single_player",
       }),
     ]);
+    expect(resolution.events.some((event) => event.kind === "phase_changed")).toBe(false);
   });
 
   it("resolves the hunter retaliation action as retaliation death", () => {
@@ -518,6 +569,7 @@ describe("game engine", () => {
     expect(resolution.actionsToOpen.every((action) => action.kind !== "hunter_retaliate")).toBe(
       true,
     );
+    expect(resolution.events.at(-1)?.payload).toEqual({ phase: "night" });
   });
 
   it("does not open hunter retaliation after a night attack", () => {
@@ -540,6 +592,50 @@ describe("game engine", () => {
     expect(resolution.actionsToOpen.every((action) => action.kind !== "hunter_retaliate")).toBe(
       true,
     );
+  });
+
+  it("ends after a decisive night death without emitting a phase event", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "villager" },
+      { alive: true, playerId: "3", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "1", kind: "attack", targetPlayerId: "2" }],
+      currentPhase: "night",
+      dayNumber: 1,
+      nightNumber: 2,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(players.length),
+    });
+
+    expect(resolution.nextPhase).toBeNull();
+    expect(resolution.finalOutcome?.winnerTeam).toBe("werewolves");
+    expect(resolution.events.map((event) => event.kind)).toEqual([
+      "action_resolved",
+      "player_died",
+      "game_ended",
+    ]);
+  });
+
+  it("ends after a decisive execution without emitting a phase event", () => {
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: "villager" },
+      { alive: true, playerId: "3", roleId: "seer" },
+    ];
+    const resolution = resolvePhase({
+      actions: [{ actorPlayerId: "1", kind: "execution_skip", targetPlayerId: null }],
+      currentPhase: "execution",
+      dayNumber: 1,
+      nightNumber: 1,
+      players,
+      ruleSet: makeDefaultRuleSetForPlayers(players.length),
+    });
+
+    expect(resolution.nextPhase).toBeNull();
+    expect(resolution.finalOutcome?.winnerTeam).toBe("villagers");
+    expect(resolution.events.map((event) => event.kind)).toEqual(["player_executed", "game_ended"]);
   });
 
   it("evaluates fox as a high-priority winner", () => {

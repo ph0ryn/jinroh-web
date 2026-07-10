@@ -188,6 +188,7 @@ export function startGame(
       visibleToPlayerIds: [],
       visibleToRoleIds: [],
     },
+    createPhaseChangedEvent("night"),
     ...createFirstNightRoleEvents(assignments, ruleSet, resolvedRoleSetup),
   ];
 
@@ -783,29 +784,7 @@ function openDay(
   return {
     actionsToOpen,
     deaths,
-    events: [
-      ...events,
-      {
-        kind: "phase_changed",
-        message:
-          input.ruleSet.dayMode === "ordered_speech"
-            ? "Day started. Follow the current speech turn."
-            : "Day started. Discuss at the table or in your voice call.",
-        payload: {
-          dayMode: input.ruleSet.dayMode,
-          phase: "day",
-          ...(firstSpeechSlot === undefined
-            ? {}
-            : {
-                speakerPlayerId: firstSpeechSlot.speakerPlayerId,
-                speechSlotIndex: firstSpeechSlot.slotIndex,
-              }),
-        },
-        visibility: "public",
-        visibleToPlayerIds: [],
-        visibleToRoleIds: [],
-      },
-    ],
+    events: [...events, createPhaseChangedEvent("day")],
     finalOutcome: null,
     nextDayNumber,
     nextNightNumber: input.nightNumber,
@@ -833,21 +812,7 @@ function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
   return {
     actionsToOpen: [toOrderedSpeechAction(nextSpeechSlot, input.dayNumber)],
     deaths: [],
-    events: [
-      {
-        kind: "phase_changed",
-        message: "Next speech turn started.",
-        payload: {
-          dayMode: "ordered_speech",
-          phase: "day",
-          speakerPlayerId: nextSpeechSlot.speakerPlayerId,
-          speechSlotIndex: nextSpeechSlot.slotIndex,
-        },
-        visibility: "public",
-        visibleToPlayerIds: [],
-        visibleToRoleIds: [],
-      },
-    ],
+    events: [],
     finalOutcome: null,
     nextDayNumber: input.dayNumber,
     nextNightNumber: input.nightNumber,
@@ -924,16 +889,7 @@ function openVoting(input: PhaseResolutionInput): PhaseResolution {
       targetKind: "single_player",
     })),
     deaths: [],
-    events: [
-      {
-        kind: "phase_changed",
-        message: "Voting started.",
-        payload: { phase: "voting" },
-        visibility: "public",
-        visibleToPlayerIds: [],
-        visibleToRoleIds: [],
-      },
-    ],
+    events: [createPhaseChangedEvent("voting")],
     finalOutcome: null,
     nextDayNumber: input.dayNumber,
     nextNightNumber: input.nightNumber,
@@ -994,6 +950,7 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
         visibleToPlayerIds: [],
         visibleToRoleIds: [],
       },
+      createPhaseChangedEvent("execution"),
     ],
     finalOutcome: null,
     nextDayNumber: input.dayNumber,
@@ -1486,23 +1443,24 @@ function openNight(
       input.resolvedRoleSetup,
     ),
     deaths,
-    events: [
-      ...events,
-      {
-        kind: "phase_changed",
-        message: "Night started.",
-        payload: { phase: "night" },
-        visibility: "public",
-        visibleToPlayerIds: [],
-        visibleToRoleIds: [],
-      },
-    ],
+    events: [...events, createPhaseChangedEvent("night")],
     finalOutcome: null,
     nextDayNumber: input.dayNumber,
     nextNightNumber,
     nextPhase: "night",
     nextPhaseDurationSeconds: input.ruleSet.nightSeconds,
     speechSlotsToCreate: [],
+  };
+}
+
+function createPhaseChangedEvent(phase: GamePhase): EngineEvent {
+  return {
+    kind: "phase_changed",
+    message: "The game phase changed.",
+    payload: { phase },
+    visibility: "public",
+    visibleToPlayerIds: [],
+    visibleToRoleIds: [],
   };
 }
 

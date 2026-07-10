@@ -1215,6 +1215,10 @@ phase resolution transaction で行うこと。
 - game が終わる場合は final outcome と player results を固定する
 - `game_states.revision` を増やす
 
+transaction が返す notification reason は、final outcome を確定した場合は
+`game_ended`、次の phase が解決前の phase と異なる場合は `phase_changed`、
+同じ phase 内で action window だけを更新した場合は `action_window_changed` とする。
+
 次 phase 作成で行うこと。
 
 - 新しい `phase_instance_id` を発行する
@@ -1222,7 +1226,10 @@ phase resolution transaction で行うこと。
 - `phase_started_at` と `phase_ends_at` を設定する
 - phase-local state を初期化する
 - 必要な current actions を作る
-- `phase_changed` event を記録する
+- playable phase が実際に変わった場合だけ、payload `{ phase }` の
+  `phase_changed` event を記録する
+- ordered speech の次話者や retaliation など同一 phase 内の action window 更新では
+  `phase_changed` event を記録しない
 
 ### Game End
 
