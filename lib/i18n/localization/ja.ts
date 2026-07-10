@@ -470,6 +470,7 @@ export const jaLocalization = {
       closeSettings: "設定を閉じる",
       closeDialog: (title: string) => `${title}を閉じる`,
       confirmLeaveRoom: "部屋を退出する",
+      confirmSwitchRoom: "現在の部屋を退出して切り替える",
       copyCode: "コードをコピー",
       copied: "コピー済み",
       createRoom: "部屋を作る",
@@ -487,6 +488,7 @@ export const jaLocalization = {
       settings: "設定",
       shareInvite: "招待を共有",
       startGame: "ゲーム開始",
+      switchingRoom: "部屋を切り替え中...",
     },
     eventLog: {
       emptyBody: "ゲームが進むと、ここに出来事が表示されます。",
@@ -581,6 +583,14 @@ export const jaLocalization = {
       meta: "部屋への参加",
       title: "この部屋を退出しますか？",
     },
+    switchConfirmation: {
+      createBody: (currentRoomCode: string) =>
+        `現在も部屋 ${currentRoomCode} に入室しています。退出して新しい部屋を作りますか？作成に失敗した場合は、現在の部屋に残ります。`,
+      joinBody: (currentRoomCode: string, targetRoomCode: string) =>
+        `現在も部屋 ${currentRoomCode} に入室しています。退出して部屋 ${targetRoomCode} に参加しますか？参加に失敗した場合は、現在の部屋に残ります。`,
+      meta: "部屋の切り替え",
+      title: "現在の部屋を退出して切り替えますか？",
+    },
     nightConversation: {
       draftCount: (current: number, max: number) => `${current}/${max}`,
       message: "メッセージ",
@@ -610,26 +620,31 @@ export const jaLocalization = {
       voting: { label: "投票", message: "処刑する相手を選んでください。" },
     },
     room: {
+      checkingCurrent: "現在入室中の部屋を確認しています...",
       closed: "部屋は終了済みです。部屋を作成または参加してください。",
       created: (roomCode: string) =>
         `部屋 ${roomCode} を作成しました。プレイヤーにコードを共有してください。`,
-      currentAlreadyExistsCreate: "別の部屋を作成する前に、現在の部屋を退出してください。",
-      currentAlreadyExistsJoin: "別の部屋に参加する前に、現在の部屋を退出してください。",
+      currentChanged: "入室中の部屋が変わったため、最新の部屋を表示しました。",
+      currentCouldNotLoad:
+        "入室中の部屋を確認できませんでした。所属は解除せず、自動的に再接続します。",
+      currentExists: "別の部屋に入室中です。現在の部屋へ戻るか、退出して切り替えてください。",
       enterCode: "6桁の部屋コードを入力してください。",
+      expired: "参加先の部屋は期限切れです。現在の部屋にはそのまま残っています。",
+      full: "参加先の部屋は満席です。現在の部屋にはそのまま残っています。",
       identityExpired: "参加情報の期限が切れました。部屋を作るか、参加し直してください。",
       identityReset: "この端末の参加情報をリセットしました。",
       identityResetting: "参加情報の期限が切れたため、再接続しています。",
       initialStatus: "同じ端末なら、あとからこの部屋に戻れます。",
       joined: (roomCode: string) => `部屋 ${roomCode} に参加しました。`,
       left: "部屋を退出しました。",
+      notFound: "参加先の部屋が見つかりません。コードを確認してください。",
+      notJoinable: "参加先の部屋には参加できません。現在の部屋にはそのまま残っています。",
       readyToJoin: "部屋に参加できます。",
-      restoring: (roomCode: string) => `部屋 ${roomCode} に戻っています。`,
-      restored: (roomCode: string) => `部屋 ${roomCode} に戻りました。`,
-      savedCouldNotRestore:
-        "保存済みの部屋を復元できませんでした。部屋を作成または参加してください。",
-      savedExpired: "保存済みの部屋は期限切れです。部屋を作成または参加してください。",
       synced: (roomCode: string) => `部屋 ${roomCode} を更新しました。`,
       syncFailed: "最新の部屋情報を取得できませんでした。表示が変わらない場合は更新してください。",
+      switchForbidden: (roomCode: string) =>
+        `部屋 ${roomCode} はゲーム中です。ゲーム中は退出も部屋の切り替えもできません。`,
+      switchForbiddenGeneric: "ゲーム中は退出も部屋の切り替えもできません。",
     },
     roomStatus: {
       noRoom: "部屋なし",

@@ -66,6 +66,10 @@ export function isNotFoundRequestError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status === 404;
 }
 
+export function isApiRequestErrorCode(error: unknown, code: string): boolean {
+  return error instanceof ApiRequestError && error.code === code;
+}
+
 export function isUnauthorizedRequestError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status === 401;
 }
@@ -213,8 +217,22 @@ function formatApiError(error: ApiRequestError, t: Localization): string {
       return t.api.errors.bad_request;
     case "conflict":
       return t.api.errors.conflict;
+    case "current_room_changed":
+      return t.live.room.currentChanged;
+    case "current_room_exists":
+      return t.live.room.currentExists;
     case "not_found":
       return t.api.errors.not_found;
+    case "room_expired":
+      return t.live.room.expired;
+    case "room_full":
+      return t.live.room.full;
+    case "room_not_found":
+      return t.live.room.notFound;
+    case "room_not_joinable":
+      return t.live.room.notJoinable;
+    case "room_switch_forbidden":
+      return t.live.room.switchForbiddenGeneric;
     case "server_error":
       return t.api.errors.server_error;
     case "unauthorized":

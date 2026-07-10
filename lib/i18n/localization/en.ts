@@ -478,6 +478,7 @@ export const enLocalization = {
       closeSettings: "Close settings",
       closeDialog: (title: string) => `Close ${title}`,
       confirmLeaveRoom: "Leave room",
+      confirmSwitchRoom: "Leave and switch",
       copyCode: "Copy code",
       copied: "Copied!",
       createRoom: "Create room",
@@ -495,6 +496,7 @@ export const enLocalization = {
       settings: "Settings",
       shareInvite: "Share invite",
       startGame: "Start game",
+      switchingRoom: "Switching rooms...",
     },
     eventLog: {
       emptyBody: "Events will appear here as the game unfolds.",
@@ -586,6 +588,14 @@ export const enLocalization = {
       meta: "Room access",
       title: "Leave this room?",
     },
+    switchConfirmation: {
+      createBody: (currentRoomCode: string) =>
+        `You are still in room ${currentRoomCode}. Leave it and create a new room? If creation fails, you will remain in the current room.`,
+      joinBody: (currentRoomCode: string, targetRoomCode: string) =>
+        `You are still in room ${currentRoomCode}. Leave it and join room ${targetRoomCode}? If joining fails, you will remain in the current room.`,
+      meta: "Room switch",
+      title: "Leave the current room and switch?",
+    },
     nightConversation: {
       draftCount: (current: number, max: number) => `${current}/${max}`,
       message: "Message",
@@ -612,24 +622,30 @@ export const enLocalization = {
       voting: { label: "Voting", message: "Choose the player you want to execute." },
     },
     room: {
+      checkingCurrent: "Checking your current room...",
       closed: "Room closed. Create or join a room.",
       created: (roomCode: string) => `Room ${roomCode} created. Share the code with players.`,
-      currentAlreadyExistsCreate: "Leave the current room before creating another room.",
-      currentAlreadyExistsJoin: "Leave the current room before joining another room.",
+      currentChanged: "Your current room changed. The latest room is now displayed.",
+      currentCouldNotLoad:
+        "Could not check your current room. Your room has not been cleared; reconnecting automatically.",
+      currentExists: "You are still in another room. Return to it or leave it before switching.",
       enterCode: "Enter a six-digit room code.",
+      expired: "That room has expired. You are still in your current room.",
+      full: "That room is full. You are still in your current room.",
       identityExpired: "Your saved seat expired. Create a room or join again.",
       identityReset: "Your saved seat was reset on this device.",
       identityResetting: "Your saved seat expired. Reconnecting now.",
       initialStatus: "You can return to this room later from the same device.",
       joined: (roomCode: string) => `Joined room ${roomCode}.`,
       left: "Left the room.",
+      notFound: "That room could not be found. Check the code and try again.",
+      notJoinable: "That room can no longer be joined. You are still in your current room.",
       readyToJoin: "Ready to join a room.",
-      restoring: (roomCode: string) => `Returning to room ${roomCode}.`,
-      restored: (roomCode: string) => `Returned to room ${roomCode}.`,
-      savedCouldNotRestore: "Saved room could not be restored. Create or join a room.",
-      savedExpired: "Saved room expired. Create or join a room.",
       synced: (roomCode: string) => `Room ${roomCode} updated.`,
       syncFailed: "Could not load the latest room information. Select Refresh if nothing changes.",
+      switchForbidden: (roomCode: string) =>
+        `Room ${roomCode} is in progress. You cannot leave or switch rooms during the game.`,
+      switchForbiddenGeneric: "You cannot leave or switch rooms while the game is in progress.",
     },
     roomStatus: {
       noRoom: "No room",

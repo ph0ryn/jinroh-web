@@ -18,6 +18,7 @@ import {
   type PublicAction,
   type PublicPlayer,
   type RoomSummary,
+  type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
 import { formatDateTime, formatPrivateEvent, formatPublicEvent } from "./liveEventPresentation";
@@ -478,19 +479,45 @@ export function LeaveRoomDialog({
   );
 }
 
-export function SavedRoomState({
-  isCompact = false,
-  roomCode,
+export function SwitchRoomDialog({
+  isBusy,
+  request,
   t,
+  onClose,
+  onConfirm,
 }: {
-  readonly isCompact?: boolean;
-  readonly roomCode: string;
+  readonly isBusy: boolean;
+  readonly request: SwitchRoomRequest;
   readonly t: Localization;
+  readonly onClose: () => void;
+  readonly onConfirm: () => void;
 }) {
+  const body =
+    request.kind === "create"
+      ? t.live.switchConfirmation.createBody(request.expectedCurrentRoomCode)
+      : t.live.switchConfirmation.joinBody(request.expectedCurrentRoomCode, request.targetRoomCode);
+
   return (
-    <div className={isCompact ? "liveEmptyState compact" : "liveEmptyState"}>
-      <strong>{t.live.room.restoring(roomCode)}</strong>
-    </div>
+    <LivePopupDialog
+      id="switch-room-dialog"
+      isDismissible={!isBusy}
+      meta={t.live.switchConfirmation.meta}
+      t={t}
+      title={t.live.switchConfirmation.title}
+      onClose={onClose}
+    >
+      <div className="liveConfirmationBody">
+        <p>{body}</p>
+        <div className="liveConfirmationActions">
+          <button className="secondaryButton" type="button" onClick={onClose} disabled={isBusy}>
+            {t.live.buttons.cancel}
+          </button>
+          <button className="dangerButton" type="button" onClick={onConfirm} disabled={isBusy}>
+            {isBusy ? t.live.buttons.switchingRoom : t.live.buttons.confirmSwitchRoom}
+          </button>
+        </div>
+      </div>
+    </LivePopupDialog>
   );
 }
 
@@ -599,12 +626,15 @@ export function LivePlaySurface({
   onSubmitAction,
   onTargetChange,
 }: LivePlaySurfaceProps) {
+  const hasCurrentPlayer = summary.currentPlayerId !== null;
   const actionProgress = summary.game?.actionProgress ?? null;
   const phaseEndsAt = summary.game?.phaseEndsAt ?? null;
   const phaseGuidance = getPlayPhaseGuidance(summary, isBusy, t);
-  const nightConversation = summary.rolePrivate?.nightConversation ?? null;
+  const nightConversation = hasCurrentPlayer
+    ? (summary.rolePrivate?.nightConversation ?? null)
+    : null;
   const publicEventCount = summary.game?.events.length ?? 0;
-  const privateEvents = summary.self?.events ?? [];
+  const privateEvents = hasCurrentPlayer ? (summary.self?.events ?? []) : [];
 
   return (
     <>
@@ -637,7 +667,9 @@ export function LivePlaySurface({
           </div>
         </section>
 
-        {summary.self?.roleId === null || summary.self?.roleId === undefined ? null : (
+        {!hasCurrentPlayer ||
+        summary.self?.roleId === null ||
+        summary.self?.roleId === undefined ? null : (
           <section
             className="livePanel liveSelfRolePanel"
             aria-label={`${t.live.player.yourRole}: ${getLocalizedRole(t, summary.self.roleId).name}`}
@@ -665,7 +697,7 @@ export function LivePlaySurface({
           </section>
         )}
 
-        {selfActions.length === 0 ? null : (
+        {!hasCurrentPlayer || selfActions.length === 0 ? null : (
           <section
             className="livePanel liveNightActionPanel"
             aria-label={getActionPanelTitle(summary, t)}
@@ -700,7 +732,7 @@ export function LivePlaySurface({
           </button>
         </div>
 
-        {summary.status === "ended" ? (
+        {summary.status === "ended" && hasCurrentPlayer ? (
           <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
             <button
               className="dangerButton"

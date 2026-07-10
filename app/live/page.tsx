@@ -8,7 +8,7 @@ import {
   apiFetch,
   getLiveRoomUrl,
   getRoomCodeSearchParam,
-  isNotFoundRequestError,
+  isApiRequestErrorCode,
   isRealtimeInvalidationPayload,
   isUnauthorizedRequestError,
   parseRealtimeSubscriptionKey,
@@ -44,7 +44,7 @@ import {
   LobbyRequirements,
   PlayerSeatGrid,
   RoomInviteTools,
-  SavedRoomState,
+  SwitchRoomDialog,
   type LiveToast,
   type LiveToastTone,
   type SetupPendingAction,
@@ -54,10 +54,12 @@ import {
   DEFAULT_TARGET_PLAYER_COUNT,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
+  type CurrentRoomResponse,
   type NightConversationView,
   type PublicAction,
   type RealtimeAuthorization,
   type RoomSummary,
+  type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
 type IdentityResponse = {
@@ -84,7 +86,24 @@ type AppliedRoomSnapshot = {
 
 type ClearCurrentRoomOptions = {
   readonly ignoredRoomCode?: string | null;
+  readonly preserveRoomCodeInput?: boolean;
 };
+
+type PendingRoomSwitch = {
+  readonly request: SwitchRoomRequest;
+};
+
+type RoomSwitchIntent =
+  | {
+      readonly displayName: string;
+      readonly kind: "create";
+      readonly targetPlayerCount: number;
+    }
+  | {
+      readonly displayName: string;
+      readonly kind: "join";
+      readonly targetRoomCode: string;
+    };
 
 type RealtimeBroadcastEnvelope = {
   readonly payload?: unknown;
@@ -92,7 +111,8 @@ type RealtimeBroadcastEnvelope = {
 
 const IDENTITY_STORAGE_KEY = "jinrohWeb.identityToken";
 const DISPLAY_NAME_STORAGE_KEY = "jinrohWeb.displayName";
-const ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
+const LEGACY_ROOM_CODE_STORAGE_KEY = "jinrohWeb.roomCode";
+const ROOM_MEMBERSHIP_CHANNEL_NAME = "jinrohWeb.roomMembership";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
 const TOAST_DEFAULT_DURATION_MS = 4_800;
@@ -113,8 +133,11 @@ export default function LivePage() {
   const [displayName, setDisplayName] = useState("Sora");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
-  const [savedRoomCode, setSavedRoomCode] = useState<string | null>(null);
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [isIdentityHydrated, setIsIdentityHydrated] = useState(false);
+  const [isCurrentRoomReady, setIsCurrentRoomReady] = useState(false);
+  const [invitationRoomCode, setInvitationRoomCode] = useState<string | null>(null);
+  const [pendingRoomSwitch, setPendingRoomSwitch] = useState<PendingRoomSwitch | null>(null);
   const [realtimeAuthorization, setRealtimeAuthorization] = useState<RealtimeAuthorization | null>(
     null,
   );
@@ -129,10 +152,13 @@ export default function LivePage() {
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
-  const savedRoomExpiredStatusMessageRef = useRef(t.live.room.savedExpired);
   const toastDismissTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const identityTokenRef = useRef<string | null>(null);
+  const roomSummaryRef = useRef<RoomSummary | null>(null);
+  const roomMembershipChannelRef = useRef<BroadcastChannel | null>(null);
+  const nextCurrentRoomRequestIdRef = useRef(0);
+  const appliedCurrentRoomRequestIdRef = useRef(0);
   const roomSessionIdRef = useRef(0);
   const nextRoomRequestIdRef = useRef(0);
   const appliedRoomSnapshotRef = useRef<AppliedRoomSnapshot | null>(null);
@@ -196,21 +222,25 @@ export default function LivePage() {
 
   const beginRoomSession = useCallback(() => {
     roomSessionIdRef.current += 1;
+    nextCurrentRoomRequestIdRef.current += 1;
+    appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = null;
   }, []);
 
   useEffect(() => {
-    const timerId = window.setTimeout(() => {
+    const frameId = window.requestAnimationFrame(() => {
       const requestedRoomCode = getRoomCodeSearchParam(window.location.search);
       const savedIdentityToken = readStorage(IDENTITY_STORAGE_KEY);
       const savedDisplayName = readStorage(DISPLAY_NAME_STORAGE_KEY);
-      const savedRoomCode = readStorage(ROOM_CODE_STORAGE_KEY);
 
       setLiveOrigin(window.location.origin);
+      removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
 
       if (savedIdentityToken !== null) {
         updateIdentityToken(savedIdentityToken);
+      } else {
+        setIsCurrentRoomReady(true);
       }
 
       if (savedDisplayName !== null) {
@@ -218,29 +248,15 @@ export default function LivePage() {
       }
 
       if (requestedRoomCode !== null) {
-        setSavedRoomCode(null);
+        setInvitationRoomCode(requestedRoomCode);
         setRoomCodeInput(requestedRoomCode);
-        return;
       }
 
-      if (savedRoomCode !== null) {
-        if (savedIdentityToken === null) {
-          removeStorage(ROOM_CODE_STORAGE_KEY);
-          showToast(
-            savedRoomExpiredStatusMessageRef.current,
-            "warning",
-            TOAST_IMPORTANT_DURATION_MS,
-          );
-          return;
-        }
+      setIsIdentityHydrated(true);
+    });
 
-        setSavedRoomCode(savedRoomCode);
-        setRoomCodeInput(savedRoomCode);
-      }
-    }, 0);
-
-    return () => window.clearTimeout(timerId);
-  }, [showToast, updateIdentityToken]);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [updateIdentityToken]);
 
   useEffect(() => {
     const preloadedImages: HTMLImageElement[] = [];
@@ -292,12 +308,20 @@ export default function LivePage() {
 
   const clearCurrentRoom = useCallback((options: ClearCurrentRoomOptions = {}) => {
     roomSessionIdRef.current += 1;
+    nextCurrentRoomRequestIdRef.current += 1;
+    appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
-    removeStorage(ROOM_CODE_STORAGE_KEY);
-    setSavedRoomCode(null);
+    roomSummaryRef.current = null;
+    removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
     setRoomSummary(null);
-    setRoomCodeInput("");
+    setIsCurrentRoomReady(true);
+    setPendingRoomSwitch(null);
+
+    if (!(options.preserveRoomCodeInput ?? false)) {
+      setRoomCodeInput("");
+    }
+
     setTargetByActionKey({});
     setIsNightConversationOpen(false);
     setIsPublicLogOpen(false);
@@ -311,8 +335,9 @@ export default function LivePage() {
     (nextStatusMessage = invalidIdentityStatusMessage) => {
       removeStorage(IDENTITY_STORAGE_KEY);
       updateIdentityToken(null);
+      setIsCurrentRoomReady(true);
       showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-      clearCurrentRoom();
+      clearCurrentRoom({ preserveRoomCodeInput: true });
     },
     [clearCurrentRoom, invalidIdentityStatusMessage, showToast, updateIdentityToken],
   );
@@ -402,22 +427,24 @@ export default function LivePage() {
       }
 
       if (nextSummary.status === "disbanded") {
-        clearCurrentRoom({ ignoredRoomCode: nextSummary.code });
+        clearCurrentRoom({
+          ignoredRoomCode: nextSummary.code,
+          preserveRoomCodeInput: true,
+        });
         showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
         return false;
       }
 
       writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
-      writeStorage(ROOM_CODE_STORAGE_KEY, nextSummary.code);
       appliedRoomSnapshotRef.current = {
         requestId: requestContext.requestId,
         roomCode: nextSummary.code,
         sessionId: requestContext.sessionId,
         snapshotRevision: nextSummary.snapshotRevision,
       };
-      setSavedRoomCode(nextSummary.code);
-      setRoomCodeInput(nextSummary.code);
+      roomSummaryRef.current = nextSummary;
       setRoomSummary(nextSummary);
+      setIsCurrentRoomReady(true);
 
       if (options.resetActionTargets ?? true) {
         setTargetByActionKey({});
@@ -434,71 +461,121 @@ export default function LivePage() {
     ],
   );
 
-  useEffect(() => {
-    if (identityToken === null || roomSummary !== null || savedRoomCode === null) {
-      return;
-    }
+  const syncCurrentRoom = useCallback(
+    async (token: string): Promise<RoomSummary | null> => {
+      const currentRoomRequestId = (nextCurrentRoomRequestIdRef.current += 1);
+      const response = await apiFetch<CurrentRoomResponse>("/api/rooms/current", {
+        method: "GET",
+        token,
+      });
 
-    if (ignoredRoomCodeRef.current === savedRoomCode) {
+      if (
+        token !== identityTokenRef.current ||
+        currentRoomRequestId < appliedCurrentRoomRequestIdRef.current
+      ) {
+        return roomSummaryRef.current;
+      }
+
+      appliedCurrentRoomRequestIdRef.current = currentRoomRequestId;
+
+      if (response.room === null) {
+        if (roomSummaryRef.current === null) {
+          setIsCurrentRoomReady(true);
+          setPendingRoomSwitch(null);
+        } else {
+          clearCurrentRoom({ preserveRoomCodeInput: true });
+        }
+
+        return null;
+      }
+
+      if (roomSummaryRef.current?.code !== response.room.code) {
+        beginRoomSession();
+      }
+
+      ignoredRoomCodeRef.current = null;
+      const requestContext = createRoomRequestContext(response.room.code, token);
+      const didRememberRoom = rememberRoom(response.room, requestContext, {
+        resetActionTargets: roomSummaryRef.current?.code !== response.room.code,
+      });
+
+      return didRememberRoom ? response.room : roomSummaryRef.current;
+    },
+    [beginRoomSession, clearCurrentRoom, createRoomRequestContext, rememberRoom],
+  );
+
+  useEffect(() => {
+    if (!isIdentityHydrated || identityToken === null) {
       return;
     }
 
     let isCancelled = false;
-    const activeToken = identityToken;
-
-    async function restoreSavedRoom(): Promise<void> {
-      const requestContext = createRoomRequestContext(savedRoomCode, activeToken);
-
-      try {
-        const summary = await apiFetch<RoomSummary>(`/api/rooms/${savedRoomCode}`, {
-          method: "GET",
-          token: activeToken,
-        });
-
-        if (!isCancelled) {
-          rememberRoom(summary, requestContext, { resetActionTargets: false });
+    const timerId = window.setTimeout(() => {
+      void syncCurrentRoom(identityToken).catch((error: unknown) => {
+        if (isCancelled) {
+          return;
         }
-      } catch (error) {
-        if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
-          if (isUnauthorizedRequestError(error)) {
-            resetInvalidIdentity();
-            return;
-          }
 
-          if (isNotFoundRequestError(error)) {
-            clearCurrentRoom({ ignoredRoomCode: savedRoomCode });
-            showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-            return;
-          }
-
-          const nextStatusMessage = t.live.room.savedCouldNotRestore;
-
-          clearCurrentRoom({
-            ignoredRoomCode: savedRoomCode,
-          });
-          showToast(nextStatusMessage, "error", TOAST_IMPORTANT_DURATION_MS);
+        if (isUnauthorizedRequestError(error)) {
+          resetInvalidIdentity();
+          return;
         }
-      }
-    }
 
-    void restoreSavedRoom();
+        showToast(t.live.room.currentCouldNotLoad, "error", TOAST_IMPORTANT_DURATION_MS);
+      });
+    }, 0);
 
     return () => {
       isCancelled = true;
+      window.clearTimeout(timerId);
     };
   }, [
-    clearCurrentRoom,
-    createRoomRequestContext,
     identityToken,
-    isRoomRequestContextCurrent,
-    rememberRoom,
+    isIdentityHydrated,
     resetInvalidIdentity,
-    roomClosedStatusMessage,
-    roomSummary,
-    savedRoomCode,
     showToast,
-    t,
+    syncCurrentRoom,
+    t.live.room.currentCouldNotLoad,
   ]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") {
+      return;
+    }
+
+    const channel = new BroadcastChannel(ROOM_MEMBERSHIP_CHANNEL_NAME);
+    roomMembershipChannelRef.current = channel;
+    channel.addEventListener("message", (event: MessageEvent<unknown>) => {
+      if (
+        typeof event.data !== "object" ||
+        event.data === null ||
+        !("type" in event.data) ||
+        event.data.type !== "membership-invalidated"
+      ) {
+        return;
+      }
+
+      const token = identityTokenRef.current;
+
+      if (token !== null) {
+        void syncCurrentRoom(token).catch(() => {
+          // The regular current-room polling loop remains the fallback.
+        });
+      }
+    });
+
+    return () => {
+      channel.close();
+
+      if (roomMembershipChannelRef.current === channel) {
+        roomMembershipChannelRef.current = null;
+      }
+    };
+  }, [syncCurrentRoom]);
+
+  const broadcastRoomMembershipInvalidation = useCallback(() => {
+    roomMembershipChannelRef.current?.postMessage({ type: "membership-invalidated" });
+  }, []);
 
   const activeRoomCode = roomSummary?.code ?? null;
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
@@ -578,7 +655,7 @@ export default function LivePage() {
   ]);
 
   useEffect(() => {
-    if (identityToken === null || activeRoomCode === null) {
+    if (!isIdentityHydrated || identityToken === null) {
       return;
     }
 
@@ -592,33 +669,18 @@ export default function LivePage() {
       }
 
       isSyncing = true;
-      const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
-
       try {
-        const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
-          method: "GET",
-          token: activeToken,
-        });
-
-        if (!isCancelled) {
-          rememberRoom(summary, requestContext, { resetActionTargets: false });
-        }
+        await syncCurrentRoom(activeToken);
       } catch (error) {
-        if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
+        if (!isCancelled) {
           if (isUnauthorizedRequestError(error)) {
             resetInvalidIdentity();
             return;
           }
 
-          if (isNotFoundRequestError(error)) {
-            clearCurrentRoom({ ignoredRoomCode: activeRoomCode });
-            showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-            return;
+          if (isCurrentRoomReady) {
+            showToast(t.live.room.syncFailed, "warning", TOAST_IMPORTANT_DURATION_MS);
           }
-
-          const nextStatusMessage = t.live.room.syncFailed;
-
-          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
         }
       } finally {
         isSyncing = false;
@@ -634,16 +696,13 @@ export default function LivePage() {
       window.clearInterval(intervalId);
     };
   }, [
-    activeRoomCode,
-    clearCurrentRoom,
-    createRoomRequestContext,
     identityToken,
-    isRoomRequestContextCurrent,
-    rememberRoom,
+    isCurrentRoomReady,
+    isIdentityHydrated,
     resetInvalidIdentity,
-    roomClosedStatusMessage,
     showToast,
-    t,
+    syncCurrentRoom,
+    t.live.room.syncFailed,
   ]);
 
   useEffect(() => {
@@ -747,27 +806,13 @@ export default function LivePage() {
       }
 
       isSyncing = true;
-      const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
 
       try {
-        const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
-          method: "GET",
-          token: activeToken,
-        });
-
-        if (!isCancelled) {
-          rememberRoom(summary, requestContext, { resetActionTargets: false });
-        }
+        await syncCurrentRoom(activeToken);
       } catch (error) {
-        if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
+        if (!isCancelled) {
           if (isUnauthorizedRequestError(error)) {
             resetInvalidIdentity();
-            return;
-          }
-
-          if (isNotFoundRequestError(error)) {
-            clearCurrentRoom({ ignoredRoomCode: activeRoomCode });
-            showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
             return;
           }
 
@@ -823,15 +868,11 @@ export default function LivePage() {
   }, [
     activeRealtimeSubscriptionKey,
     activeRoomCode,
-    clearCurrentRoom,
-    createRoomRequestContext,
     identityToken,
-    isRoomRequestContextCurrent,
-    rememberRoom,
     realtimeAuthorization,
     resetInvalidIdentity,
-    roomClosedStatusMessage,
     showToast,
+    syncCurrentRoom,
     t,
   ]);
 
@@ -845,19 +886,10 @@ export default function LivePage() {
     const delayMs = Math.max(Date.parse(activePhaseEndsAt) - Date.now() + 600, 0);
     const timeoutId = window.setTimeout(() => {
       void (async () => {
-        const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
-
         try {
-          const summary = await apiFetch<RoomSummary>(`/api/rooms/${activeRoomCode}`, {
-            method: "GET",
-            token: activeToken,
-          });
-
-          if (!isCancelled) {
-            rememberRoom(summary, requestContext, { resetActionTargets: false });
-          }
+          await syncCurrentRoom(activeToken);
         } catch (error) {
-          if (!isCancelled && isRoomRequestContextCurrent(requestContext)) {
+          if (!isCancelled) {
             if (isUnauthorizedRequestError(error)) {
               resetInvalidIdentity();
               return;
@@ -875,13 +907,94 @@ export default function LivePage() {
     activePhaseEndsAt,
     activePhaseInstanceId,
     activeRoomCode,
-    createRoomRequestContext,
     identityToken,
-    isRoomRequestContextCurrent,
-    rememberRoom,
     resetInvalidIdentity,
-    t,
+    syncCurrentRoom,
   ]);
+
+  const offerRoomSwitch = useCallback(
+    (intent: RoomSwitchIntent, currentRoom: RoomSummary): void => {
+      if (intent.kind === "join" && intent.targetRoomCode === currentRoom.code) {
+        return;
+      }
+
+      if (currentRoom.status === "playing") {
+        showToast(
+          t.live.room.switchForbidden(currentRoom.code),
+          "warning",
+          TOAST_IMPORTANT_DURATION_MS,
+        );
+        return;
+      }
+
+      if (currentRoom.status !== "lobby" && currentRoom.status !== "ended") {
+        return;
+      }
+
+      setPendingRoomSwitch({
+        request:
+          intent.kind === "create"
+            ? {
+                displayName: intent.displayName,
+                expectedCurrentRoomCode: currentRoom.code,
+                kind: "create",
+                targetPlayerCount: intent.targetPlayerCount,
+              }
+            : {
+                displayName: intent.displayName,
+                expectedCurrentRoomCode: currentRoom.code,
+                kind: "join",
+                targetRoomCode: intent.targetRoomCode,
+              },
+      });
+    },
+    [showToast, t.live.room],
+  );
+
+  useEffect(() => {
+    if (!isCurrentRoomReady || invitationRoomCode === null || roomSummary === null) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setInvitationRoomCode(null);
+      offerRoomSwitch(
+        {
+          displayName,
+          kind: "join",
+          targetRoomCode: invitationRoomCode,
+        },
+        roomSummary,
+      );
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [displayName, invitationRoomCode, isCurrentRoomReady, offerRoomSwitch, roomSummary]);
+
+  useEffect(() => {
+    if (pendingRoomSwitch === null || roomSummary === null) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      if (pendingRoomSwitch.request.expectedCurrentRoomCode !== roomSummary.code) {
+        setPendingRoomSwitch(null);
+        showToast(t.live.room.currentChanged, "warning", TOAST_IMPORTANT_DURATION_MS);
+        return;
+      }
+
+      if (roomSummary.status === "playing") {
+        setPendingRoomSwitch(null);
+        showToast(
+          t.live.room.switchForbidden(roomSummary.code),
+          "warning",
+          TOAST_IMPORTANT_DURATION_MS,
+        );
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [pendingRoomSwitch, roomSummary, showToast, t.live.room]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
     setDisplayName(nextDisplayName);
@@ -904,83 +1017,101 @@ export default function LivePage() {
     }
   }
 
+  async function recoverCurrentRoomConflict(
+    error: unknown,
+    token: string,
+    intent: RoomSwitchIntent,
+  ): Promise<boolean> {
+    if (!isApiRequestErrorCode(error, "current_room_exists")) {
+      return false;
+    }
+
+    const currentRoom = await syncCurrentRoom(token);
+
+    if (currentRoom === null) {
+      return false;
+    }
+
+    offerRoomSwitch(intent, currentRoom);
+
+    return true;
+  }
+
   function handleCreateRoom(): void {
     void withBusy(async () => {
-      if (roomSummary !== null || savedRoomCode !== null) {
-        const nextStatusMessage = t.live.room.currentAlreadyExistsCreate;
+      const intent: RoomSwitchIntent = { displayName, kind: "create", targetPlayerCount };
+      const response = await withFreshIdentityToken(async (token) => {
+        try {
+          const summary = await apiFetch<RoomSummary>("/api/rooms", {
+            body: { displayName, targetPlayerCount },
+            method: "POST",
+            token,
+          });
 
-        showToast(nextStatusMessage, "warning");
+          return { summary, token };
+        } catch (error) {
+          if (await recoverCurrentRoomConflict(error, token, intent)) {
+            return null;
+          }
+
+          throw error;
+        }
+      });
+
+      if (response === null) {
         return;
       }
 
       beginRoomSession();
-      const response = await withFreshIdentityToken(async (token) => {
-        const requestContext = createRoomRequestContext(null, token);
-        const summary = await apiFetch<RoomSummary>("/api/rooms", {
-          body: { displayName, targetPlayerCount },
-          method: "POST",
-          token,
-        });
-
-        return { requestContext, summary };
-      });
-
-      rememberRoom(response.summary, response.requestContext);
+      const requestContext = createRoomRequestContext(response.summary.code, response.token);
+      rememberRoom(response.summary, requestContext);
+      setInvitationRoomCode(null);
+      broadcastRoomMembershipInvalidation();
     }, "create");
   }
 
   function handleJoinRoom(): void {
     void withBusy(async () => {
-      if (roomSummary !== null || savedRoomCode !== null) {
-        const nextStatusMessage = t.live.room.currentAlreadyExistsJoin;
+      const roomCode = requireRoomCode(roomCodeInput, t);
+      const intent: RoomSwitchIntent = {
+        displayName,
+        kind: "join",
+        targetRoomCode: roomCode,
+      };
+      const response = await withFreshIdentityToken(async (token) => {
+        try {
+          const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
+            body: { displayName },
+            method: "POST",
+            token,
+          });
 
-        showToast(nextStatusMessage, "warning");
+          return { summary, token };
+        } catch (error) {
+          if (await recoverCurrentRoomConflict(error, token, intent)) {
+            return null;
+          }
+
+          throw error;
+        }
+      });
+
+      if (response === null) {
         return;
       }
 
-      const roomCode = requireRoomCode(roomCodeInput, t);
       beginRoomSession();
-      const response = await withFreshIdentityToken(async (token) => {
-        const requestContext = createRoomRequestContext(roomCode, token);
-        const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/join`, {
-          body: { displayName },
-          method: "POST",
-          token,
-        });
-
-        return { requestContext, summary };
-      });
-
-      rememberRoom(response.summary, response.requestContext);
+      const requestContext = createRoomRequestContext(response.summary.code, response.token);
+      rememberRoom(response.summary, requestContext);
+      setInvitationRoomCode(null);
+      broadcastRoomMembershipInvalidation();
     }, "join");
   }
 
   function handleRefreshRoom(): void {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
-      const requestContext = createRoomRequestContext(roomCode, token);
-
-      try {
-        const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}`, {
-          method: "GET",
-          token,
-        });
-
-        rememberRoom(summary, requestContext);
-      } catch (error) {
-        if (!isRoomRequestContextCurrent(requestContext)) {
-          return;
-        }
-
-        if (isNotFoundRequestError(error)) {
-          clearCurrentRoom({ ignoredRoomCode: roomCode });
-          showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-          return;
-        }
-
-        throw error;
-      }
+      await syncCurrentRoom(token);
     });
   }
 
@@ -1011,6 +1142,44 @@ export default function LivePage() {
 
       if (isRoomRequestContextCurrent(requestContext)) {
         clearCurrentRoom({ ignoredRoomCode: roomCode });
+        broadcastRoomMembershipInvalidation();
+      }
+    });
+  }
+
+  function handleConfirmRoomSwitch(): void {
+    const pendingSwitch = pendingRoomSwitch;
+
+    if (pendingSwitch === null) {
+      return;
+    }
+
+    void withBusy(async () => {
+      const token = await ensureIdentityToken();
+
+      try {
+        const summary = await apiFetch<RoomSummary>("/api/rooms/switch", {
+          body: pendingSwitch.request,
+          method: "POST",
+          token,
+        });
+
+        beginRoomSession();
+        const requestContext = createRoomRequestContext(summary.code, token);
+        rememberRoom(summary, requestContext);
+        setPendingRoomSwitch(null);
+        setInvitationRoomCode(null);
+        broadcastRoomMembershipInvalidation();
+      } catch (error) {
+        if (
+          isApiRequestErrorCode(error, "current_room_changed") ||
+          isApiRequestErrorCode(error, "room_switch_forbidden")
+        ) {
+          setPendingRoomSwitch(null);
+          await syncCurrentRoom(token);
+        }
+
+        throw error;
       }
     });
   }
@@ -1124,19 +1293,22 @@ export default function LivePage() {
     return targetByActionKey[action.key] ?? action.eligibleTargetIds[0] ?? "";
   }
 
-  const selfActions = roomSummary?.self?.actions ?? [];
+  const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
+  const selfActions = isCurrentRoomParticipant ? (roomSummary.self?.actions ?? []) : [];
   const roomStatusLabel = formatRoomStatus(roomSummary, t);
   const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy, t);
-  const canStartGame = !isBusy && canStartRoom(roomSummary);
-  const canConfigureStartSettings = roomSummary?.isHost === true && roomSummary.status === "lobby";
-  const canLeaveRoom = roomSummary?.status === "lobby" || roomSummary?.status === "ended";
+  const canStartGame = isCurrentRoomParticipant && !isBusy && canStartRoom(roomSummary);
+  const canConfigureStartSettings =
+    isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "lobby";
+  const canLeaveRoom =
+    isCurrentRoomParticipant && (roomSummary.status === "lobby" || roomSummary.status === "ended");
   const isGameSurface =
     roomSummary !== null &&
     roomSummary.game !== null &&
     (roomSummary.status === "playing" || roomSummary.status === "ended");
   const controlHint = getControlHint(roomSummary, isBusy, t);
   const liveMood = getLiveMood(roomSummary);
-  const isRoomEntryAvailable = roomSummary === null && savedRoomCode === null;
+  const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
   const liveGridClassName = getLiveGridClassName(roomSummary);
   const roomInviteUrl =
     liveOrigin === null || roomSummary === null
@@ -1190,14 +1362,13 @@ export default function LivePage() {
                 <span>{t.live.page.roomSetup}</span>
                 <strong>{roomStatusLabel}</strong>
               </div>
-
-              {savedRoomCode === null ? null : (
-                <SavedRoomState isCompact roomCode={savedRoomCode} t={t} />
-              )}
+              <div className="liveEmptyState compact" role="status">
+                <strong>{t.live.room.checkingCurrent}</strong>
+              </div>
             </section>
           ) : null}
 
-          {roomSummary?.status === "lobby" ? (
+          {roomSummary?.status === "lobby" && isCurrentRoomParticipant ? (
             <>
               <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
                 <div className="livePanelHeading">
@@ -1241,7 +1412,7 @@ export default function LivePage() {
             </>
           ) : null}
 
-          {roomSummary?.status === "lobby" ? (
+          {roomSummary?.status === "lobby" && isCurrentRoomParticipant ? (
             <section className="livePanel liveControlPanel" aria-label={t.live.aria.lobbyControls}>
               <div className="livePanelHeading">
                 <span>
@@ -1349,6 +1520,16 @@ export default function LivePage() {
           onConfirm={handleConfirmLeaveRoom}
         />
       ) : null}
+
+      {pendingRoomSwitch === null || roomSummary === null ? null : (
+        <SwitchRoomDialog
+          isBusy={isBusy}
+          request={pendingRoomSwitch.request}
+          t={t}
+          onClose={() => setPendingRoomSwitch(null)}
+          onConfirm={handleConfirmRoomSwitch}
+        />
+      )}
 
       <LiveToastRegion toast={toast} t={t} onDismiss={dismissToast} />
     </main>
