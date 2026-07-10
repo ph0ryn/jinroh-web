@@ -56,15 +56,27 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
 - Keep animation cues, queueing, and choreography under `app/live/effects/`.
   Do not attach animations directly to polling, realtime callbacks, or API
   handlers.
+- Reserve the shared FIFO queue for interruptive cinematic effects. Keep
+  component-local state feedback under `app/live/effects/ui/` with its own
+  scoped timeline so frequent UI changes cannot delay role, phase, death, or
+  victory cues.
 - Derive cues only from room snapshots after request ordering and stale-response
   checks have accepted them. Realtime messages remain invalidation signals.
+- Diff only public, semantic presentation state for component-local motion.
+  Treat the first snapshot, room or viewer changes, unchanged polling results,
+  and updates received while the document is hidden as settled baselines rather
+  than effects to replay.
 - Give each effect component one scoped `useGSAP()` timeline and let React remain
   the source of truth for game state and final CSS classes.
+- Separate static placement, animated transform/opacity, and final visual state
+  onto different DOM layers when they could compete for the same CSS property.
+  Clear transient GSAP properties and diagnostic markers after settlement.
 - Use CSS Modules for static effect layout and appearance. Do not add CSS
   keyframes or CSS-driven timing for new `/live` game animations.
-- Every effect must provide a reduced-motion timeline, clean up on unmount or
-  room changes, avoid blocking input, and preserve a non-transient way to read
-  current game state.
+- Every effect must provide reduced-motion behavior through a shortened timeline
+  or immediate final-state settlement, clean up on unmount or room changes,
+  avoid blocking input, and preserve a non-transient way to read current game
+  state.
 
 ## Role Architecture Boundaries
 
