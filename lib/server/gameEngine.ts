@@ -327,24 +327,6 @@ export function didPlayerWin(roleId: RoleId, winnerTeam: Team): boolean {
   return roleRegistry.get(roleId).team === winner;
 }
 
-export function parseRoleCounts(value: unknown): Record<RoleId, number> {
-  const roleIds = getRoleIds();
-  const roleIdSet = new Set(roleIds);
-  const result = Object.fromEntries(roleIds.map((roleId) => [roleId, 0])) as Record<RoleId, number>;
-
-  if (typeof value !== "object" || value === null) {
-    return result;
-  }
-
-  for (const [key, rawCount] of Object.entries(value)) {
-    if (roleIdSet.has(key) && typeof rawCount === "number") {
-      result[key] = rawCount;
-    }
-  }
-
-  return result;
-}
-
 export function makeDefaultRuleSetForPlayers(playerCount: number): RuleSet {
   return makeDefaultEngineRuleSet(playerCount);
 }
@@ -434,7 +416,7 @@ function makeDefaultEngineRuleSet(playerCount: number): RuleSet {
   };
 }
 
-function validateEngineRuleSet(
+export function validateEngineRuleSet(
   ruleSet: RuleSet,
   playerCount: number,
 ): { ok: true } | { errors: string[]; ok: false } {

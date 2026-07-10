@@ -24,6 +24,7 @@ import {
   type RuleSetInput,
   type SelfPrivateView,
 } from "@/lib/shared/game";
+import { isValidRuleSetNumber, RULE_SET_NUMBER_FIELDS } from "@/lib/shared/ruleSetConstraints";
 
 import {
   createAccountToken,
@@ -32,20 +33,15 @@ import {
   TOKEN_HASH_KEY_ID,
 } from "./accountToken";
 import { getRoleCatalog, getRoleIds, roleRegistry } from "./game/roles";
-import {
-  DEFAULT_RULE_OPTIONS,
-  makeDefaultRoleCounts,
-  parseResolvedRoleSetup,
-} from "./game/ruleset";
-import { toSharedRuleOptions } from "./game/ruleSetAdapters";
+import { makeDefaultRoleCounts, parseResolvedRoleSetup } from "./game/ruleset";
 import { Team as RegisteredTeam, type ResolvedRoleSetup } from "./game/types";
 import { buildRealtimeNotificationPayload } from "./game/views";
 import {
   ENGINE_VERSION,
-  parseRoleCounts,
   resolvePhase,
   ROLE_REGISTRY_VERSION,
   startGame,
+  validateEngineRuleSet,
   type EngineAction,
   type EngineEvent,
   type OrderedSpeechSlot,
@@ -168,7 +164,9 @@ type PlayerResultRecord = {
 };
 
 type GameRuleSetRecord = {
+  engine_version: string;
   options: Record<string, unknown>;
+  role_registry_version: string;
   role_counts: Record<string, unknown>;
 };
 
@@ -1872,7 +1870,7 @@ async function getRuleSet(
 ): Promise<RuleSet> {
   const { data, error } = await supabase
     .from("game_rule_sets")
-    .select("role_counts,options")
+    .select("role_counts,options,role_registry_version,engine_version")
     .eq("room_id", roomId)
     .maybeSingle<GameRuleSetRecord>();
 
@@ -1881,72 +1879,86 @@ async function getRuleSet(
   }
 
   if (data === null) {
-    return {
-      ...toSharedRuleOptions(DEFAULT_RULE_OPTIONS),
-      roleCounts: makeDefaultRoleCounts(targetPlayerCount) as RuleSet["roleCounts"],
-    };
+    throw new Error("Stored rule set is missing.");
   }
 
-  return {
-    dayMode: data.options["dayMode"] === "ordered_speech" ? "ordered_speech" : "ready_check",
-    dayReadyCheckSecondsPerPlayer: parsePositiveRuleOption(
-      data.options,
-      "dayReadyCheckSecondsPerPlayer",
-      DEFAULT_RULE_OPTIONS.dayReadyCheckSecondsPerPlayer,
-    ),
-    daySpeechSeconds: parsePositiveRuleOption(
-      data.options,
-      "daySpeechSeconds",
-      DEFAULT_RULE_OPTIONS.daySpeechSeconds,
-    ),
-    executionLastWordsSeconds: parsePositiveRuleOption(
-      data.options,
-      "executionLastWordsSeconds",
-      DEFAULT_RULE_OPTIONS.executionLastWordsSeconds,
-    ),
-    firstDaySpeechRounds: parsePositiveRuleOption(
-      data.options,
-      "firstDaySpeechRounds",
-      DEFAULT_RULE_OPTIONS.firstDaySpeechRounds,
-    ),
-    firstNightSeconds: parsePositiveRuleOption(
-      data.options,
-      "firstNightSeconds",
-      DEFAULT_RULE_OPTIONS.firstNightSeconds,
-    ),
-    guardConsecutiveTargetPolicy:
-      data.options["guardConsecutiveTargetPolicy"] === "allow" ? "allow" : "deny",
-    initialInspectionPolicy:
-      data.options["initialInspectionPolicy"] === "disabled" ? "disabled" : "enabled",
-    nightSeconds: parsePositiveRuleOption(
-      data.options,
-      "nightSeconds",
-      DEFAULT_RULE_OPTIONS.nightSeconds,
-    ),
-    normalDaySpeechRounds: parsePositiveRuleOption(
-      data.options,
-      "normalDaySpeechRounds",
-      DEFAULT_RULE_OPTIONS.normalDaySpeechRounds,
-    ),
-    roleCounts: parseRoleCounts(data.role_counts) as RuleSet["roleCounts"],
-    voteResultVisibility:
-      data.options["voteResultVisibility"] === "voter_to_target" ? "voter_to_target" : "count_only",
-    votingSeconds: parsePositiveRuleOption(
-      data.options,
-      "votingSeconds",
-      DEFAULT_RULE_OPTIONS.votingSeconds,
-    ),
-  };
+  return parsePersistedRuleSet(data, targetPlayerCount);
 }
 
-function parsePositiveRuleOption(
-  options: JsonObject,
-  optionName: string,
-  fallbackValue: number,
-): number {
-  const value = options[optionName];
+function parsePersistedRuleSet(data: GameRuleSetRecord, playerCount: number): RuleSet {
+  if (
+    data.engine_version !== ENGINE_VERSION ||
+    data.role_registry_version !== ROLE_REGISTRY_VERSION
+  ) {
+    throw new Error("Stored rule set is incompatible with this server version.");
+  }
 
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallbackValue;
+  const roleIds = getRoleIds();
+  const storedRoleIds = Object.keys(data.role_counts);
+
+  if (
+    storedRoleIds.length !== roleIds.length ||
+    storedRoleIds.some((roleId) => !roleIds.includes(roleId))
+  ) {
+    throw new Error("Stored rule counts are invalid.");
+  }
+
+  const roleCounts = Object.fromEntries(
+    roleIds.map((roleId) => {
+      const count = data.role_counts[roleId];
+
+      if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+        throw new Error("Stored role counts are invalid.");
+      }
+
+      return [roleId, count];
+    }),
+  ) as RuleSet["roleCounts"];
+  const expectedOptionKeys = [
+    ...RULE_SET_NUMBER_FIELDS,
+    "dayMode",
+    "guardConsecutiveTargetPolicy",
+    "initialInspectionPolicy",
+    "voteResultVisibility",
+  ];
+
+  if (
+    Object.keys(data.options).length !== expectedOptionKeys.length ||
+    Object.keys(data.options).some((key) => !expectedOptionKeys.includes(key)) ||
+    !RULE_SET_NUMBER_FIELDS.every((field) => isValidRuleSetNumber(field, data.options[field])) ||
+    (data.options["dayMode"] !== "ordered_speech" && data.options["dayMode"] !== "ready_check") ||
+    (data.options["guardConsecutiveTargetPolicy"] !== "allow" &&
+      data.options["guardConsecutiveTargetPolicy"] !== "deny") ||
+    (data.options["initialInspectionPolicy"] !== "enabled" &&
+      data.options["initialInspectionPolicy"] !== "disabled") ||
+    (data.options["voteResultVisibility"] !== "count_only" &&
+      data.options["voteResultVisibility"] !== "voter_to_target")
+  ) {
+    throw new Error("Stored rule options are invalid.");
+  }
+
+  const ruleSet: RuleSet = {
+    dayMode: data.options["dayMode"],
+    dayReadyCheckSecondsPerPlayer: data.options["dayReadyCheckSecondsPerPlayer"] as number,
+    daySpeechSeconds: data.options["daySpeechSeconds"] as number,
+    executionLastWordsSeconds: data.options["executionLastWordsSeconds"] as number,
+    firstDaySpeechRounds: data.options["firstDaySpeechRounds"] as number,
+    firstNightSeconds: data.options["firstNightSeconds"] as number,
+    guardConsecutiveTargetPolicy: data.options["guardConsecutiveTargetPolicy"],
+    initialInspectionPolicy: data.options["initialInspectionPolicy"],
+    nightSeconds: data.options["nightSeconds"] as number,
+    normalDaySpeechRounds: data.options["normalDaySpeechRounds"] as number,
+    roleCounts,
+    voteResultVisibility: data.options["voteResultVisibility"],
+    votingSeconds: data.options["votingSeconds"] as number,
+  };
+  const validation = validateEngineRuleSet(ruleSet, playerCount);
+
+  if (!validation.ok) {
+    throw new Error(`Stored rule set is invalid. ${validation.errors.join(" ")}`);
+  }
+
+  return ruleSet;
 }
 
 async function callRoomMutationRpc(

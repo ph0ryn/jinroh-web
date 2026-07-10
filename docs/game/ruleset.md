@@ -102,6 +102,11 @@ Engine が占い師本人を除く、占い結果 `human` になる生存 Player
 
 `RuleSet` はゲーム開始前に検証する。
 
+ゲーム開始時に確定した `RuleSet` は、engine version、role registry version、
+全role count、全optionを `game_rule_sets` に保存する。Phase解決時はこの保存値を
+厳格に読み戻す。version不一致、field欠損、未知field、不正な値、または現在のdomain
+validationに適合しない保存値をdefaultで補完してはならず、Phase解決を失敗させる。
+
 検証すること。
 
 - 必須役職が含まれているか
