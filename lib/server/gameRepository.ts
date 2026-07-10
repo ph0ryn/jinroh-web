@@ -1100,39 +1100,36 @@ function toPrivateGameEvent(
   return {
     createdAt: event.created_at,
     kind: event.event_kind,
-    message: formatPrivateEventMessage(event, players),
+    payload: toPrivateGameEventPayload(event, players),
   };
 }
 
-function formatPrivateEventMessage(
+function toPrivateGameEventPayload(
   event: GameEventRecord,
   players: readonly PlayerRecord[],
-): string {
-  if (event.event_kind === "initial_inspection" || event.event_kind === "inspection_result") {
-    const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
-    const result = event.payload["result"] === "werewolf" ? "werewolf" : "human";
-
-    return `${targetPlayerName} appears to be ${result}.`;
+): Record<string, unknown> {
+  if (
+    event.event_kind === "initial_inspection" ||
+    event.event_kind === "inspection_result" ||
+    event.event_kind === "spiritist_result"
+  ) {
+    return {
+      result: event.payload["result"] === "werewolf" ? "werewolf" : "human",
+      targetPlayerId: getPayloadPublicPlayerId(event.payload["targetPlayerId"], players),
+    };
   }
 
-  if (event.event_kind === "spiritist_result") {
-    const targetPlayerName = getPayloadPlayerName(event.payload["targetPlayerId"], players);
-    const result = event.payload["result"] === "werewolf" ? "a werewolf" : "not a werewolf";
-
-    return `${targetPlayerName} was ${result}.`;
-  }
-
-  return event.event_kind.replaceAll("_", " ");
+  return {};
 }
 
-function getPayloadPlayerName(value: unknown, players: readonly PlayerRecord[]): string {
+function getPayloadPublicPlayerId(value: unknown, players: readonly PlayerRecord[]): string | null {
   if (typeof value !== "string") {
-    return "The target";
+    return null;
   }
 
   const player = players.find((candidate) => String(candidate.id) === value);
 
-  return player?.display_name ?? "The target";
+  return player?.public_player_id ?? null;
 }
 
 function getRoleDisplayName(roleId: RoleId | null): string | null {

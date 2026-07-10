@@ -42,6 +42,10 @@ export const enLocalization = {
       vote_resolved: "Voting complete",
       vote_submitted: "Vote submitted",
     },
+    inspectionView: {
+      human: "human",
+      werewolf: "a werewolf",
+    },
     message: {
       action_resolved: "A private action was completed.",
       attack_guarded: "Someone was attacked, but no one died.",
@@ -52,6 +56,7 @@ export const enLocalization = {
       inspection_result: (targetName: string, result: string) =>
         `${targetName} was inspected as ${result}.`,
       peaceful_night: "The night ended with no death.",
+      privateUnknown: "A private result was recorded.",
       phase_changed: (phase: string) => `${phase} started.`,
       player_died: (targetName: string) => `${targetName} died.`,
       player_executed: (targetName: string) => `${targetName} was executed.`,
@@ -492,6 +497,10 @@ export const enLocalization = {
       emptyTitle: "No public events yet",
       meta: (count: number) => `${count} events`,
       title: "Public log",
+    },
+    privateEventLog: {
+      meta: (count: number) => `${count} private result${count === 1 ? "" : "s"}`,
+      title: "Private results",
     },
     guidance: {
       closed: { label: "Closed", message: "This room has been disbanded." },

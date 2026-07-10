@@ -44,6 +44,10 @@ export const jaLocalization = {
       vote_resolved: "投票結果",
       vote_submitted: "投票送信",
     },
+    inspectionView: {
+      human: "人間",
+      werewolf: "人狼",
+    },
     message: {
       action_resolved: "非公開の行動が完了しました。",
       attack_guarded: "誰かが襲撃されましたが、死亡者はいませんでした。",
@@ -54,6 +58,7 @@ export const jaLocalization = {
       inspection_result: (targetName: string, result: string) =>
         `${targetName} は ${result} と判定されました。`,
       peaceful_night: "この夜は死亡者なしで終了しました。",
+      privateUnknown: "非公開の結果が記録されました。",
       phase_changed: (phase: string) => `${phase}が始まりました。`,
       player_died: (targetName: string) => `${targetName} が死亡しました。`,
       player_executed: (targetName: string) => `${targetName} が処刑されました。`,
@@ -484,6 +489,10 @@ export const jaLocalization = {
       emptyTitle: "公開ログはまだありません",
       meta: (count: number) => `${count}件のイベント`,
       title: "公開ログ",
+    },
+    privateEventLog: {
+      meta: (count: number) => `${count}件の非公開結果`,
+      title: "あなたへの結果",
     },
     guidance: {
       closed: { label: "終了", message: "この部屋は解散済みです。" },

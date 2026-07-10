@@ -129,7 +129,7 @@ export type SelfPrivateView = {
 
 export type PrivateGameEvent = {
   kind: string;
-  message: string;
+  payload: Record<string, unknown>;
   createdAt: string;
 };
 

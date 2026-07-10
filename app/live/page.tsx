@@ -1815,6 +1815,7 @@ function LivePlaySurface({
   const phaseGuidance = getPlayPhaseGuidance(summary, isBusy, t);
   const nightConversation = summary.rolePrivate?.nightConversation ?? null;
   const publicEventCount = summary.game?.events.length ?? 0;
+  const privateEvents = summary.self?.events ?? [];
 
   return (
     <>
@@ -1854,6 +1855,24 @@ function LivePlaySurface({
           >
             <span>{t.live.player.yourRole}</span>
             <strong>{getLocalizedRole(t, summary.self.roleId).name}</strong>
+          </section>
+        )}
+
+        {privateEvents.length === 0 ? null : (
+          <section
+            className="livePanel livePrivateEventPanel"
+            aria-label={t.live.privateEventLog.title}
+          >
+            <div className="livePanelHeading">
+              <span>{t.live.privateEventLog.title}</span>
+              <strong>{t.live.privateEventLog.meta(privateEvents.length)}</strong>
+            </div>
+            <PrivateEventList
+              events={privateEvents}
+              locale={locale}
+              players={summary.players}
+              t={t}
+            />
           </section>
         )}
 
@@ -2738,6 +2757,34 @@ function EventLog({
                 ))}
               </dl>
             )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function PrivateEventList({
+  events,
+  locale,
+  players,
+  t,
+}: {
+  readonly events: NonNullable<RoomSummary["self"]>["events"];
+  readonly locale: Locale;
+  readonly players: readonly PublicPlayer[];
+  readonly t: Localization;
+}) {
+  return (
+    <ol className="liveEventList">
+      {events.map((event, index) => {
+        const display = formatPrivateEvent(event, players, t);
+
+        return (
+          <li key={`${event.kind}:${event.createdAt}:${index}`}>
+            <time dateTime={event.createdAt}>{formatDateTime(event.createdAt, locale, t)}</time>
+            <strong>{display.kindLabel}</strong>
+            <p>{display.message}</p>
           </li>
         );
       })}
@@ -3760,6 +3807,43 @@ function formatPublicEvent(
         details: [],
         kindLabel: formatUnknownEventKind(event.kind),
         message: t.events.message.unknown,
+      };
+  }
+}
+
+function formatPrivateEvent(
+  event: NonNullable<RoomSummary["self"]>["events"][number],
+  players: readonly PublicPlayer[],
+  t: Localization,
+): { readonly kindLabel: string; readonly message: string } {
+  const targetName =
+    getPayloadPublicPlayerName(event.payload["targetPlayerId"], players) ??
+    t.game.seatStatus.player;
+  const result =
+    event.payload["result"] === "werewolf"
+      ? t.events.inspectionView.werewolf
+      : t.events.inspectionView.human;
+
+  switch (event.kind) {
+    case "initial_inspection":
+      return {
+        kindLabel: t.events.kind.initial_inspection,
+        message: t.events.message.initial_inspection(targetName, result),
+      };
+    case "inspection_result":
+      return {
+        kindLabel: t.events.kind.inspection_result,
+        message: t.events.message.inspection_result(targetName, result),
+      };
+    case "spiritist_result":
+      return {
+        kindLabel: t.events.kind.spiritist_result,
+        message: t.events.message.spiritist_result(targetName, result),
+      };
+    default:
+      return {
+        kindLabel: formatUnknownEventKind(event.kind),
+        message: t.events.message.privateUnknown,
       };
   }
 }
