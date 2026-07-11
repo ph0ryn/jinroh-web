@@ -1,0 +1,61 @@
+.content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabIndicator,
+.tabButton {
+  grid-row: 1;
+}
+
+.tabIndicator {
+  align-self: stretch;
+  background: linear-gradient(180deg, #f2c77a, var(--live-accent));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  box-shadow: 0 10px 26px rgba(var(--live-accent-rgb), 0.2);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.tabIndicator[data-tab-position="0"],
+.tabButton[data-tab-position="0"] {
+  grid-column: 1;
+}
+
+.tabIndicator[data-tab-position="1"],
+.tabButton[data-tab-position="1"] {
+  grid-column: 2;
+}
+
+.tabIndicator[data-tab-position="2"],
+.tabButton[data-tab-position="2"] {
+  grid-column: 3;
+}
+
+.tabButton {
+  position: relative;
+  z-index: 1;
+}
+
+.stage {
+  min-width: 0;
+  position: relative;
+}
+
+.panel {
+  min-width: 0;
+}
+
+.panel[data-live-settings-panel-state="outgoing"] {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+}
+
+.panelMotion {
+  min-width: 0;
+}

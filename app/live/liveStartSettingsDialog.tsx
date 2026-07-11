@@ -25,6 +25,18 @@ import {
 
 import { LiveModalFrame } from "./effects/ui/LiveModalFrame";
 import {
+  createLiveSettingsTabState,
+  getLiveSettingsTabNavigation,
+  LIVE_SETTINGS_TABS,
+  requestLiveSettingsTab,
+  settleLiveSettingsTab,
+  type LiveSettingsTab,
+  type LiveSettingsTabDirection,
+  type LiveSettingsTabState,
+} from "./effects/ui/liveSettingsTabModel";
+import styles from "./effects/ui/liveSettingsTabPresence.module.css";
+import { useLiveSettingsTabMotion } from "./effects/ui/useLiveSettingsTabMotion";
+import {
   canChangeRoleCount,
   clampRoleCount,
   clampRuleSetNumber,
@@ -43,10 +55,6 @@ import {
 } from "./liveStartSettings";
 
 import type { KeyboardEvent, ReactNode } from "react";
-
-type StartSettingsTab = "general" | "roles" | "timers";
-
-const START_SETTINGS_TABS: readonly StartSettingsTab[] = ["general", "timers", "roles"];
 
 type StartSettingsDialogProps = {
   readonly defaultRoleCounts: Readonly<RoleCounts>;
@@ -94,11 +102,17 @@ function StartSettingsDialogContent({
   onClose,
   onApplySettings,
 }: StartSettingsDialogContentProps) {
-  const [activeTab, setActiveTab] = useState<StartSettingsTab>("general");
+  const [tabState, setTabState] = useState(createLiveSettingsTabState);
   const [draftSettings, setDraftSettings] = useState<StartRuleSetSettings>(() => ({
     ...settings,
     roleCounts: { ...settings.roleCounts },
   }));
+  const { captureTransition, rootRef } = useLiveSettingsTabMotion({
+    state: tabState,
+    onSettled: (generation) => {
+      setTabState((currentState) => settleLiveSettingsTab(currentState, generation));
+    },
+  });
   const canApplySettings =
     getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts, t)
       .length === 0;
@@ -154,39 +168,31 @@ function StartSettingsDialogContent({
     onClose();
   }
 
-  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: StartSettingsTab): void {
-    const currentIndex = START_SETTINGS_TABS.indexOf(tab);
-    let nextIndex: number | null = null;
-
-    if (event.key === "ArrowRight") {
-      nextIndex = (currentIndex + 1) % START_SETTINGS_TABS.length;
-    } else if (event.key === "ArrowLeft") {
-      nextIndex = (currentIndex - 1 + START_SETTINGS_TABS.length) % START_SETTINGS_TABS.length;
-    } else if (event.key === "Home") {
-      nextIndex = 0;
-    } else if (event.key === "End") {
-      nextIndex = START_SETTINGS_TABS.length - 1;
+  function handleActiveTabChange(tab: LiveSettingsTab, direction?: LiveSettingsTabDirection): void {
+    if (tab === tabState.activeTab) {
+      return;
     }
 
-    if (nextIndex === null) {
+    captureTransition();
+    setTabState((currentState) => requestLiveSettingsTab(currentState, tab, direction));
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: LiveSettingsTab): void {
+    const navigation = getLiveSettingsTabNavigation(tab, event.key);
+
+    if (navigation === null) {
       return;
     }
 
     event.preventDefault();
-    const nextTab = START_SETTINGS_TABS[nextIndex];
-
-    if (nextTab === undefined) {
-      return;
-    }
-
-    setActiveTab(nextTab);
+    handleActiveTabChange(navigation.tab, navigation.direction);
     window.requestAnimationFrame(() => {
-      document.getElementById(`start-settings-${nextTab}-tab`)?.focus();
+      document.getElementById(`start-settings-${navigation.tab}-tab`)?.focus();
     });
   }
 
   return (
-    <>
+    <div className={styles["content"]} ref={rootRef} data-live-settings-tab-root>
       <div className="liveSettingsHeader">
         <div>
           <span>{t.live.waiting.hostControls}</span>
@@ -207,18 +213,31 @@ function StartSettingsDialogContent({
         </div>
       </div>
 
-      <div className="liveSettingsTabs" role="tablist" aria-label={t.live.aria.settingsSections}>
-        {START_SETTINGS_TABS.map((tab) => (
+      <div
+        className="liveSettingsTabs"
+        data-live-settings-tab-list
+        role="tablist"
+        aria-label={t.live.aria.settingsSections}
+      >
+        <span
+          className={styles["tabIndicator"]}
+          data-live-settings-tab-indicator
+          data-tab-position={LIVE_SETTINGS_TABS.indexOf(tabState.activeTab)}
+          aria-hidden="true"
+        />
+        {LIVE_SETTINGS_TABS.map((tab, index) => (
           <button
             aria-controls={`start-settings-${tab}-panel`}
-            aria-selected={activeTab === tab}
-            className={activeTab === tab ? "active" : ""}
+            aria-selected={tabState.activeTab === tab}
+            className={`${styles["tabButton"]} ${tabState.activeTab === tab ? "active" : ""}`.trim()}
+            data-live-settings-tab={tab}
+            data-tab-position={index}
             id={`start-settings-${tab}-tab`}
             key={tab}
             role="tab"
-            tabIndex={activeTab === tab ? 0 : -1}
+            tabIndex={tabState.activeTab === tab ? 0 : -1}
             type="button"
-            onClick={() => setActiveTab(tab)}
+            onClick={() => handleActiveTabChange(tab)}
             onKeyDown={(event) => handleTabKeyDown(event, tab)}
           >
             {t.live.settings.tabs[tab]}
@@ -228,11 +247,11 @@ function StartSettingsDialogContent({
 
       <div className="liveSettingsBody">
         <StartRuleSetPanel
-          activeTab={activeTab}
           defaultRoleCounts={defaultRoleCounts}
           playerCount={playerCount}
           roleCatalog={roleCatalog}
           settings={draftSettings}
+          tabState={tabState}
           onNumberChange={handleDraftNumberChange}
           onRoleCountChange={handleDraftRoleCountChange}
           onRolePresetSelect={handleDraftRolePresetSelect}
@@ -258,27 +277,27 @@ function StartSettingsDialogContent({
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
 function StartRuleSetPanel({
-  activeTab,
   defaultRoleCounts,
   playerCount,
   roleCatalog,
   settings,
+  tabState,
   t,
   onNumberChange,
   onRoleCountChange,
   onRolePresetSelect,
   onSettingsChange,
 }: {
-  readonly activeTab: StartSettingsTab;
   readonly defaultRoleCounts: Readonly<RoleCounts>;
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
+  readonly tabState: LiveSettingsTabState;
   readonly t: Localization;
   readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
   readonly onRoleCountChange: (roleId: RoleId, value: number) => void;
@@ -315,417 +334,452 @@ function StartRuleSetPanel({
     ? [t.live.settings.validation.validForWaiting]
     : roleValidationMessages;
   const flowItems = getSettingsFlowItems(settings, t);
+  const generalPanelState = getPanelState(tabState, "general");
+  const timersPanelState = getPanelState(tabState, "timers");
+  const rolesPanelState = getPanelState(tabState, "roles");
 
   return (
-    <div className="liveRuleSetPanel">
+    <div className={`liveRuleSetPanel ${styles["stage"]}`}>
       <section
         aria-labelledby="start-settings-general-tab"
-        hidden={activeTab !== "general"}
+        aria-hidden={generalPanelState === "active" ? undefined : "true"}
+        className={styles["panel"]}
+        data-live-settings-panel="general"
+        data-live-settings-panel-state={generalPanelState}
+        hidden={generalPanelState === "inactive"}
         id="start-settings-general-panel"
+        inert={generalPanelState !== "active"}
         role="tabpanel"
       >
-        <div className="liveSettingsSectionHead">
-          <div>
-            <h3>{t.live.settings.general.heading}</h3>
-            <p>{t.live.settings.general.summary}</p>
-          </div>
-        </div>
-
-        <div className="liveSettingsGridTwo">
-          <article className="liveSettingsCard">
-            <h4>{t.live.settings.general.dayProgressionTitle}</h4>
-            <p>{t.live.settings.general.dayProgressionBody}</p>
-
-            <div className="liveSettingsChoiceGrid">
-              <label className="liveSettingsChoice">
-                <input
-                  checked={settings.dayMode === "ordered_speech"}
-                  name="dayMode"
-                  type="radio"
-                  value="ordered_speech"
-                  onChange={() => onSettingsChange("dayMode", "ordered_speech")}
-                />
-                <span>{t.live.settings.dayMode.ordered.label}</span>
-                <strong>{t.live.settings.dayMode.ordered.title}</strong>
-                <em>{t.live.settings.dayMode.ordered.body}</em>
-              </label>
-
-              <label className="liveSettingsChoice">
-                <input
-                  checked={settings.dayMode === "ready_check"}
-                  name="dayMode"
-                  type="radio"
-                  value="ready_check"
-                  onChange={() => onSettingsChange("dayMode", "ready_check")}
-                />
-                <span>{t.live.settings.dayMode.readyCheck.label}</span>
-                <strong>{t.live.settings.dayMode.readyCheck.title}</strong>
-                <em>{t.live.settings.dayMode.readyCheck.body}</em>
-              </label>
+        <div className={styles["panelMotion"]} data-live-settings-panel-motion="general">
+          <div className="liveSettingsSectionHead">
+            <div>
+              <h3>{t.live.settings.general.heading}</h3>
+              <p>{t.live.settings.general.summary}</p>
             </div>
-          </article>
+          </div>
 
-          <article className="liveSettingsCard">
-            <h4>{t.live.settings.general.voteDetailTitle}</h4>
-            <p>{t.live.settings.general.voteDetailBody}</p>
-            <label className="liveRuleSetField">
-              <span>{t.live.settings.general.voteVisibility}</span>
-              <select
-                value={settings.voteResultVisibility}
-                onChange={(event) =>
-                  onSettingsChange(
-                    "voteResultVisibility",
-                    event.target.value as StartRuleSetSettings["voteResultVisibility"],
-                  )
-                }
-              >
-                <option value="count_only">
-                  {t.live.settings.general.voteVisibilityCountOnly}
-                </option>
-                <option value="voter_to_target">
-                  {t.live.settings.general.voteVisibilityVoterToTarget}
-                </option>
-              </select>
-            </label>
-          </article>
+          <div className="liveSettingsGridTwo">
+            <article className="liveSettingsCard">
+              <h4>{t.live.settings.general.dayProgressionTitle}</h4>
+              <p>{t.live.settings.general.dayProgressionBody}</p>
+
+              <div className="liveSettingsChoiceGrid">
+                <label className="liveSettingsChoice">
+                  <input
+                    checked={settings.dayMode === "ordered_speech"}
+                    name="dayMode"
+                    type="radio"
+                    value="ordered_speech"
+                    onChange={() => onSettingsChange("dayMode", "ordered_speech")}
+                  />
+                  <span>{t.live.settings.dayMode.ordered.label}</span>
+                  <strong>{t.live.settings.dayMode.ordered.title}</strong>
+                  <em>{t.live.settings.dayMode.ordered.body}</em>
+                </label>
+
+                <label className="liveSettingsChoice">
+                  <input
+                    checked={settings.dayMode === "ready_check"}
+                    name="dayMode"
+                    type="radio"
+                    value="ready_check"
+                    onChange={() => onSettingsChange("dayMode", "ready_check")}
+                  />
+                  <span>{t.live.settings.dayMode.readyCheck.label}</span>
+                  <strong>{t.live.settings.dayMode.readyCheck.title}</strong>
+                  <em>{t.live.settings.dayMode.readyCheck.body}</em>
+                </label>
+              </div>
+            </article>
+
+            <article className="liveSettingsCard">
+              <h4>{t.live.settings.general.voteDetailTitle}</h4>
+              <p>{t.live.settings.general.voteDetailBody}</p>
+              <label className="liveRuleSetField">
+                <span>{t.live.settings.general.voteVisibility}</span>
+                <select
+                  value={settings.voteResultVisibility}
+                  onChange={(event) =>
+                    onSettingsChange(
+                      "voteResultVisibility",
+                      event.target.value as StartRuleSetSettings["voteResultVisibility"],
+                    )
+                  }
+                >
+                  <option value="count_only">
+                    {t.live.settings.general.voteVisibilityCountOnly}
+                  </option>
+                  <option value="voter_to_target">
+                    {t.live.settings.general.voteVisibilityVoterToTarget}
+                  </option>
+                </select>
+              </label>
+            </article>
+          </div>
         </div>
       </section>
 
       <section
         aria-labelledby="start-settings-timers-tab"
-        hidden={activeTab !== "timers"}
+        aria-hidden={timersPanelState === "active" ? undefined : "true"}
+        className={styles["panel"]}
+        data-live-settings-panel="timers"
+        data-live-settings-panel-state={timersPanelState}
+        hidden={timersPanelState === "inactive"}
         id="start-settings-timers-panel"
+        inert={timersPanelState !== "active"}
         role="tabpanel"
       >
-        <div className="liveSettingsSectionHead">
-          <div>
-            <h3>{t.live.settings.timers.heading}</h3>
-            <p>{t.live.settings.timers.summary}</p>
+        <div className={styles["panelMotion"]} data-live-settings-panel-motion="timers">
+          <div className="liveSettingsSectionHead">
+            <div>
+              <h3>{t.live.settings.timers.heading}</h3>
+              <p>{t.live.settings.timers.summary}</p>
+            </div>
           </div>
-        </div>
 
-        <div className="liveSettingsMainSide">
-          <div className="liveSettingsStack">
-            <article className="liveSettingsCard">
-              <h4>{t.live.settings.timers.commonTitle}</h4>
-              <p>{t.live.settings.timers.commonBody}</p>
-              <div className="liveTimingGrid common" aria-label={t.live.aria.commonPhaseTiming}>
-                <RuleSetNumberControl
-                  field="firstNightSeconds"
-                  label={t.live.settings.timers.firstNight}
-                  value={settings.firstNightSeconds}
-                  onChange={onNumberChange}
-                />
-                <RuleSetNumberControl
-                  field="nightSeconds"
-                  label={t.live.settings.timers.night}
-                  value={settings.nightSeconds}
-                  onChange={onNumberChange}
-                />
-                <RuleSetNumberControl
-                  field="votingSeconds"
-                  label={t.live.settings.timers.vote}
-                  value={settings.votingSeconds}
-                  onChange={onNumberChange}
-                />
-                <RuleSetNumberControl
-                  field="executionLastWordsSeconds"
-                  label={t.live.settings.timers.lastWords}
-                  value={settings.executionLastWordsSeconds}
-                  onChange={onNumberChange}
-                />
-              </div>
-            </article>
+          <div className="liveSettingsMainSide">
+            <div className="liveSettingsStack">
+              <article className="liveSettingsCard">
+                <h4>{t.live.settings.timers.commonTitle}</h4>
+                <p>{t.live.settings.timers.commonBody}</p>
+                <div className="liveTimingGrid common" aria-label={t.live.aria.commonPhaseTiming}>
+                  <RuleSetNumberControl
+                    field="firstNightSeconds"
+                    label={t.live.settings.timers.firstNight}
+                    value={settings.firstNightSeconds}
+                    onChange={onNumberChange}
+                  />
+                  <RuleSetNumberControl
+                    field="nightSeconds"
+                    label={t.live.settings.timers.night}
+                    value={settings.nightSeconds}
+                    onChange={onNumberChange}
+                  />
+                  <RuleSetNumberControl
+                    field="votingSeconds"
+                    label={t.live.settings.timers.vote}
+                    value={settings.votingSeconds}
+                    onChange={onNumberChange}
+                  />
+                  <RuleSetNumberControl
+                    field="executionLastWordsSeconds"
+                    label={t.live.settings.timers.lastWords}
+                    value={settings.executionLastWordsSeconds}
+                    onChange={onNumberChange}
+                  />
+                </div>
+              </article>
 
-            <article className="liveSettingsCard">
-              <h4>
-                {settings.dayMode === "ordered_speech"
-                  ? t.live.settings.timers.orderedSpeech
-                  : t.live.settings.timers.readyCheck}
-              </h4>
+              <article className="liveSettingsCard">
+                <h4>
+                  {settings.dayMode === "ordered_speech"
+                    ? t.live.settings.timers.orderedSpeech
+                    : t.live.settings.timers.readyCheck}
+                </h4>
+                <p>
+                  {settings.dayMode === "ordered_speech"
+                    ? t.live.settings.timers.orderedSpeechBody
+                    : t.live.settings.timers.readyCheckBody}
+                </p>
+                {settings.dayMode === "ordered_speech" ? (
+                  <div
+                    className="liveTimingGrid day"
+                    aria-label={t.live.settings.timers.orderedSpeechTiming}
+                  >
+                    <RuleSetNumberControl
+                      field="daySpeechSeconds"
+                      label={t.live.settings.timers.speechPerPlayer}
+                      value={settings.daySpeechSeconds}
+                      onChange={onNumberChange}
+                    />
+                    <RuleSetNumberControl
+                      field="firstDaySpeechRounds"
+                      label={t.live.settings.timers.firstDayRounds}
+                      value={settings.firstDaySpeechRounds}
+                      onChange={onNumberChange}
+                    />
+                    <RuleSetNumberControl
+                      field="normalDaySpeechRounds"
+                      label={t.live.settings.timers.normalRounds}
+                      value={settings.normalDaySpeechRounds}
+                      onChange={onNumberChange}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className="liveTimingGrid day"
+                    aria-label={t.live.settings.timers.readyCheckTiming}
+                  >
+                    <RuleSetNumberControl
+                      field="dayReadyCheckSecondsPerPlayer"
+                      label={t.live.settings.timers.readyPerPlayer}
+                      value={settings.dayReadyCheckSecondsPerPlayer}
+                      onChange={onNumberChange}
+                    />
+                  </div>
+                )}
+              </article>
+            </div>
+
+            <aside className="liveSettingsCard liveSettingsSticky">
+              <h4>{t.live.settings.timers.flowPreview}</h4>
               <p>
                 {settings.dayMode === "ordered_speech"
-                  ? t.live.settings.timers.orderedSpeechBody
-                  : t.live.settings.timers.readyCheckBody}
+                  ? t.live.settings.timers.orderedFlow
+                  : t.live.settings.timers.readyCheckFlow}
               </p>
-              {settings.dayMode === "ordered_speech" ? (
-                <div
-                  className="liveTimingGrid day"
-                  aria-label={t.live.settings.timers.orderedSpeechTiming}
-                >
-                  <RuleSetNumberControl
-                    field="daySpeechSeconds"
-                    label={t.live.settings.timers.speechPerPlayer}
-                    value={settings.daySpeechSeconds}
-                    onChange={onNumberChange}
-                  />
-                  <RuleSetNumberControl
-                    field="firstDaySpeechRounds"
-                    label={t.live.settings.timers.firstDayRounds}
-                    value={settings.firstDaySpeechRounds}
-                    onChange={onNumberChange}
-                  />
-                  <RuleSetNumberControl
-                    field="normalDaySpeechRounds"
-                    label={t.live.settings.timers.normalRounds}
-                    value={settings.normalDaySpeechRounds}
-                    onChange={onNumberChange}
-                  />
-                </div>
-              ) : (
-                <div
-                  className="liveTimingGrid day"
-                  aria-label={t.live.settings.timers.readyCheckTiming}
-                >
-                  <RuleSetNumberControl
-                    field="dayReadyCheckSecondsPerPlayer"
-                    label={t.live.settings.timers.readyPerPlayer}
-                    value={settings.dayReadyCheckSecondsPerPlayer}
-                    onChange={onNumberChange}
-                  />
-                </div>
-              )}
-            </article>
+              <div className="liveSettingsFlow">
+                {flowItems.map((item, index) => (
+                  <span key={item.label}>
+                    {index > 0 ? <em aria-hidden="true">-&gt;</em> : null}
+                    <strong>{item.label}</strong>
+                    {item.value}
+                  </span>
+                ))}
+              </div>
+            </aside>
           </div>
-
-          <aside className="liveSettingsCard liveSettingsSticky">
-            <h4>{t.live.settings.timers.flowPreview}</h4>
-            <p>
-              {settings.dayMode === "ordered_speech"
-                ? t.live.settings.timers.orderedFlow
-                : t.live.settings.timers.readyCheckFlow}
-            </p>
-            <div className="liveSettingsFlow">
-              {flowItems.map((item, index) => (
-                <span key={item.label}>
-                  {index > 0 ? <em aria-hidden="true">-&gt;</em> : null}
-                  <strong>{item.label}</strong>
-                  {item.value}
-                </span>
-              ))}
-            </div>
-          </aside>
         </div>
       </section>
 
       <section
         aria-labelledby="start-settings-roles-tab"
-        hidden={activeTab !== "roles"}
+        aria-hidden={rolesPanelState === "active" ? undefined : "true"}
+        className={styles["panel"]}
+        data-live-settings-panel="roles"
+        data-live-settings-panel-state={rolesPanelState}
+        hidden={rolesPanelState === "inactive"}
         id="start-settings-roles-panel"
+        inert={rolesPanelState !== "active"}
         role="tabpanel"
       >
-        <div className="liveSettingsStack">
-          {roleCounts !== null && rolePresets.length > 0 ? (
-            <section className="liveSettingsCard liveRolePresetSection">
+        <div className={styles["panelMotion"]} data-live-settings-panel-motion="roles">
+          <div className="liveSettingsStack">
+            {roleCounts !== null && rolePresets.length > 0 ? (
+              <section className="liveSettingsCard liveRolePresetSection">
+                <div className="liveRolesHeader">
+                  <div>
+                    <h3>{t.live.settings.roles.presetsTitle}</h3>
+                    <p>{t.live.settings.roles.presetsBody}</p>
+                  </div>
+                  <span
+                    className={
+                      selectedRolePreset === null
+                        ? "liveRolePresetStatus"
+                        : "liveRolePresetStatus is-selected"
+                    }
+                  >
+                    {selectedRolePreset === null
+                      ? t.live.settings.roles.custom
+                      : getLocalizedRolePreset(t, selectedRolePreset.id).name}
+                  </span>
+                </div>
+
+                <div className="liveRolePresetGrid" aria-label={t.live.aria.rolePresets}>
+                  {rolePresets.map((preset) => {
+                    const isSelected = selectedRolePreset?.id === preset.id;
+                    const localizedPreset = getLocalizedRolePreset(t, preset.id);
+                    const presetRoleEntries = getPresetRoleEntries(
+                      preset.roleCounts,
+                      startRoleCatalog,
+                    );
+
+                    return (
+                      <button
+                        aria-pressed={isSelected}
+                        className={
+                          isSelected ? "liveRolePresetCard is-selected" : "liveRolePresetCard"
+                        }
+                        key={preset.id}
+                        type="button"
+                        onClick={() => onRolePresetSelect(preset)}
+                      >
+                        <span className="liveRolePresetMark" aria-hidden="true">
+                          {localizedPreset.shortLabel}
+                        </span>
+                        <span className="liveRolePresetCopy">
+                          <strong>{localizedPreset.name}</strong>
+                          <em>{localizedPreset.description}</em>
+                        </span>
+                        <span
+                          className="liveRolePresetChips"
+                          aria-label={t.live.settings.roles.presetRoleMix(localizedPreset.name)}
+                        >
+                          {presetRoleEntries.map(({ count, role }) => {
+                            const localizedRole = getLocalizedRole(t, role.id);
+
+                            return (
+                              <span
+                                className="liveRolePresetChip"
+                                key={role.id}
+                                title={localizedRole.name}
+                              >
+                                <strong>{count}</strong>
+                                {localizedRole.shortLabel}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="liveSettingsCard">
               <div className="liveRolesHeader">
                 <div>
-                  <h3>{t.live.settings.roles.presetsTitle}</h3>
-                  <p>{t.live.settings.roles.presetsBody}</p>
+                  <h3>{t.live.settings.roles.countsTitle}</h3>
+                  <p>{t.live.settings.roles.countsBody}</p>
                 </div>
                 <span
-                  className={
-                    selectedRolePreset === null
-                      ? "liveRolePresetStatus"
-                      : "liveRolePresetStatus is-selected"
-                  }
+                  className={isRoleMixValid ? "liveRoleTotal is-valid" : "liveRoleTotal is-invalid"}
                 >
-                  {selectedRolePreset === null
-                    ? t.live.settings.roles.custom
-                    : getLocalizedRolePreset(t, selectedRolePreset.id).name}
+                  <strong>
+                    {assignedRoleCount} / {playerCount}
+                  </strong>{" "}
+                  {t.live.settings.roles.assigned}
                 </span>
               </div>
+              <div className="liveRoleGrid" aria-label={t.live.aria.roleCounts}>
+                {roleCounts === null ? (
+                  <div className="liveSettingsEmptyOptions">
+                    <strong>{t.live.settings.roles.mixAppearsAt(MIN_ROOM_PLAYERS)}</strong>
+                  </div>
+                ) : (
+                  startRoleCatalog.map((role) => {
+                    const roleId = role.id;
+                    const count = getRoleCount(roleCounts, roleId);
+                    const localizedRole = getLocalizedRole(t, roleId);
+                    const roleName = localizedRole.name;
+                    const canDecrease = canChangeRoleCount(
+                      roleCounts,
+                      roleId,
+                      -1,
+                      playerCount,
+                      roleCatalog,
+                    );
+                    const canIncrease = canChangeRoleCount(
+                      roleCounts,
+                      roleId,
+                      1,
+                      playerCount,
+                      roleCatalog,
+                    );
 
-              <div className="liveRolePresetGrid" aria-label={t.live.aria.rolePresets}>
-                {rolePresets.map((preset) => {
-                  const isSelected = selectedRolePreset?.id === preset.id;
-                  const localizedPreset = getLocalizedRolePreset(t, preset.id);
-                  const presetRoleEntries = getPresetRoleEntries(
-                    preset.roleCounts,
-                    startRoleCatalog,
-                  );
-
-                  return (
-                    <button
-                      aria-pressed={isSelected}
-                      className={
-                        isSelected ? "liveRolePresetCard is-selected" : "liveRolePresetCard"
-                      }
-                      key={preset.id}
-                      type="button"
-                      onClick={() => onRolePresetSelect(preset)}
-                    >
-                      <span className="liveRolePresetMark" aria-hidden="true">
-                        {localizedPreset.shortLabel}
-                      </span>
-                      <span className="liveRolePresetCopy">
-                        <strong>{localizedPreset.name}</strong>
-                        <em>{localizedPreset.description}</em>
-                      </span>
-                      <span
-                        className="liveRolePresetChips"
-                        aria-label={t.live.settings.roles.presetRoleMix(localizedPreset.name)}
+                    return (
+                      <article
+                        className={count === 0 ? "liveRoleCard is-zero" : "liveRoleCard"}
+                        key={roleId}
                       >
-                        {presetRoleEntries.map(({ count, role }) => {
-                          const localizedRole = getLocalizedRole(t, role.id);
-
-                          return (
-                            <span
-                              className="liveRolePresetChip"
-                              key={role.id}
-                              title={localizedRole.name}
-                            >
-                              <strong>{count}</strong>
-                              {localizedRole.shortLabel}
-                            </span>
-                          );
-                        })}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <span className="liveRoleIcon" aria-hidden="true">
+                          {localizedRole.shortLabel}
+                        </span>
+                        <div>
+                          <div className="liveRoleName">{roleName}</div>
+                          <div className="liveRoleDescription">{localizedRole.description}</div>
+                        </div>
+                        <div
+                          className="liveRoleCounter"
+                          aria-label={t.live.settings.roles.count(roleName)}
+                        >
+                          <button
+                            type="button"
+                            aria-label={t.live.settings.roles.decrease(roleName)}
+                            disabled={!canDecrease}
+                            onClick={() => onRoleCountChange(roleId, count - 1)}
+                          >
+                            -
+                          </button>
+                          <span>{count}</span>
+                          <button
+                            type="button"
+                            aria-label={t.live.settings.roles.increase(roleName)}
+                            disabled={!canIncrease}
+                            onClick={() => onRoleCountChange(roleId, count + 1)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
             </section>
-          ) : null}
 
-          <section className="liveSettingsCard">
-            <div className="liveRolesHeader">
-              <div>
-                <h3>{t.live.settings.roles.countsTitle}</h3>
-                <p>{t.live.settings.roles.countsBody}</p>
+            <section className="liveSettingsCard">
+              <div className="liveSettingsSectionHead">
+                <div>
+                  <h3>{t.live.settings.roles.specificTitle}</h3>
+                  <p>{t.live.settings.roles.specificBody}</p>
+                </div>
               </div>
-              <span
-                className={isRoleMixValid ? "liveRoleTotal is-valid" : "liveRoleTotal is-invalid"}
-              >
-                <strong>
-                  {assignedRoleCount} / {playerCount}
-                </strong>{" "}
-                {t.live.settings.roles.assigned}
-              </span>
-            </div>
-            <div className="liveRoleGrid" aria-label={t.live.aria.roleCounts}>
-              {roleCounts === null ? (
-                <div className="liveSettingsEmptyOptions">
-                  <strong>{t.live.settings.roles.mixAppearsAt(MIN_ROOM_PLAYERS)}</strong>
-                </div>
-              ) : (
-                startRoleCatalog.map((role) => {
-                  const roleId = role.id;
-                  const count = getRoleCount(roleCounts, roleId);
-                  const localizedRole = getLocalizedRole(t, roleId);
-                  const roleName = localizedRole.name;
-                  const canDecrease = canChangeRoleCount(
-                    roleCounts,
-                    roleId,
-                    -1,
-                    playerCount,
-                    roleCatalog,
-                  );
-                  const canIncrease = canChangeRoleCount(
-                    roleCounts,
-                    roleId,
-                    1,
-                    playerCount,
-                    roleCatalog,
-                  );
-
-                  return (
-                    <article
-                      className={count === 0 ? "liveRoleCard is-zero" : "liveRoleCard"}
-                      key={roleId}
-                    >
-                      <span className="liveRoleIcon" aria-hidden="true">
-                        {localizedRole.shortLabel}
-                      </span>
-                      <div>
-                        <div className="liveRoleName">{roleName}</div>
-                        <div className="liveRoleDescription">{localizedRole.description}</div>
-                      </div>
-                      <div
-                        className="liveRoleCounter"
-                        aria-label={t.live.settings.roles.count(roleName)}
-                      >
-                        <button
-                          type="button"
-                          aria-label={t.live.settings.roles.decrease(roleName)}
-                          disabled={!canDecrease}
-                          onClick={() => onRoleCountChange(roleId, count - 1)}
-                        >
-                          -
-                        </button>
-                        <span>{count}</span>
-                        <button
-                          type="button"
-                          aria-label={t.live.settings.roles.increase(roleName)}
-                          disabled={!canIncrease}
-                          onClick={() => onRoleCountChange(roleId, count + 1)}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          <section className="liveSettingsCard">
-            <div className="liveSettingsSectionHead">
-              <div>
-                <h3>{t.live.settings.roles.specificTitle}</h3>
-                <p>{t.live.settings.roles.specificBody}</p>
-              </div>
-            </div>
-            <div className="liveSettingsOptionGrid">
-              {activeRoleOptions.map(({ option, role }) => (
-                <div className="liveSettingsOptionCard" key={`${role.id}:${option.key}`}>
-                  <h4>
-                    {getLocalizedRole(t, role.id).name} -{" "}
-                    {getLocalizedRoleOptionLabel(t, role.id, option.key)}
-                  </h4>
-                  {renderRoleSpecificOptionControl(
-                    option,
-                    getLocalizedRoleOptionLabel(t, role.id, option.key),
-                    settings,
-                    onSettingsChange,
-                    t,
-                  )}
-                </div>
-              ))}
-
-              {activeRoleOptions.length === 0 ? (
-                <div className="liveSettingsEmptyOptions">
-                  {t.live.settings.roles.noExtraOptions}
-                </div>
-              ) : null}
-            </div>
-          </section>
-
-          <section
-            className={
-              isRoleMixValid
-                ? "liveSettingsValidationBox is-valid"
-                : "liveSettingsValidationBox is-invalid"
-            }
-          >
-            <div>
-              <h3>
-                {isRoleMixValid
-                  ? t.live.settings.validation.readyToApply
-                  : t.live.settings.validation.needsAdjustment}
-              </h3>
-              <ul>
-                {displayedRoleValidationMessages.map((message) => (
-                  <li key={message}>{message}</li>
+              <div className="liveSettingsOptionGrid">
+                {activeRoleOptions.map(({ option, role }) => (
+                  <div className="liveSettingsOptionCard" key={`${role.id}:${option.key}`}>
+                    <h4>
+                      {getLocalizedRole(t, role.id).name} -{" "}
+                      {getLocalizedRoleOptionLabel(t, role.id, option.key)}
+                    </h4>
+                    {renderRoleSpecificOptionControl(
+                      option,
+                      getLocalizedRoleOptionLabel(t, role.id, option.key),
+                      settings,
+                      onSettingsChange,
+                      t,
+                    )}
+                  </div>
                 ))}
-              </ul>
-            </div>
-            <span aria-hidden="true" />
-          </section>
+
+                {activeRoleOptions.length === 0 ? (
+                  <div className="liveSettingsEmptyOptions">
+                    {t.live.settings.roles.noExtraOptions}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section
+              className={
+                isRoleMixValid
+                  ? "liveSettingsValidationBox is-valid"
+                  : "liveSettingsValidationBox is-invalid"
+              }
+            >
+              <div>
+                <h3>
+                  {isRoleMixValid
+                    ? t.live.settings.validation.readyToApply
+                    : t.live.settings.validation.needsAdjustment}
+                </h3>
+                <ul>
+                  {displayedRoleValidationMessages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+              <span aria-hidden="true" />
+            </section>
+          </div>
         </div>
       </section>
     </div>
   );
+}
+
+function getPanelState(
+  state: LiveSettingsTabState,
+  tab: LiveSettingsTab,
+): "active" | "inactive" | "outgoing" {
+  if (state.activeTab === tab) {
+    return "active";
+  }
+
+  return state.outgoingTab === tab ? "outgoing" : "inactive";
 }
 
 function RuleSetNumberControl({

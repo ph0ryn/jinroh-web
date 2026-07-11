@@ -2779,10 +2779,12 @@ a {
 .liveSettingsTabs {
   background: rgba(0, 0, 0, 0.1);
   border-bottom: 1px solid rgba(var(--live-accent-rgb), 0.16);
-  display: flex;
+  display: grid;
   flex: 0 0 auto;
   gap: 10px;
+  grid-template-columns: repeat(3, 126px);
   padding: 14px 26px;
+  position: relative;
 }
 
 .liveSettingsTabs button {
@@ -2797,11 +2799,6 @@ a {
   letter-spacing: 0.04em;
   min-height: 42px;
   min-width: 126px;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
 }
 
 .liveSettingsTabs button:hover:not(.active) {
@@ -2811,9 +2808,9 @@ a {
 }
 
 .liveSettingsTabs button.active {
-  background: linear-gradient(180deg, #f2c77a, var(--live-accent));
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 10px 26px rgba(var(--live-accent-rgb), 0.2);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
   color: #1e1308;
 }
 
@@ -4035,13 +4032,13 @@ a {
 
   .liveSettingsTabs {
     gap: 8px;
-    overflow-x: auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 12px 18px;
   }
 
   .liveSettingsTabs button {
     flex: 0 0 auto;
-    min-width: 108px;
+    min-width: 0;
   }
 
   .liveSettingsBody {
