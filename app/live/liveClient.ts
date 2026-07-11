@@ -11,6 +11,7 @@ type ApiErrorResponse = {
 type RequestOptions = {
   body?: unknown;
   method?: "GET" | "POST";
+  signal?: AbortSignal;
   token?: string;
 };
 
@@ -50,6 +51,7 @@ export async function apiFetch<Body>(path: string, options: RequestOptions): Pro
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     headers,
     method: options.method ?? "GET",
+    signal: options.signal,
   });
   const json = await parseJson(response);
 

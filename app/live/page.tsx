@@ -585,12 +585,13 @@ export default function LivePage() {
     let isCancelled = false;
     let refreshTimerId: number | null = null;
     const activeToken = identityToken;
+    const abortController = new AbortController();
 
     async function refreshRealtimeAuthorization(): Promise<void> {
       try {
         const authorization = await apiFetch<RealtimeAuthorization>(
           `/api/rooms/${activeRoomCode}/realtime-token`,
-          { method: "POST", token: activeToken },
+          { method: "POST", signal: abortController.signal, token: activeToken },
         );
 
         if (isCancelled) {
@@ -627,6 +628,7 @@ export default function LivePage() {
 
     return () => {
       isCancelled = true;
+      abortController.abort();
       if (refreshTimerId !== null) {
         window.clearTimeout(refreshTimerId);
       }
