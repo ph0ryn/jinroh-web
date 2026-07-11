@@ -1,9 +1,9 @@
 import { expect, test } from "playwright/test";
 
-import { apiFetch, createApiPlayer } from "./support/api";
+import { apiFetch, createApiPlayer, joinWaitingRoom } from "./support/api";
 
 import type { RoomSummary } from "@/lib/shared/game";
-import type { APIRequestContext, Page } from "playwright/test";
+import type { Page } from "playwright/test";
 
 test("round table choreographs accepted membership changes once", async ({ page, request }) => {
   const unexpectedErrors: string[] = [];
@@ -36,7 +36,7 @@ test("round table choreographs accepted membership changes once", async ({ page,
   await expect(roundTable.locator("[data-live-seat-motion-kind]")).toHaveCount(0);
   await installSeatMotionRecorder(page);
 
-  const firstGuestSummary = await joinRoom(request, room.code, firstGuest);
+  const firstGuestSummary = await joinWaitingRoom(request, room.code, firstGuest);
   const firstGuestId = requireCurrentPlayerId(firstGuestSummary);
   const firstGuestMotion = roundTable.locator(
     `[data-live-seat-motion][data-live-motion-player-id="${firstGuestId}"]`,
@@ -49,7 +49,7 @@ test("round table choreographs accepted membership changes once", async ({ page,
     timeout: 3_000,
   });
 
-  const secondGuestSummary = await joinRoom(request, room.code, secondGuest);
+  const secondGuestSummary = await joinWaitingRoom(request, room.code, secondGuest);
   const secondGuestId = requireCurrentPlayerId(secondGuestSummary);
   const secondGuestMotion = roundTable.locator(
     `[data-live-seat-motion][data-live-motion-player-id="${secondGuestId}"]`,
@@ -122,7 +122,7 @@ test("reduced motion settles round table membership without choreography", async
   await openRoomAsPlayer(page, host.token);
   await installSeatMotionRecorder(page);
 
-  const guestSummary = await joinRoom(request, room.code, guest);
+  const guestSummary = await joinWaitingRoom(request, room.code, guest);
   const guestId = requireCurrentPlayerId(guestSummary);
   const roundTable = page.locator("[data-live-round-table]");
   const guestMotion = roundTable.locator(
@@ -148,18 +148,6 @@ async function openRoomAsPlayer(page: Page, identityToken: string): Promise<void
   );
   await page.goto("/live");
   await expect(page.locator("[data-live-round-table]")).toBeVisible();
-}
-
-async function joinRoom(
-  request: APIRequestContext,
-  roomCode: string,
-  player: { readonly displayName: string; readonly token: string },
-): Promise<RoomSummary> {
-  return apiFetch(request, `/api/rooms/${roomCode}/join`, {
-    body: { displayName: player.displayName },
-    method: "POST",
-    token: player.token,
-  });
 }
 
 function requireCurrentPlayerId(summary: RoomSummary): string {

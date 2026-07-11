@@ -562,6 +562,7 @@ export const jaLocalization = {
       openSeats: (count: number) => `空き席 ${count}`,
       progressLabel: (joined: number, target: number) =>
         `${target}席中 ${joined}席が埋まっています`,
+      ready: "準備完了",
       requirement: "開始条件",
       shareText: (roomCode: string) => `Jinroh Web 部屋 ${roomCode} に参加してください。`,
       shareFailed: "招待を共有またはコピーできませんでした。",

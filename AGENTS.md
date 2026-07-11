@@ -71,6 +71,10 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   success, shared action status, or public progress. If the accepted submission
   already advanced the phase and removed its row, let the phase effect own the
   transition.
+- Let the round table own player-specific membership motion. Lobby progress may
+  animate only the accepted aggregate joined count against the fixed target;
+  room, viewer, and target changes are settled baselines, and readiness requires
+  exact equality rather than a visually full bar.
 - Give each effect component one scoped `useGSAP()` timeline and let React remain
   the source of truth for game state and final CSS classes.
 - Separate static placement, animated transform/opacity, and final visual state

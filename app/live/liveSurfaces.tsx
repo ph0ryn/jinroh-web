@@ -20,6 +20,7 @@ import {
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
+import { LiveLobbyProgress } from "./effects/ui/LiveLobbyProgress";
 import { LiveActionList } from "./liveActionList";
 import {
   formatDateTime,
@@ -29,7 +30,6 @@ import {
 } from "./liveEventPresentation";
 import {
   canStartRoom,
-  countJoinedPlayers,
   formatActionProgress,
   formatPhaseCountdown,
   getActionPanelTitle,
@@ -603,40 +603,6 @@ export function RoomInviteTools({
   );
 }
 
-export function WaitingRequirements({
-  summary,
-  t,
-}: {
-  readonly summary: RoomSummary;
-  readonly t: Localization;
-}) {
-  const joinedPlayerCount = countJoinedPlayers(summary);
-  const requiredPlayers = Math.max(summary.targetPlayerCount - joinedPlayerCount, 0);
-  const progressPercent = Math.min(
-    100,
-    Math.round((joinedPlayerCount / summary.targetPlayerCount) * 100),
-  );
-
-  return (
-    <div className="liveWaitingRequirements">
-      <div>
-        <span>{t.live.invite.requirement}</span>
-        <strong>
-          {requiredPlayers === 0
-            ? t.live.invite.allSeatsFilled
-            : t.live.invite.morePlayersNeeded(requiredPlayers)}
-        </strong>
-      </div>
-      <div
-        className="liveProgressTrack"
-        aria-label={t.live.invite.progressLabel(joinedPlayerCount, summary.targetPlayerCount)}
-      >
-        <span style={{ width: `${progressPercent}%` }} />
-      </div>
-    </div>
-  );
-}
-
 export function LiveWaitingSurface({
   copiedRoomCode,
   isBusy,
@@ -673,6 +639,7 @@ export function LiveWaitingSurface({
           </div>
         </div>
 
+        <LiveLobbyProgress summary={summary} t={t} />
         <RoomInviteTools
           copiedRoomCode={copiedRoomCode}
           roomUrl={roomUrl}
@@ -681,7 +648,6 @@ export function LiveWaitingSurface({
           onCopyRoomCode={onCopyRoomCode}
           onShareRoom={onShareRoom}
         />
-        <WaitingRequirements summary={summary} t={t} />
       </section>
 
       <section className="livePanel liveControlPanel" aria-label={t.live.aria.waitingControls}>

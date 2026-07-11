@@ -576,6 +576,7 @@ export const enLocalization = {
       morePlayersNeeded: (count: number) => `${count} more player${count === 1 ? "" : "s"} needed.`,
       openSeats: (count: number) => `${count} seats open`,
       progressLabel: (joined: number, target: number) => `${joined} of ${target} seats filled`,
+      ready: "Ready",
       requirement: "Start requirement",
       shareText: (roomCode: string) => `Join Jinroh Web room ${roomCode}.`,
       shareFailed: "Could not share or copy the room invite.",

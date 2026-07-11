@@ -81,6 +81,18 @@ export async function createStartedRoom(
   return { players, roomCode: room.code };
 }
 
+export async function joinWaitingRoom(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+): Promise<RoomSummary> {
+  return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/join`, {
+    body: { displayName: player.displayName },
+    method: "POST",
+    token: player.token,
+  });
+}
+
 export async function readRoomSummary(
   request: APIRequestContext,
   roomCode: string,

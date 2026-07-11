@@ -183,7 +183,7 @@ export function canStartRoom(summary: RoomSummary | null): boolean {
   return joinedPlayerCount === summary.targetPlayerCount;
 }
 
-export function countJoinedPlayers(summary: RoomSummary): number {
+export function countJoinedPlayers(summary: Pick<RoomSummary, "players">): number {
   return summary.players.filter((player) => player.status === "joined").length;
 }
 
