@@ -85,10 +85,11 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   active notification plus the latest pending replacement, scope room-bound
   notifications to the current room session, and keep dismissal timers out of
   page and request handlers.
-- Hold accepted public-log row additions while an interruptive cinematic cue
-  obscures the dialog, then reveal only the latest bounded batch after the cue
-  queue clears. Discard held rows on close, room or viewer changes, hidden
-  updates, and reduced motion rather than replaying them later.
+- Hold accepted stable-ID list additions, including public-log rows and night
+  conversation messages, while an interruptive cinematic cue obscures their
+  dialog, then reveal only the latest bounded batch after the cue queue clears.
+  Discard held items on close, session changes, hidden updates, and reduced
+  motion rather than replaying them later.
 - Separate static placement, animated transform/opacity, and final visual state
   onto different DOM layers when they could compete for the same CSS property.
   Clear transient GSAP properties and diagnostic markers after settlement.

@@ -22,7 +22,7 @@ import {
 
 import { LiveLobbyProgress } from "./effects/ui/LiveLobbyProgress";
 import { LiveModalFrame } from "./effects/ui/LiveModalFrame";
-import { useLiveEventLogMotion } from "./effects/ui/useLiveEventLogMotion";
+import { useLiveListAdditionMotion } from "./effects/ui/useLiveListAdditionMotion";
 import { LiveActionList } from "./liveActionList";
 import {
   formatDateTime,
@@ -67,7 +67,7 @@ type LivePlayingSurfaceProps = {
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
-  readonly isPublicLogObscured: boolean;
+  readonly isCinematicObscured: boolean;
   readonly locale: Locale;
   readonly nightConversationDraft: string;
   readonly pendingActionKey: string | null;
@@ -88,7 +88,7 @@ type LivePlayingSurfaceProps = {
 type LiveEndedSurfaceProps = {
   readonly isBusy: boolean;
   readonly isPublicLogOpen: boolean;
-  readonly isPublicLogObscured: boolean;
+  readonly isCinematicObscured: boolean;
   readonly locale: Locale;
   readonly summary: RoomSummary;
   readonly t: Localization;
@@ -685,7 +685,7 @@ export function LivePlayingSurface({
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
-  isPublicLogObscured,
+  isCinematicObscured,
   locale,
   nightConversationDraft,
   pendingActionKey,
@@ -828,8 +828,12 @@ export function LivePlayingSurface({
             conversation={nightConversation}
             draft={nightConversationDraft}
             isBusy={isBusy}
+            isObscured={isCinematicObscured}
+            isOpen={isNightConversationOpen}
             locale={locale}
+            roomCode={summary.code}
             t={t}
+            viewerPlayerId={summary.currentPlayerId}
             onDraftChange={onNightConversationDraftChange}
             onSend={onSendNightConversation}
           />
@@ -838,7 +842,7 @@ export function LivePlayingSurface({
 
       <PublicLogDialog
         isOpen={isPublicLogOpen}
-        isObscured={isPublicLogObscured}
+        isObscured={isCinematicObscured}
         locale={locale}
         summary={summary}
         t={t}
@@ -851,7 +855,7 @@ export function LivePlayingSurface({
 export function LiveEndedSurface({
   isBusy,
   isPublicLogOpen,
-  isPublicLogObscured,
+  isCinematicObscured,
   locale,
   summary,
   t,
@@ -903,7 +907,7 @@ export function LiveEndedSurface({
 
       <PublicLogDialog
         isOpen={isPublicLogOpen}
-        isObscured={isPublicLogObscured}
+        isObscured={isCinematicObscured}
         locale={locale}
         summary={summary}
         t={t}
@@ -968,22 +972,42 @@ function NightConversationPanel({
   conversation,
   draft,
   isBusy,
+  isObscured,
+  isOpen,
   locale,
+  roomCode,
   t,
+  viewerPlayerId,
   onDraftChange,
   onSend,
 }: {
   readonly conversation: NightConversationView;
   readonly draft: string;
   readonly isBusy: boolean;
+  readonly isObscured: boolean;
+  readonly isOpen: boolean;
   readonly locale: Locale;
+  readonly roomCode: string;
   readonly t: Localization;
+  readonly viewerPlayerId: string | null;
   readonly onDraftChange: (value: string) => void;
   readonly onSend: (conversation: NightConversationView) => void;
 }) {
   const trimmedDraft = draft.trim();
   const lastMessageId = conversation.messages.at(-1)?.id ?? null;
   const { containerRef, handleScroll } = useFollowScrollEnd(lastMessageId);
+  useLiveListAdditionMotion(containerRef, {
+    isObscured,
+    isOpen,
+    itemIds: conversation.messages.map((message) => message.id),
+    motionKind: "message",
+    sessionKey: JSON.stringify([
+      roomCode,
+      viewerPlayerId,
+      conversation.groupId,
+      conversation.nightNumber,
+    ]),
+  });
   const canSend =
     conversation.canSend &&
     !isBusy &&
@@ -1000,9 +1024,18 @@ function NightConversationPanel({
       {conversation.messages.length === 0 ? (
         <p>{t.live.nightConversation.noMessages}</p>
       ) : (
-        <ol className="liveNightChatMessages" ref={containerRef} onScroll={handleScroll}>
+        <ol
+          className="liveNightChatMessages"
+          data-live-night-message-list
+          ref={containerRef}
+          onScroll={handleScroll}
+        >
           {conversation.messages.map((message) => (
-            <li key={message.id}>
+            <li
+              data-live-list-item-id={message.id}
+              data-live-night-message-id={message.id}
+              key={message.id}
+            >
               <div>
                 <strong>{message.senderName}</strong>
                 <time dateTime={message.createdAt}>
@@ -1056,12 +1089,12 @@ function EventLog({
   const events = summary.game?.events ?? [];
   const lastEventId = events.at(-1)?.id ?? null;
   const { containerRef, handleScroll } = useFollowScrollEnd(lastEventId);
-  useLiveEventLogMotion(containerRef, {
-    eventIds: events.map((event) => event.id),
+  useLiveListAdditionMotion(containerRef, {
     isObscured,
     isOpen,
-    roomCode: summary.code,
-    viewerPlayerId: summary.currentPlayerId,
+    itemIds: events.map((event) => event.id),
+    motionKind: "event",
+    sessionKey: JSON.stringify([summary.code, summary.currentPlayerId, "public-events"]),
   });
 
   if (events.length === 0) {
@@ -1079,7 +1112,7 @@ function EventLog({
         const display = formatPublicEvent(event, summary.players, t);
 
         return (
-          <li data-live-event-id={event.id} key={event.id}>
+          <li data-live-event-id={event.id} data-live-list-item-id={event.id} key={event.id}>
             <time dateTime={event.createdAt}>{formatDateTime(event.createdAt, locale, t)}</time>
             <strong>{display.kindLabel}</strong>
             <p>{display.message}</p>
