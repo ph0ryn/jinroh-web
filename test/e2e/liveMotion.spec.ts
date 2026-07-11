@@ -91,15 +91,11 @@ test("round table choreographs accepted membership changes once", async ({ page,
   await expectMotionStylesToBeClear(emptySeatMotion);
 
   await resetSeatMotionRecorder(page);
-  const refreshButton = page.getByRole("button", { name: "Refresh", exact: true });
-
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === "GET" && response.url().endsWith("/api/rooms/current"),
-    ),
-    refreshButton.click(),
-  ]);
+  await page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" && response.url().endsWith("/api/rooms/current"),
+    { timeout: 6_000 },
+  );
   await page.waitForTimeout(800);
 
   expect(await readSeatMotionEvents(page)).toEqual([]);

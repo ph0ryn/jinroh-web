@@ -161,7 +161,18 @@ test("leaving while waiting requires confirmation and transfers host controls", 
 
     await host.page.setViewportSize({ height: 500, width: 390 });
     await host.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await expect.poll(() => host.page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        host.page.evaluate(() => ({
+          documentOverflowX:
+            document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          documentOverflowY:
+            document.documentElement.scrollHeight - document.documentElement.clientHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        })),
+      )
+      .toEqual({ documentOverflowX: 0, documentOverflowY: 0, scrollX: 0, scrollY: 0 });
 
     await leaveButton.click();
     await leaveDialog.getByRole("button", { name: "Leave room", exact: true }).click();
@@ -331,9 +342,9 @@ test("the desktop round table uses the available play area", async ({ page, requ
   );
   await page.goto("/live");
 
-  const shell = page.locator(".liveShellGame");
-  const tableBoard = page.locator(".livePlayTablePanel .liveTableBoard");
-  const tableSurface = page.locator(".livePlayTablePanel .liveTableSurface");
+  const shell = page.locator('[data-live-mood="night"]');
+  const tableBoard = page.locator("[data-live-round-table]");
+  const tableSurface = page.locator("[data-live-table-surface]");
 
   await expect(shell).toBeVisible();
   await expect(tableBoard).toBeVisible();
@@ -438,7 +449,7 @@ async function readRoundTableGeometry(page: Page): Promise<{
   readonly surfaceWidth: number;
 }> {
   return page.locator("[data-live-round-table]").evaluate((board) => {
-    const surface = board.querySelector<HTMLElement>(".liveTableSurface");
+    const surface = board.querySelector<HTMLElement>("[data-live-table-surface]");
 
     if (surface === null) {
       throw new Error("Round table surface was not rendered.");
@@ -490,8 +501,8 @@ async function readCurrentSeatOrientation(page: Page): Promise<{
   readonly tableCenterY: number;
 }> {
   return page.locator("[data-live-round-table]").evaluate((board) => {
-    const surface = board.querySelector<HTMLElement>(".liveTableSurface");
-    const currentSeat = board.querySelector<HTMLElement>(".liveTableSeat.selected");
+    const surface = board.querySelector<HTMLElement>("[data-live-table-surface]");
+    const currentSeat = board.querySelector<HTMLElement>("[data-live-current-seat]");
 
     if (surface === null || currentSeat === null) {
       throw new Error("Current player seat orientation was not rendered.");

@@ -90,13 +90,11 @@ test("lobby progress choreographs accepted seating changes once", async ({ page,
   expect(await readLobbyProgressEvents(page)).toEqual(["increase", "ready", "decrease"]);
 
   await resetLobbyProgressRecorder(page);
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === "GET" && response.url().endsWith("/api/rooms/current"),
-    ),
-    page.getByRole("button", { exact: true, name: "Refresh" }).click(),
-  ]);
+  await page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" && response.url().endsWith("/api/rooms/current"),
+    { timeout: 6_000 },
+  );
   await page.waitForTimeout(800);
 
   expect(await readLobbyProgressEvents(page)).toEqual([]);
