@@ -3,6 +3,7 @@
 import { useCallback, useEffectEvent, useRef } from "react";
 
 import { gsap, useGSAP } from "../liveGsap";
+import { observeMeaningfulLiveElementResize } from "../liveResizeSettlement";
 import { usePrefersReducedMotion } from "../usePrefersReducedMotion";
 import {
   LIVE_SETTINGS_TABS,
@@ -80,7 +81,7 @@ export function useLiveSettingsTabMotion({
   }, []);
 
   useGSAP(
-    () => {
+    (_, contextSafe) => {
       timelineRef.current?.kill();
       timelineRef.current = null;
       const runGeneration = (runGenerationRef.current += 1);
@@ -189,6 +190,35 @@ export function useLiveSettingsTabMotion({
       }
 
       timelineRef.current = timeline;
+
+      const settleForResizeCallback = () => {
+        if (timelineRef.current !== timeline) {
+          return;
+        }
+
+        timeline.kill();
+        timelineRef.current = null;
+        gsap.set(incoming, { opacity: 1, x: 0 });
+        gsap.set(outgoing, { opacity: 0, x: state.direction * -14 });
+        clearPanelMotionProperties([incoming]);
+        clearIndicatorMotionProperties(indicator);
+        delete root.dataset["liveSettingsTabMotionKind"];
+        handleSettled(state.generation);
+      };
+      const settleForResize = contextSafe?.(settleForResizeCallback) ?? settleForResizeCallback;
+      const stopObservingResize = observeMeaningfulLiveElementResize(
+        tabList === null ? [root] : [root, tabList],
+        settleForResize,
+      );
+
+      return () => {
+        stopObservingResize();
+        timeline.kill();
+
+        if (timelineRef.current === timeline) {
+          timelineRef.current = null;
+        }
+      };
     },
     {
       dependencies: [

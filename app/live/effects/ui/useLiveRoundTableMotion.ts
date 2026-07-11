@@ -3,6 +3,7 @@
 import { useRef } from "react";
 
 import { gsap, useGSAP } from "../liveGsap";
+import { observeMeaningfulLiveElementResize } from "../liveResizeSettlement";
 import { usePrefersReducedMotion } from "../usePrefersReducedMotion";
 import {
   createLiveRoundTableMotionSnapshot,
@@ -39,7 +40,7 @@ export function useLiveRoundTableMotion(summary: RoomSummary): RefObject<HTMLDiv
   const snapshotKey = getLiveRoundTableMotionSnapshotKey(snapshot);
 
   useGSAP(
-    () => {
+    (_, contextSafe) => {
       const root = rootRef.current;
 
       if (root === null) {
@@ -70,16 +71,25 @@ export function useLiveRoundTableMotion(summary: RoomSummary): RefObject<HTMLDiv
       const nextSeatByPlayerId = new Map(
         snapshot.seats.map((seat) => [seat.playerId, seat] as const),
       );
-      const tableSurface = root.querySelector<HTMLElement>(".liveTableSurface");
+      const tableSurface = root.querySelector<HTMLElement>("[data-live-table-surface]");
       const tableRect = tableSurface?.getBoundingClientRect() ?? null;
       const animatedElements = new Set<HTMLElement>();
       const markedTargets = new Set<HTMLElement>();
+      let stopObservingResize: () => void = () => undefined;
+      let settled = false;
+      const settleMotion = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        stopObservingResize();
+        clearAnimatedProperties(animatedElements);
+        clearMarkedTargets(markedTargets);
+      };
       const timeline = gsap.timeline({
         defaults: { overwrite: "auto" },
-        onComplete: () => {
-          clearAnimatedProperties(animatedElements);
-          clearMarkedTargets(markedTargets);
-        },
+        onComplete: settleMotion,
       });
       for (const playerId of reconciliation.changes.movedPlayerIds) {
         const target = playerTargets.get(playerId);
@@ -199,9 +209,25 @@ export function useLiveRoundTableMotion(summary: RoomSummary): RefObject<HTMLDiv
         markedTargets,
       );
 
+      if (animatedElements.size === 0) {
+        timeline.kill();
+        settleMotion();
+        return;
+      }
+
+      const settleForResizeCallback = () => {
+        timeline.kill();
+        settleMotion();
+      };
+      const settleForResize = contextSafe?.(settleForResizeCallback) ?? settleForResizeCallback;
+      stopObservingResize = observeMeaningfulLiveElementResize(
+        tableSurface === null ? [root] : [root, tableSurface],
+        settleForResize,
+      );
+
       return () => {
         timeline.kill();
-        clearMarkedTargets(markedTargets);
+        settleMotion();
       };
     },
     {
