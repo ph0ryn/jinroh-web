@@ -287,7 +287,11 @@ async function readModalIsolation(page: Page): Promise<{
       const parent = currentBranch.parentElement;
 
       for (const sibling of parent.children) {
-        if (sibling instanceof HTMLElement && sibling !== currentBranch) {
+        if (
+          sibling instanceof HTMLElement &&
+          sibling !== currentBranch &&
+          !sibling.hasAttribute("data-live-modal-inert-exempt")
+        ) {
           underlyingBranches.push(sibling);
         }
       }

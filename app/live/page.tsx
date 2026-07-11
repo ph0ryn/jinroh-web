@@ -5,7 +5,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
+import {
+  createLiveToastRoomSessionScope,
+  LIVE_TOAST_PAGE_SCOPE,
+  type LiveToastScope,
+  type LiveToastTone,
+} from "@/app/live/effects/ui/liveToastModel";
+import { LiveToastRegion } from "@/app/live/effects/ui/LiveToastRegion";
 import { useLiveActionFeedback } from "@/app/live/effects/ui/useLiveActionFeedback";
+import { useLiveToastController } from "@/app/live/effects/ui/useLiveToastController";
 import { useLiveEffectQueue } from "@/app/live/effects/useLiveEffectQueue";
 import {
   apiFetch,
@@ -41,11 +49,8 @@ import {
   LiveEndedSurface,
   LivePlayingSurface,
   LiveEntrySurface,
-  LiveToastRegion,
   LiveWaitingSurface,
   SwitchRoomDialog,
-  type LiveToast,
-  type LiveToastTone,
   type SetupPendingAction,
 } from "@/app/live/liveSurfaces";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
@@ -147,11 +152,9 @@ export default function LivePage() {
   const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
   const [isPublicLogOpen, setIsPublicLogOpen] = useState(false);
   const [isLeaveConfirmationOpen, setIsLeaveConfirmationOpen] = useState(false);
-  const [toast, setToast] = useState<LiveToast | null>(null);
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
-  const toastDismissTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const identityTokenRef = useRef<string | null>(null);
   const roomSummaryRef = useRef<RoomSummary | null>(null);
@@ -176,35 +179,39 @@ export default function LivePage() {
   } = useLiveEffectQueue();
   const { completeCue: completeActionFeedbackCue, cue: actionFeedbackCue } =
     useLiveActionFeedback(roomSummary);
+  const {
+    clearScope: clearToastScope,
+    completeEntry: completeToastEntry,
+    completeExit: completeToastExit,
+    dismiss: dismissToast,
+    request: requestToast,
+    state: toastState,
+  } = useLiveToastController();
 
-  const dismissToast = useCallback(() => {
-    if (toastDismissTimerRef.current !== null) {
-      window.clearTimeout(toastDismissTimerRef.current);
-      toastDismissTimerRef.current = null;
-    }
-
-    setToast(null);
-  }, []);
+  const captureRoomToastScope = useCallback(
+    (): LiveToastScope => createLiveToastRoomSessionScope(roomSessionIdRef.current),
+    [],
+  );
 
   const showToast = useCallback(
-    (message: string, tone: LiveToastTone = "info", durationMs = TOAST_DEFAULT_DURATION_MS) => {
-      if (toastDismissTimerRef.current !== null) {
-        window.clearTimeout(toastDismissTimerRef.current);
-      }
-
-      setToast({ message, tone });
-
-      if (durationMs <= 0) {
-        toastDismissTimerRef.current = null;
+    (
+      message: string,
+      tone: LiveToastTone = "info",
+      durationMs = TOAST_DEFAULT_DURATION_MS,
+      scope: LiveToastScope = LIVE_TOAST_PAGE_SCOPE,
+    ) => {
+      if (scope.kind === "roomSession" && scope.sessionId !== roomSessionIdRef.current) {
         return;
       }
 
-      toastDismissTimerRef.current = window.setTimeout(() => {
-        toastDismissTimerRef.current = null;
-        setToast(null);
-      }, durationMs);
+      requestToast({
+        message,
+        scope,
+        timeoutMs: durationMs > 0 ? durationMs : null,
+        tone,
+      });
     },
-    [setToast],
+    [requestToast],
   );
 
   const updateIdentityToken = useCallback((nextIdentityToken: string | null) => {
@@ -231,13 +238,14 @@ export default function LivePage() {
 
   const beginRoomSession = useCallback(() => {
     clearEffects();
+    clearToastScope(captureRoomToastScope());
     roomSessionIdRef.current += 1;
     nextCurrentRoomRequestIdRef.current += 1;
     appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = null;
     setPendingActionKey(null);
-  }, [clearEffects]);
+  }, [captureRoomToastScope, clearEffects, clearToastScope]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -292,10 +300,6 @@ export default function LivePage() {
       if (copiedInviteResetTimerRef.current !== null) {
         window.clearTimeout(copiedInviteResetTimerRef.current);
       }
-
-      if (toastDismissTimerRef.current !== null) {
-        window.clearTimeout(toastDismissTimerRef.current);
-      }
     },
     [],
   );
@@ -320,6 +324,7 @@ export default function LivePage() {
   const clearCurrentRoom = useCallback(
     (options: ClearCurrentRoomOptions = {}) => {
       clearEffects();
+      clearToastScope(captureRoomToastScope());
       roomSessionIdRef.current += 1;
       nextCurrentRoomRequestIdRef.current += 1;
       appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
@@ -343,7 +348,7 @@ export default function LivePage() {
       setIsLeaveConfirmationOpen(false);
       window.requestAnimationFrame(() => window.scrollTo({ left: 0, top: 0 }));
     },
-    [clearEffects],
+    [captureRoomToastScope, clearEffects, clearToastScope],
   );
 
   const resetInvalidIdentity = useCallback(
@@ -365,6 +370,7 @@ export default function LivePage() {
       return;
     }
 
+    const toastScope = captureRoomToastScope();
     isBusyRef.current = true;
     setIsBusy(true);
     setSetupPendingAction(pendingAction);
@@ -379,7 +385,7 @@ export default function LivePage() {
 
       const failureMessage = toRequestFailureMessage(error, t);
 
-      showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS);
+      showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
     } finally {
       isBusyRef.current = false;
       setIsBusy(false);
@@ -501,6 +507,7 @@ export default function LivePage() {
     }
 
     let isCancelled = false;
+    const toastScope = captureRoomToastScope();
     const timerId = window.setTimeout(() => {
       void syncCurrentRoom(identityToken).catch((error: unknown) => {
         if (isCancelled) {
@@ -512,7 +519,12 @@ export default function LivePage() {
           return;
         }
 
-        showToast(t.live.room.currentCouldNotLoad, "error", TOAST_IMPORTANT_DURATION_MS);
+        showToast(
+          t.live.room.currentCouldNotLoad,
+          "error",
+          TOAST_IMPORTANT_DURATION_MS,
+          toastScope,
+        );
       });
     }, 0);
 
@@ -521,6 +533,7 @@ export default function LivePage() {
       window.clearTimeout(timerId);
     };
   }, [
+    captureRoomToastScope,
     identityToken,
     isIdentityHydrated,
     resetInvalidIdentity,
@@ -660,6 +673,7 @@ export default function LivePage() {
       }
 
       isSyncing = true;
+      const toastScope = captureRoomToastScope();
       try {
         await syncCurrentRoom(activeToken);
       } catch (error) {
@@ -670,7 +684,7 @@ export default function LivePage() {
           }
 
           if (isCurrentRoomReady) {
-            showToast(t.live.room.syncFailed, "warning", TOAST_IMPORTANT_DURATION_MS);
+            showToast(t.live.room.syncFailed, "warning", TOAST_IMPORTANT_DURATION_MS, toastScope);
           }
         }
       } finally {
@@ -687,6 +701,7 @@ export default function LivePage() {
       window.clearInterval(intervalId);
     };
   }, [
+    captureRoomToastScope,
     identityToken,
     isCurrentRoomReady,
     isIdentityHydrated,
@@ -788,6 +803,7 @@ export default function LivePage() {
     const activeRealtimeClient = realtimeClient;
     const realtimeRoomCode = activeRoomCode;
     const realtimeAccessToken = realtimeAuthorization.accessToken;
+    const toastScope = captureRoomToastScope();
     const channels: ReturnType<typeof activeRealtimeClient.channel>[] = [];
 
     async function syncRoomFromRealtime(): Promise<void> {
@@ -809,7 +825,7 @@ export default function LivePage() {
 
           const nextStatusMessage = t.live.status.realtimeFailed;
 
-          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
+          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS, toastScope);
         }
       } finally {
         isSyncing = false;
@@ -859,6 +875,7 @@ export default function LivePage() {
   }, [
     activeRealtimeSubscriptionKey,
     activeRoomCode,
+    captureRoomToastScope,
     identityToken,
     realtimeAuthorization,
     resetInvalidIdentity,
@@ -914,6 +931,7 @@ export default function LivePage() {
           t.live.room.switchForbidden(currentRoom.code),
           "warning",
           TOAST_IMPORTANT_DURATION_MS,
+          captureRoomToastScope(),
         );
         return;
       }
@@ -936,7 +954,7 @@ export default function LivePage() {
               },
       });
     },
-    [showToast, t.live.room],
+    [captureRoomToastScope, showToast, t.live.room],
   );
 
   useEffect(() => {
@@ -964,10 +982,11 @@ export default function LivePage() {
       return;
     }
 
+    const toastScope = captureRoomToastScope();
     const timerId = window.setTimeout(() => {
       if (pendingRoomSwitch.request.expectedCurrentRoomCode !== roomSummary.code) {
         setPendingRoomSwitch(null);
-        showToast(t.live.room.currentChanged, "warning", TOAST_IMPORTANT_DURATION_MS);
+        showToast(t.live.room.currentChanged, "warning", TOAST_IMPORTANT_DURATION_MS, toastScope);
         return;
       }
 
@@ -977,12 +996,13 @@ export default function LivePage() {
           t.live.room.switchForbidden(roomSummary.code),
           "warning",
           TOAST_IMPORTANT_DURATION_MS,
+          toastScope,
         );
       }
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [pendingRoomSwitch, roomSummary, showToast, t.live.room]);
+  }, [captureRoomToastScope, pendingRoomSwitch, roomSummary, showToast, t.live.room]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
     setDisplayName(nextDisplayName);
@@ -1165,10 +1185,14 @@ export default function LivePage() {
           isApiRequestErrorCode(error, "current_room_changed") ||
           isApiRequestErrorCode(error, "room_switch_forbidden")
         ) {
+          const failureMessage = toRequestFailureMessage(error, t);
+
           setPendingRoomSwitch((currentSwitch) =>
             currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
           );
           await syncCurrentRoom(token);
+          showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS, captureRoomToastScope());
+          return;
         }
 
         throw error;
@@ -1238,6 +1262,7 @@ export default function LivePage() {
   }
 
   async function handleCopyRoomCode(roomCode: string): Promise<void> {
+    const toastScope = captureRoomToastScope();
     const didCopy = await writeClipboardText(roomCode);
 
     if (didCopy) {
@@ -1255,10 +1280,11 @@ export default function LivePage() {
       return;
     }
 
-    showToast(t.live.invite.copyFailed, "error", TOAST_IMPORTANT_DURATION_MS);
+    showToast(t.live.invite.copyFailed, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
   }
 
   async function handleShareRoom(roomCode: string): Promise<void> {
+    const toastScope = captureRoomToastScope();
     const roomUrl = getLiveRoomUrl(roomCode, window.location.origin);
     const inviteText = t.live.invite.inviteText(roomCode, roomUrl);
 
@@ -1269,7 +1295,7 @@ export default function LivePage() {
           title: "Jinroh Web",
           url: roomUrl,
         });
-        showToast(t.live.invite.shareSucceeded, "success");
+        showToast(t.live.invite.shareSucceeded, "success", TOAST_DEFAULT_DURATION_MS, toastScope);
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -1281,11 +1307,16 @@ export default function LivePage() {
     const didCopy = await writeClipboardText(inviteText);
 
     if (didCopy) {
-      showToast(t.live.invite.shareFallbackCopied, "success");
+      showToast(
+        t.live.invite.shareFallbackCopied,
+        "success",
+        TOAST_DEFAULT_DURATION_MS,
+        toastScope,
+      );
       return;
     }
 
-    showToast(t.live.invite.shareFailed, "error", TOAST_IMPORTANT_DURATION_MS);
+    showToast(t.live.invite.shareFailed, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
   }
 
   const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
@@ -1492,7 +1523,13 @@ export default function LivePage() {
         t={t}
         onComplete={completeActiveCue}
       />
-      <LiveToastRegion toast={toast} t={t} onDismiss={dismissToast} />
+      <LiveToastRegion
+        state={toastState}
+        t={t}
+        onDismiss={dismissToast}
+        onEntryComplete={completeToastEntry}
+        onExitComplete={completeToastExit}
+      />
     </main>
   );
 }

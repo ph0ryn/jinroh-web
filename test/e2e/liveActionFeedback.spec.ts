@@ -150,7 +150,7 @@ test("a rejected action never plays confirmation feedback", async ({ page, reque
   });
 
   await submitButton.click();
-  await expect(page.locator('[role="alert"][data-tone="error"]')).toBeVisible();
+  await expect(page.locator('[data-live-toast][data-tone="error"]')).toBeVisible();
   await expect(actionRow).toHaveAttribute("data-live-action-status", "open");
   await expect(actionRow).toHaveAttribute("data-live-action-feedback-state", "idle");
   await expect(submitButton).toBeEnabled();

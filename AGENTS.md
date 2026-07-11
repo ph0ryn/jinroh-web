@@ -77,6 +77,10 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   exact equality rather than a visually full bar.
 - Give each effect component one scoped `useGSAP()` timeline and let React remain
   the source of truth for game state and final CSS classes.
+- Route `/live` notifications through the shared toast controller. Keep one
+  active notification plus the latest pending replacement, scope room-bound
+  notifications to the current room session, and keep dismissal timers out of
+  page and request handlers.
 - Separate static placement, animated transform/opacity, and final visual state
   onto different DOM layers when they could compete for the same CSS property.
   Clear transient GSAP properties and diagnostic markers after settlement.

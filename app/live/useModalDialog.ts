@@ -247,6 +247,7 @@ function syncUnderlyingInert(modalState: ModalIsolationState): void {
       if (
         sibling instanceof HTMLElement &&
         sibling !== currentBranch &&
+        !sibling.hasAttribute("data-live-modal-inert-exempt") &&
         !modalState.inertElements.has(sibling)
       ) {
         modalState.inertElements.set(sibling, sibling.inert);

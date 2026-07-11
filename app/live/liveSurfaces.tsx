@@ -43,13 +43,6 @@ import { useFollowScrollEnd } from "./useFollowScrollEnd";
 import type { LiveActionFeedbackCue } from "./effects/ui/liveActionFeedbackModel";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
-export type LiveToastTone = "error" | "info" | "success" | "warning";
-
-export type LiveToast = {
-  readonly message: string;
-  readonly tone: LiveToastTone;
-};
-
 export type SetupPendingAction = "create" | "join" | null;
 
 type LiveWaitingSurfaceProps = {
@@ -123,45 +116,6 @@ const PLAYER_COUNT_OPTIONS = Array.from(
     return MIN_ROOM_PLAYERS + index;
   },
 );
-
-export function LiveToastRegion({
-  toast,
-  t,
-  onDismiss,
-}: {
-  readonly toast: LiveToast | null;
-  readonly t: Localization;
-  readonly onDismiss: () => void;
-}) {
-  if (toast === null) {
-    return null;
-  }
-
-  return (
-    <div
-      className="liveToastViewport"
-      aria-label={t.live.aria.notifications}
-      aria-live={toast.tone === "error" ? "assertive" : "polite"}
-    >
-      <section
-        className="liveToast"
-        data-tone={toast.tone}
-        role={toast.tone === "error" ? "alert" : "status"}
-      >
-        <span className="liveToastTone">{t.live.toast.tones[toast.tone]}</span>
-        <p>{toast.message}</p>
-        <button
-          className="secondaryButton liveIconButton liveToastClose"
-          aria-label={t.live.buttons.dismissNotification}
-          type="button"
-          onClick={onDismiss}
-        >
-          <span aria-hidden="true">X</span>
-        </button>
-      </section>
-    </div>
-  );
-}
 
 function LivePopupDialog({
   children,

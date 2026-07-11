@@ -1,0 +1,121 @@
+.viewport {
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+  position: fixed;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  width: min(
+    380px,
+    calc(100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
+  );
+  z-index: 80;
+}
+
+.toast {
+  --live-toast-label: var(--brass-300);
+  --live-toast-tone: var(--brass-300);
+  align-items: start;
+  backdrop-filter: blur(18px);
+  background: rgba(7, 11, 10, 0.94);
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--live-toast-tone);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 4px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 12px;
+  pointer-events: auto;
+  position: relative;
+}
+
+.toast[data-tone="error"] {
+  --live-toast-label: #f0a299;
+  --live-toast-tone: var(--red-500);
+}
+
+.toast[data-tone="success"] {
+  --live-toast-label: #b7e3a2;
+  --live-toast-tone: var(--green-400);
+}
+
+.toast[data-tone="warning"] {
+  --live-toast-label: #e3bd77;
+  --live-toast-tone: var(--brass-400);
+}
+
+.toast[data-live-toast-phase="exiting"],
+.toast[data-live-toast-interaction="suppressed"] {
+  pointer-events: none;
+}
+
+:global(.liveShell):has([data-live-modal-root]) .toast {
+  pointer-events: none;
+}
+
+.tone {
+  color: var(--live-toast-label);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.tone,
+.message,
+.close {
+  position: relative;
+  z-index: 1;
+}
+
+.message {
+  color: var(--paper-100);
+  font-size: 0.92rem;
+  font-weight: 720;
+  grid-column: 1;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.close {
+  border-radius: 50%;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 44px;
+  padding: 0;
+  transition: none;
+  width: 44px;
+}
+
+.rail,
+.sheen {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.rail {
+  background: var(--live-toast-tone);
+  bottom: 0;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--live-toast-tone) 45%, transparent);
+  left: 0;
+  top: 0;
+  transform-origin: 50% 0;
+  width: 4px;
+}
+
+.sheen {
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    color-mix(in srgb, var(--live-toast-tone) 12%, transparent) 48%,
+    transparent 76%
+  );
+  inset: 0;
+  transform: translateX(-110%);
+}
