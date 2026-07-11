@@ -2,6 +2,8 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
+  ACTION_KINDS,
+  type ActionSubmissionReceipt,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   type PrivateGameEvent,
@@ -12,7 +14,6 @@ import {
   type PublicGameView,
   type PublicPhaseFocus,
   type PublicPlayer,
-  type PublicSubmittedAction,
   type RealtimeScope,
   type RealtimeSubscription,
   type RoleId,
@@ -158,6 +159,7 @@ type GameEventRecord = {
   event_kind: string;
   id: number;
   payload: Record<string, unknown>;
+  phase_instance_id: string | null;
   visibility: "public" | "private" | "internal";
 };
 
@@ -851,11 +853,11 @@ async function buildRoomViewByRoom(
   const currentAssignment =
     currentPlayer === null ? null : (assignmentByPlayer.get(currentPlayer.id) ?? null);
   const currentRoleId = currentAssignment?.role_id ?? null;
-  const [events, visiblePrivateEvents] = await Promise.all([
+  const [events, visiblePrivateEventRecords] = await Promise.all([
     getPublicEvents(supabase, currentRoom.id, players),
     currentPlayer === null
-      ? Promise.resolve<PrivateGameEvent[]>([])
-      : getVisiblePrivateEvents(supabase, currentRoom.id, players, currentPlayer, currentRoleId),
+      ? Promise.resolve<GameEventRecord[]>([])
+      : getVisiblePrivateEventRecords(supabase, currentRoom.id, currentPlayer, currentRoleId),
   ]);
   const publicGame: PublicGameView | null =
     state === null
@@ -877,18 +879,15 @@ async function buildRoomViewByRoom(
     currentPlayer === null
       ? null
       : {
+          actionReceipts: visiblePrivateEventRecords.flatMap(toActionSubmissionReceipt),
           actions: toPublicActions(actions, pendingActions, players, currentPlayer, currentRoleId),
-          events: visiblePrivateEvents,
+          events: visiblePrivateEventRecords
+            .filter((event) => event.event_kind !== "action_submitted")
+            .map((event) => toPrivateGameEvent(event, players)),
           playerId: currentPlayer.public_player_id,
           result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
           roleId: currentRoleId,
           roleName: getRoleDisplayName(currentRoleId),
-          submittedActions: toSubmittedActions(
-            actions,
-            pendingActions,
-            currentPlayer,
-            currentRoleId,
-          ),
         };
 
   return {
@@ -1081,31 +1080,6 @@ function toPublicActions(
       status: submittedActionIds.has(action.id) ? "submitted" : "open",
       targetKind: action.target_kind,
     }));
-}
-
-function toSubmittedActions(
-  actions: readonly CurrentActionRecord[],
-  pendingActions: readonly PendingActionRecord[],
-  currentPlayer: PlayerRecord,
-  currentRoleId: RoleId | null,
-): PublicSubmittedAction[] {
-  const actionById = new Map(actions.map((action) => [action.id, action]));
-
-  return pendingActions.flatMap((pendingAction) => {
-    const action = actionById.get(pendingAction.current_action_id);
-
-    if (action === undefined || !isActionVisibleToPlayer(action, currentPlayer.id, currentRoleId)) {
-      return [];
-    }
-
-    return [
-      {
-        kind: action.action_kind as PublicSubmittedAction["kind"],
-        label: labelAction(action.action_kind),
-        submittedAt: pendingAction.submitted_at,
-      },
-    ];
-  });
 }
 
 function isActionVisibleToPlayer(
@@ -1352,6 +1326,34 @@ function groupSetByEventId<Value>(
   }
 
   return grouped;
+}
+
+function toActionSubmissionReceipt(event: GameEventRecord): ActionSubmissionReceipt[] {
+  const actionKey = event.payload["actionKey"];
+  const actionKind = event.payload["actionKind"];
+
+  if (
+    event.event_kind !== "action_submitted" ||
+    event.phase_instance_id === null ||
+    typeof actionKey !== "string" ||
+    !isActionKind(actionKind)
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      actionKey,
+      id: String(event.id),
+      kind: actionKind,
+      phaseInstanceId: event.phase_instance_id,
+      submittedAt: event.created_at,
+    },
+  ];
+}
+
+function isActionKind(value: unknown): value is ActionSubmissionReceipt["kind"] {
+  return typeof value === "string" && ACTION_KINDS.some((actionKind) => actionKind === value);
 }
 
 function toPrivateGameEvent(
@@ -1927,7 +1929,7 @@ async function getPublicEvents(
 ): Promise<PublicGameEvent[]> {
   const { data, error } = await supabase
     .from("game_events")
-    .select("id,event_kind,visibility,payload,created_at")
+    .select("id,event_kind,visibility,payload,phase_instance_id,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "public")
     .order("created_at", { ascending: true })
@@ -2008,19 +2010,19 @@ function toPublicPlayerId(value: unknown, players: readonly PlayerRecord[]): unk
   return player?.public_player_id ?? value;
 }
 
-async function getVisiblePrivateEvents(
+async function getVisiblePrivateEventRecords(
   supabase: SupabaseClient,
   roomId: number,
-  players: readonly PlayerRecord[],
   currentPlayer: PlayerRecord,
   currentRoleId: RoleId | null,
-): Promise<PrivateGameEvent[]> {
+): Promise<GameEventRecord[]> {
   const { data: events, error: eventError } = await supabase
     .from("game_events")
-    .select("id,event_kind,visibility,payload,created_at")
+    .select("id,event_kind,visibility,payload,phase_instance_id,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "private")
     .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .returns<GameEventRecord[]>();
 
   if (eventError !== null) {
@@ -2049,17 +2051,15 @@ async function getVisiblePrivateEvents(
     })),
   );
 
-  return events
-    .filter((event) => {
-      const playerIds = visiblePlayerIdsByEvent.get(event.id);
-      const roleIds = visibleRoleIdsByEvent.get(event.id);
+  return events.filter((event) => {
+    const playerIds = visiblePlayerIdsByEvent.get(event.id);
+    const roleIds = visibleRoleIdsByEvent.get(event.id);
 
-      return (
-        playerIds?.has(currentPlayer.id) === true ||
-        (currentRoleId !== null && roleIds?.has(currentRoleId) === true)
-      );
-    })
-    .map((event) => toPrivateGameEvent(event, players));
+    return (
+      playerIds?.has(currentPlayer.id) === true ||
+      (currentRoleId !== null && roleIds?.has(currentRoleId) === true)
+    );
+  });
 }
 
 async function getEventVisiblePlayers(

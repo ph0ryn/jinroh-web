@@ -16,16 +16,19 @@ export type GameStatus = "assigning_roles" | "playing" | "ended";
 
 export type GamePhase = "night" | "day" | "voting" | "execution";
 
-export type ActionKind =
-  | "first_night_ready"
-  | "inspect"
-  | "guard"
-  | "attack"
-  | "day_ready"
-  | "vote"
-  | "end_speech"
-  | "execution_skip"
-  | "hunter_retaliate";
+export const ACTION_KINDS = [
+  "first_night_ready",
+  "inspect",
+  "guard",
+  "attack",
+  "day_ready",
+  "vote",
+  "end_speech",
+  "execution_skip",
+  "hunter_retaliate",
+] as const;
+
+export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export type DeathReason = "attack" | "execution" | "retaliation" | "rule_effect";
 
@@ -131,19 +134,21 @@ export type PublicActionProgress =
 
 export type PublicActionStatus = "open" | "submitted";
 
-export type PublicSubmittedAction = {
+export type ActionSubmissionReceipt = {
+  id: string;
+  actionKey: string;
   kind: ActionKind;
-  label: string;
+  phaseInstanceId: string;
   submittedAt: string;
 };
 
 export type SelfPrivateView = {
+  actionReceipts: ActionSubmissionReceipt[];
   playerId: string;
   roleId: RoleId | null;
   roleName: string | null;
   actions: PublicAction[];
   events: PrivateGameEvent[];
-  submittedActions: PublicSubmittedAction[];
   result: PlayerResult | null;
 };
 
