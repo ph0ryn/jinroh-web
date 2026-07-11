@@ -66,6 +66,10 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   Treat the first snapshot, room or viewer changes, unchanged polling results,
   and updates received while the document is hidden as settled baselines rather
   than effects to replay.
+- Setup surface navigation may reveal an accepted entry-to-waiting or
+  waiting-to-entry change even though the room session changes. A restored
+  room, a viewer change within a room, and a room-to-room switch remain settled
+  baselines.
 - Treat action submission as confirmed only when a submitter-private receipt is
   present in an accepted snapshot. Do not infer personal confirmation from HTTP
   success, shared action status, or public progress. If the accepted submission

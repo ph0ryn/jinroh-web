@@ -7,6 +7,7 @@ import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
 import { LiveBackground } from "@/app/live/effects/ui/LiveBackground";
 import { getLiveBackgroundSnapshot } from "@/app/live/effects/ui/liveBackgroundModel";
+import { LiveSetupTransitionController } from "@/app/live/effects/ui/LiveSetupTransitionController";
 import {
   createLiveToastRoomSessionScope,
   LIVE_TOAST_PAGE_SCOPE,
@@ -68,6 +69,10 @@ import {
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
+import type {
+  LiveSetupSurfaceKind,
+  LiveSetupTransitionSnapshot,
+} from "@/app/live/effects/ui/liveSetupTransitionModel";
 import type { ReactNode } from "react";
 
 type IdentityResponse = {
@@ -1327,6 +1332,26 @@ export default function LivePage() {
     [liveMood, roomSummary?.code, roomSummary?.currentPlayerId],
   );
   const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
+  let liveSetupSurfaceKind: LiveSetupSurfaceKind = "game";
+
+  if (!isCurrentRoomReady) {
+    liveSetupSurfaceKind = "loading";
+  } else if (roomBoundSurfaceStatus === "waiting") {
+    liveSetupSurfaceKind = "waiting";
+  } else if (roomSummary === null) {
+    liveSetupSurfaceKind = "entry";
+  }
+
+  const liveSetupRoomCode = roomSummary?.code ?? null;
+  const liveSetupViewerPlayerId = roomSummary?.currentPlayerId ?? null;
+  const liveSetupTransitionSnapshot = useMemo(
+    (): LiveSetupTransitionSnapshot => ({
+      kind: liveSetupSurfaceKind,
+      roomCode: liveSetupRoomCode,
+      viewerPlayerId: liveSetupViewerPlayerId,
+    }),
+    [liveSetupRoomCode, liveSetupSurfaceKind, liveSetupViewerPlayerId],
+  );
   const liveGridClassName = getLiveGridClassName(roomSummary);
   const liveShellClassName = [
     "liveShell",
@@ -1402,6 +1427,10 @@ export default function LivePage() {
   return (
     <main className={liveShellClassName} data-live-mood={liveMood} ref={liveShellRef}>
       <LiveBackground snapshot={liveBackgroundSnapshot} />
+      <LiveSetupTransitionController
+        rootRef={liveShellRef}
+        snapshot={liveSetupTransitionSnapshot}
+      />
       <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
         <div className="liveHeroTitle">
           <h1 className={isGameSurface ? "srOnly" : undefined}>
@@ -1450,6 +1479,9 @@ export default function LivePage() {
                   : "livePlayTablePanel"
               }
               aria-label={t.live.aria.roundTable}
+              data-live-setup-transition-item={
+                roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined
+              }
             >
               <LiveRoundTable summary={roomSummary} t={t} />
             </section>

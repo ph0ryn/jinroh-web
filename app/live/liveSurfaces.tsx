@@ -279,7 +279,11 @@ export function LiveEntrySurface({
   }
 
   return (
-    <section className="liveEntrySurface" aria-label={t.live.aria.roomSetup}>
+    <section
+      className="liveEntrySurface"
+      aria-label={t.live.aria.roomSetup}
+      data-live-setup-transition-item="entry"
+    >
       <section className="liveSetupActionGrid" aria-label={t.live.aria.roomActions}>
         <article className="liveSetupPanel liveSetupProfilePanel">
           <div className="liveSetupPanelHeader">
@@ -580,7 +584,10 @@ export function LiveWaitingSurface({
   const controlHint = getControlHint(summary, isBusy, t);
 
   return (
-    <div className="livePlaySideStack liveWaitingSideStack">
+    <div
+      className="livePlaySideStack liveWaitingSideStack"
+      data-live-setup-transition-item="waiting"
+    >
       <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
         <div className="livePanelHeading">
           <span>{t.live.aria.invite}</span>
