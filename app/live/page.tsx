@@ -87,6 +87,7 @@ type ClearCurrentRoomOptions = {
 };
 
 type PendingRoomSwitch = {
+  readonly isOpen: boolean;
   readonly request: SwitchRoomRequest;
 };
 
@@ -918,6 +919,7 @@ export default function LivePage() {
       }
 
       setPendingRoomSwitch({
+        isOpen: true,
         request:
           intent.kind === "create"
             ? {
@@ -958,7 +960,7 @@ export default function LivePage() {
   }, [displayName, invitationRoomCode, isCurrentRoomReady, offerRoomSwitch, roomSummary]);
 
   useEffect(() => {
-    if (pendingRoomSwitch === null || roomSummary === null) {
+    if (pendingRoomSwitch === null || !pendingRoomSwitch.isOpen || roomSummary === null) {
       return;
     }
 
@@ -1136,7 +1138,7 @@ export default function LivePage() {
   function handleConfirmRoomSwitch(): void {
     const pendingSwitch = pendingRoomSwitch;
 
-    if (pendingSwitch === null) {
+    if (pendingSwitch === null || !pendingSwitch.isOpen) {
       return;
     }
 
@@ -1153,7 +1155,9 @@ export default function LivePage() {
         beginRoomSession();
         const requestContext = createRoomRequestContext(summary.code, token);
         rememberRoom(summary, requestContext);
-        setPendingRoomSwitch(null);
+        setPendingRoomSwitch((currentSwitch) =>
+          currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
+        );
         setInvitationRoomCode(null);
         broadcastRoomMembershipInvalidation();
       } catch (error) {
@@ -1161,7 +1165,9 @@ export default function LivePage() {
           isApiRequestErrorCode(error, "current_room_changed") ||
           isApiRequestErrorCode(error, "room_switch_forbidden")
         ) {
-          setPendingRoomSwitch(null);
+          setPendingRoomSwitch((currentSwitch) =>
+            currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
+          );
           await syncCurrentRoom(token);
         }
 
@@ -1436,9 +1442,10 @@ export default function LivePage() {
         </div>
       )}
 
-      {canConfigureStartSettings && isStartSettingsOpen ? (
+      {canConfigureStartSettings ? (
         <StartSettingsDialog
           defaultRoleCounts={roomSummary.defaultRoleCounts}
+          isOpen={isStartSettingsOpen}
           playerCount={roomSummary.targetPlayerCount}
           roleCatalog={roomSummary.roleCatalog}
           settings={startRuleSetSettings}
@@ -1448,9 +1455,10 @@ export default function LivePage() {
         />
       ) : null}
 
-      {roomSummary !== null && canLeaveRoom && isLeaveConfirmationOpen ? (
+      {roomSummary !== null && canLeaveRoom ? (
         <LeaveRoomDialog
           isBusy={isBusy}
+          isOpen={isLeaveConfirmationOpen}
           t={t}
           onClose={() => setIsLeaveConfirmationOpen(false)}
           onConfirm={handleConfirmLeaveRoom}
@@ -1460,10 +1468,20 @@ export default function LivePage() {
       {pendingRoomSwitch === null || roomSummary === null ? null : (
         <SwitchRoomDialog
           isBusy={isBusy}
+          isOpen={pendingRoomSwitch.isOpen}
           request={pendingRoomSwitch.request}
           t={t}
-          onClose={() => setPendingRoomSwitch(null)}
+          onClose={() =>
+            setPendingRoomSwitch((currentSwitch) =>
+              currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
+            )
+          }
           onConfirm={handleConfirmRoomSwitch}
+          onExitComplete={() =>
+            setPendingRoomSwitch((currentSwitch) =>
+              currentSwitch?.isOpen === false ? null : currentSwitch,
+            )
+          }
         />
       )}
 

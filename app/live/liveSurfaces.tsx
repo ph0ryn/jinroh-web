@@ -21,6 +21,7 @@ import {
 } from "@/lib/shared/game";
 
 import { LiveLobbyProgress } from "./effects/ui/LiveLobbyProgress";
+import { LiveModalFrame } from "./effects/ui/LiveModalFrame";
 import { LiveActionList } from "./liveActionList";
 import {
   formatDateTime,
@@ -38,7 +39,6 @@ import {
   getPlayPhaseGuidance,
 } from "./livePresentation";
 import { useFollowScrollEnd } from "./useFollowScrollEnd";
-import { useModalDialog } from "./useModalDialog";
 
 import type { LiveActionFeedbackCue } from "./effects/ui/liveActionFeedbackModel";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
@@ -166,60 +166,55 @@ export function LiveToastRegion({
 function LivePopupDialog({
   children,
   id,
+  isOpen,
   meta,
   isDismissible = true,
   t,
   title,
   onClose,
+  onExitComplete,
 }: {
   readonly children: ReactNode;
   readonly id: string;
+  readonly isOpen: boolean;
   readonly meta: string;
   readonly isDismissible?: boolean;
   readonly t: Localization;
   readonly title: string;
   readonly onClose: () => void;
+  readonly onExitComplete?: () => void;
 }) {
   const titleId = `${id}-title`;
-  const { dialogRef, initialFocusRef } = useModalDialog(onClose, isDismissible);
 
   return (
-    <div
-      className="liveModalBackdrop"
-      onMouseDown={(event) => {
-        if (isDismissible && event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+    <LiveModalFrame
+      ariaLabelledBy={titleId}
+      dialogClassName="livePopupModal"
+      id={id}
+      isDismissible={isDismissible}
+      isOpen={isOpen}
+      variant="popup"
+      onExitComplete={onExitComplete}
+      onRequestClose={onClose}
     >
-      <section
-        className="liveModal livePopupModal"
-        id={id}
-        aria-labelledby={titleId}
-        aria-modal="true"
-        ref={dialogRef}
-        role="dialog"
-        tabIndex={-1}
-      >
-        <div className="liveModalHeader">
-          <div>
-            <span>{meta}</span>
-            <h2 id={titleId}>{title}</h2>
-          </div>
-          <button
-            className="secondaryButton liveIconButton"
-            aria-label={t.live.buttons.closeDialog(title)}
-            disabled={!isDismissible}
-            ref={initialFocusRef}
-            type="button"
-            onClick={onClose}
-          >
-            <span aria-hidden="true">X</span>
-          </button>
+      <div className="liveModalHeader">
+        <div>
+          <span>{meta}</span>
+          <h2 id={titleId}>{title}</h2>
         </div>
-        {children}
-      </section>
-    </div>
+        <button
+          className="secondaryButton liveIconButton"
+          aria-label={t.live.buttons.closeDialog(title)}
+          data-live-modal-initial-focus={isDismissible ? "" : undefined}
+          disabled={!isDismissible}
+          type="button"
+          onClick={onClose}
+        >
+          <span aria-hidden="true">X</span>
+        </button>
+      </div>
+      {children}
+    </LiveModalFrame>
   );
 }
 
@@ -477,11 +472,13 @@ export function LiveEntrySurface({
 
 export function LeaveRoomDialog({
   isBusy,
+  isOpen,
   t,
   onClose,
   onConfirm,
 }: {
   readonly isBusy: boolean;
+  readonly isOpen: boolean;
   readonly t: Localization;
   readonly onClose: () => void;
   readonly onConfirm: () => void;
@@ -490,6 +487,7 @@ export function LeaveRoomDialog({
     <LivePopupDialog
       id="leave-room-dialog"
       isDismissible={!isBusy}
+      isOpen={isOpen}
       meta={t.live.leaveConfirmation.meta}
       t={t}
       title={t.live.leaveConfirmation.title}
@@ -512,16 +510,20 @@ export function LeaveRoomDialog({
 
 export function SwitchRoomDialog({
   isBusy,
+  isOpen,
   request,
   t,
   onClose,
   onConfirm,
+  onExitComplete,
 }: {
   readonly isBusy: boolean;
+  readonly isOpen: boolean;
   readonly request: SwitchRoomRequest;
   readonly t: Localization;
   readonly onClose: () => void;
   readonly onConfirm: () => void;
+  readonly onExitComplete: () => void;
 }) {
   const body =
     request.kind === "create"
@@ -532,10 +534,12 @@ export function SwitchRoomDialog({
     <LivePopupDialog
       id="switch-room-dialog"
       isDismissible={!isBusy}
+      isOpen={isOpen}
       meta={t.live.switchConfirmation.meta}
       t={t}
       title={t.live.switchConfirmation.title}
       onClose={onClose}
+      onExitComplete={onExitComplete}
     >
       <div className="liveConfirmationBody">
         <p>{body}</p>
@@ -846,9 +850,10 @@ export function LivePlayingSurface({
         </div>
       </div>
 
-      {nightConversation !== null && isNightConversationOpen ? (
+      {nightConversation !== null ? (
         <LivePopupDialog
           id="night-chat-dialog"
+          isOpen={isNightConversationOpen}
           meta={nightConversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}
           t={t}
           title={getLocalizedNightConversationLabel(t, nightConversation.labelKey)}
@@ -953,13 +958,10 @@ function PublicLogDialog({
   readonly t: Localization;
   readonly onClose: () => void;
 }) {
-  if (!isOpen) {
-    return null;
-  }
-
   return (
     <LivePopupDialog
       id="public-log-dialog"
+      isOpen={isOpen}
       meta={t.live.eventLog.meta(summary.game?.events.length ?? 0)}
       t={t}
       title={t.live.eventLog.title}

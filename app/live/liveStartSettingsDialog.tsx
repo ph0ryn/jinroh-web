@@ -23,6 +23,7 @@ import {
   type RolePreset,
 } from "@/lib/shared/rolePresets";
 
+import { LiveModalFrame } from "./effects/ui/LiveModalFrame";
 import {
   canChangeRoleCount,
   clampRoleCount,
@@ -40,7 +41,6 @@ import {
   type RuleSetNumberField,
   type StartRuleSetSettings,
 } from "./liveStartSettings";
-import { useModalDialog } from "./useModalDialog";
 
 import type { KeyboardEvent, ReactNode } from "react";
 
@@ -48,7 +48,44 @@ type StartSettingsTab = "general" | "roles" | "timers";
 
 const START_SETTINGS_TABS: readonly StartSettingsTab[] = ["general", "timers", "roles"];
 
-export function StartSettingsDialog({
+type StartSettingsDialogProps = {
+  readonly defaultRoleCounts: Readonly<RoleCounts>;
+  readonly isOpen: boolean;
+  readonly playerCount: number;
+  readonly roleCatalog: readonly RoleCatalogItem[];
+  readonly settings: StartRuleSetSettings;
+  readonly t: Localization;
+  readonly onClose: () => void;
+  readonly onApplySettings: (settings: StartRuleSetSettings) => void;
+};
+
+type StartSettingsDialogContentProps = Omit<StartSettingsDialogProps, "isOpen">;
+
+export function StartSettingsDialog(props: StartSettingsDialogProps) {
+  return (
+    <LiveModalFrame
+      ariaLabelledBy="start-settings-title"
+      backdropClassName="liveSettingsBackdrop"
+      dialogClassName="liveSettingsModal"
+      id="start-settings-dialog"
+      isOpen={props.isOpen}
+      variant="settings"
+      onRequestClose={props.onClose}
+    >
+      <StartSettingsDialogContent
+        defaultRoleCounts={props.defaultRoleCounts}
+        playerCount={props.playerCount}
+        roleCatalog={props.roleCatalog}
+        settings={props.settings}
+        t={props.t}
+        onApplySettings={props.onApplySettings}
+        onClose={props.onClose}
+      />
+    </LiveModalFrame>
+  );
+}
+
+function StartSettingsDialogContent({
   defaultRoleCounts,
   playerCount,
   roleCatalog,
@@ -56,21 +93,12 @@ export function StartSettingsDialog({
   t,
   onClose,
   onApplySettings,
-}: {
-  readonly defaultRoleCounts: Readonly<RoleCounts>;
-  readonly playerCount: number;
-  readonly roleCatalog: readonly RoleCatalogItem[];
-  readonly settings: StartRuleSetSettings;
-  readonly t: Localization;
-  readonly onClose: () => void;
-  readonly onApplySettings: (settings: StartRuleSetSettings) => void;
-}) {
+}: StartSettingsDialogContentProps) {
   const [activeTab, setActiveTab] = useState<StartSettingsTab>("general");
   const [draftSettings, setDraftSettings] = useState<StartRuleSetSettings>(() => ({
     ...settings,
     roleCounts: { ...settings.roleCounts },
   }));
-  const { dialogRef, initialFocusRef } = useModalDialog(onClose);
   const canApplySettings =
     getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts, t)
       .length === 0;
@@ -158,96 +186,79 @@ export function StartSettingsDialog({
   }
 
   return (
-    <div
-      className="liveModalBackdrop liveSettingsBackdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <section
-        className="liveModal liveSettingsModal"
-        id="start-settings-dialog"
-        aria-labelledby="start-settings-title"
-        aria-modal="true"
-        ref={dialogRef}
-        role="dialog"
-        tabIndex={-1}
-      >
-        <div className="liveSettingsHeader">
-          <div>
-            <span>{t.live.waiting.hostControls}</span>
-            <h2 id="start-settings-title">{t.live.settings.title}</h2>
-            <p>{t.live.settings.description}</p>
-          </div>
-          <div className="liveSettingsHeaderActions">
-            <span className="liveSettingsRoomBadge">{t.live.settings.seats(playerCount)}</span>
-            <button
-              className="secondaryButton liveIconButton"
-              aria-label={t.live.buttons.closeSettings}
-              ref={initialFocusRef}
-              type="button"
-              onClick={onClose}
-            >
-              <span aria-hidden="true">X</span>
-            </button>
-          </div>
+    <>
+      <div className="liveSettingsHeader">
+        <div>
+          <span>{t.live.waiting.hostControls}</span>
+          <h2 id="start-settings-title">{t.live.settings.title}</h2>
+          <p>{t.live.settings.description}</p>
         </div>
-
-        <div className="liveSettingsTabs" role="tablist" aria-label={t.live.aria.settingsSections}>
-          {START_SETTINGS_TABS.map((tab) => (
-            <button
-              aria-controls={`start-settings-${tab}-panel`}
-              aria-selected={activeTab === tab}
-              className={activeTab === tab ? "active" : ""}
-              id={`start-settings-${tab}-tab`}
-              key={tab}
-              role="tab"
-              tabIndex={activeTab === tab ? 0 : -1}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              onKeyDown={(event) => handleTabKeyDown(event, tab)}
-            >
-              {t.live.settings.tabs[tab]}
-            </button>
-          ))}
-        </div>
-
-        <div className="liveSettingsBody">
-          <StartRuleSetPanel
-            activeTab={activeTab}
-            defaultRoleCounts={defaultRoleCounts}
-            playerCount={playerCount}
-            roleCatalog={roleCatalog}
-            settings={draftSettings}
-            onNumberChange={handleDraftNumberChange}
-            onRoleCountChange={handleDraftRoleCountChange}
-            onRolePresetSelect={handleDraftRolePresetSelect}
-            onSettingsChange={handleDraftSettingsChange}
-            t={t}
-          />
-        </div>
-
-        <div className="liveSettingsFooter">
+        <div className="liveSettingsHeaderActions">
+          <span className="liveSettingsRoomBadge">{t.live.settings.seats(playerCount)}</span>
           <button
-            className="secondaryButton"
+            className="secondaryButton liveIconButton"
+            aria-label={t.live.buttons.closeSettings}
+            data-live-modal-initial-focus
             type="button"
-            onClick={() => setDraftSettings({ ...DEFAULT_START_RULE_SET_SETTINGS, roleCounts: {} })}
+            onClick={onClose}
           >
-            {t.live.buttons.reset}
+            <span aria-hidden="true">X</span>
           </button>
-          <div>
-            <button className="secondaryButton" type="button" onClick={onClose}>
-              {t.live.buttons.cancel}
-            </button>
-            <button type="button" disabled={!canApplySettings} onClick={handleApplySettings}>
-              {t.live.buttons.applySettings}
-            </button>
-          </div>
         </div>
-      </section>
-    </div>
+      </div>
+
+      <div className="liveSettingsTabs" role="tablist" aria-label={t.live.aria.settingsSections}>
+        {START_SETTINGS_TABS.map((tab) => (
+          <button
+            aria-controls={`start-settings-${tab}-panel`}
+            aria-selected={activeTab === tab}
+            className={activeTab === tab ? "active" : ""}
+            id={`start-settings-${tab}-tab`}
+            key={tab}
+            role="tab"
+            tabIndex={activeTab === tab ? 0 : -1}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            onKeyDown={(event) => handleTabKeyDown(event, tab)}
+          >
+            {t.live.settings.tabs[tab]}
+          </button>
+        ))}
+      </div>
+
+      <div className="liveSettingsBody">
+        <StartRuleSetPanel
+          activeTab={activeTab}
+          defaultRoleCounts={defaultRoleCounts}
+          playerCount={playerCount}
+          roleCatalog={roleCatalog}
+          settings={draftSettings}
+          onNumberChange={handleDraftNumberChange}
+          onRoleCountChange={handleDraftRoleCountChange}
+          onRolePresetSelect={handleDraftRolePresetSelect}
+          onSettingsChange={handleDraftSettingsChange}
+          t={t}
+        />
+      </div>
+
+      <div className="liveSettingsFooter">
+        <button
+          className="secondaryButton"
+          type="button"
+          onClick={() => setDraftSettings({ ...DEFAULT_START_RULE_SET_SETTINGS, roleCounts: {} })}
+        >
+          {t.live.buttons.reset}
+        </button>
+        <div>
+          <button className="secondaryButton" type="button" onClick={onClose}>
+            {t.live.buttons.cancel}
+          </button>
+          <button type="button" disabled={!canApplySettings} onClick={handleApplySettings}>
+            {t.live.buttons.applySettings}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 

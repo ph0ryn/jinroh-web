@@ -86,6 +86,10 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   or immediate final-state settlement, clean up on unmount or room changes,
   avoid blocking input, and preserve a non-transient way to read current game
   state.
+- Route `/live` dialogs through `app/live/effects/ui/LiveModalFrame.tsx`. Keep
+  dialog content mounted until its exit completes, and leave focus trapping,
+  background inertness, scroll locking, and stacked-dialog ownership to the
+  shared modal infrastructure.
 
 ## Role Architecture Boundaries
 

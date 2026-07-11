@@ -27,6 +27,9 @@ type RoomSnapshot = {
   readonly status: string;
 };
 
+const MINIMUM_TOUCH_TARGET_SIZE = 44;
+const BOUNDING_BOX_PRECISION_TOLERANCE = 0.01;
+
 test("an account keeps one current room until it explicitly leaves", async ({ request }) => {
   const account = await createApiPlayer(request, "account", "Aster");
   const otherHost = await createApiPlayer(request, "otherHost", "Birch");
@@ -324,8 +327,12 @@ test("same-account tabs converge after restore, switch, and leave", async ({
     const confirmSwitchBox = await confirmSwitchButton.boundingBox();
     const cancelSwitchBox = await cancelSwitchButton.boundingBox();
 
-    expect(confirmSwitchBox?.height).toBeGreaterThanOrEqual(44);
-    expect(cancelSwitchBox?.height).toBeGreaterThanOrEqual(44);
+    expect(
+      (confirmSwitchBox?.height ?? 0) + BOUNDING_BOX_PRECISION_TOLERANCE,
+    ).toBeGreaterThanOrEqual(MINIMUM_TOUCH_TARGET_SIZE);
+    expect(
+      (cancelSwitchBox?.height ?? 0) + BOUNDING_BOX_PRECISION_TOLERANCE,
+    ).toBeGreaterThanOrEqual(MINIMUM_TOUCH_TARGET_SIZE);
     expect(confirmSwitchBox?.y).toBeGreaterThan(cancelSwitchBox?.y ?? Number.POSITIVE_INFINITY);
 
     await secondPage.keyboard.press("Escape");
