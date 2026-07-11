@@ -1,13 +1,8 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+
+import { readDocumentHidden, useDocumentHidden } from "../useDocumentHidden";
 
 import type { FocusEventHandler, PointerEventHandler } from "react";
 
@@ -44,11 +39,7 @@ export function useLiveToastAutoDismiss({
   const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
   const [isFocusWithin, setIsFocusWithin] = useState(false);
   const [isPointerWithin, setIsPointerWithin] = useState(false);
-  const isDocumentHidden = useSyncExternalStore(
-    subscribeToDocumentVisibility,
-    readDocumentHidden,
-    readServerDocumentHidden,
-  );
+  const isDocumentHidden = useDocumentHidden();
   const configuredTimerRef = useRef<TimerConfiguration>({
     timeoutMs: normalizedTimeoutMs,
     toastId,
@@ -173,26 +164,4 @@ function normalizeTimeoutMs(timeoutMs: number | null): number | null {
   }
 
   return Number.isFinite(timeoutMs) ? Math.max(0, timeoutMs) : 0;
-}
-
-function subscribeToDocumentVisibility(onStoreChange: () => void): () => void {
-  if (typeof document === "undefined") {
-    return () => undefined;
-  }
-
-  document.addEventListener("visibilitychange", onStoreChange);
-
-  return () => document.removeEventListener("visibilitychange", onStoreChange);
-}
-
-function readDocumentHidden(): boolean {
-  if (typeof document === "undefined") {
-    return false;
-  }
-
-  return document.visibilityState === "hidden";
-}
-
-function readServerDocumentHidden(): boolean {
-  return false;
 }

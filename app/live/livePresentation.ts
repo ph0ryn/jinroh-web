@@ -4,7 +4,7 @@ import { formatPhaseTitle, formatWinner } from "./liveEventPresentation";
 
 import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 
-type LiveMood = "day" | "execution" | "night" | "result" | "setup" | "voting" | "waiting";
+export type LiveMood = "day" | "execution" | "night" | "result" | "setup" | "voting" | "waiting";
 
 export type LiveGuidance = {
   readonly label: string;

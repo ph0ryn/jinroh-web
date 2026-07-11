@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
+import { LiveBackground } from "@/app/live/effects/ui/LiveBackground";
+import { getLiveBackgroundSnapshot } from "@/app/live/effects/ui/liveBackgroundModel";
 import {
   createLiveToastRoomSessionScope,
   LIVE_TOAST_PAGE_SCOPE,
@@ -122,14 +124,6 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
 const TOAST_DEFAULT_DURATION_MS = 4_800;
 const TOAST_IMPORTANT_DURATION_MS = 7_000;
-const LIVE_MOOD_BACKGROUND_SOURCES = [
-  "/images/jinroh-waiting-same-angle.jpg",
-  "/images/jinroh-day-same-angle.jpg",
-  "/images/jinroh-voting-same-angle.jpg",
-  "/images/jinroh-night.jpg",
-  "/images/jinroh-result-same-angle.jpg",
-] as const;
-
 export default function LivePage() {
   const { locale, t } = useI18n();
   const invalidIdentityStatusMessage = t.live.room.identityExpired;
@@ -276,24 +270,6 @@ export default function LivePage() {
 
     return () => window.cancelAnimationFrame(frameId);
   }, [updateIdentityToken]);
-
-  useEffect(() => {
-    const preloadedImages: HTMLImageElement[] = [];
-    const timerId = window.setTimeout(() => {
-      for (const source of LIVE_MOOD_BACKGROUND_SOURCES) {
-        const image = new window.Image();
-
-        image.decoding = "async";
-        image.src = source;
-        preloadedImages.push(image);
-      }
-    }, 600);
-
-    return () => {
-      window.clearTimeout(timerId);
-      preloadedImages.length = 0;
-    };
-  }, []);
 
   useEffect(
     () => () => {
@@ -1341,6 +1317,15 @@ export default function LivePage() {
 
   const isGameSurface = roomBoundSurfaceStatus === "playing" || roomBoundSurfaceStatus === "ended";
   const liveMood = getLiveMood(roomSummary);
+  const liveBackgroundSnapshot = useMemo(
+    () =>
+      getLiveBackgroundSnapshot(
+        liveMood,
+        roomSummary?.code ?? null,
+        roomSummary?.currentPlayerId ?? null,
+      ),
+    [liveMood, roomSummary?.code, roomSummary?.currentPlayerId],
+  );
   const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
   const liveGridClassName = getLiveGridClassName(roomSummary);
   const liveShellClassName = [
@@ -1416,6 +1401,7 @@ export default function LivePage() {
 
   return (
     <main className={liveShellClassName} data-live-mood={liveMood} ref={liveShellRef}>
+      <LiveBackground snapshot={liveBackgroundSnapshot} />
       <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
         <div className="liveHeroTitle">
           <h1 className={isGameSurface ? "srOnly" : undefined}>
