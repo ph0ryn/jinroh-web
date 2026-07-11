@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(47);
+select plan(71);
 
 select has_column(
   'public',
@@ -29,6 +29,100 @@ select has_index(
   'accounts',
   'accounts_current_room_id_idx',
   'accounts current room lookup is indexed'
+);
+
+select has_column(
+  'public',
+  'rooms',
+  'waiting_expires_at',
+  'rooms expose the pre-game waiting expiration'
+);
+
+select hasnt_column(
+  'public',
+  'rooms',
+  'lobby_expires_at',
+  'the legacy lobby expiration column is absent'
+);
+
+select hasnt_column(
+  'public',
+  'rooms',
+  'disbanded_at',
+  'the legacy disband timestamp is absent'
+);
+
+select has_index(
+  'public',
+  'rooms',
+  'rooms_status_waiting_expires_at_idx',
+  'waiting expiration cleanup has a status-aware index'
+);
+
+select ok(
+  to_regprocedure('public.app_cleanup_expired_waiting_rooms(integer)') is not null
+    and to_regprocedure('public.app_cleanup_expired_lobbies(integer)') is null,
+  'only the waiting-room cleanup RPC is installed'
+);
+
+select ok(
+  to_regprocedure('public.app_expire_waiting_room_if_needed(bigint)') is not null
+    and to_regprocedure('public.app_expire_lobby_if_needed(bigint)') is null,
+  'only the waiting-room expiry RPC is installed'
+);
+
+select ok(
+  (
+    select pg_get_constraintdef(pg_constraint.oid)
+    from pg_constraint
+    where pg_constraint.conname = 'rooms_status_check'
+  ) like '%waiting%playing%ended%'
+    and (
+      select pg_get_constraintdef(pg_constraint.oid)
+      from pg_constraint
+      where pg_constraint.conname = 'rooms_status_check'
+    ) not like '%lobby%'
+    and (
+      select pg_get_constraintdef(pg_constraint.oid)
+      from pg_constraint
+      where pg_constraint.conname = 'rooms_status_check'
+    ) not like '%disbanded%',
+  'room status is limited to waiting, playing, and ended'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_constraint
+    where pg_constraint.conname = 'rooms_lifecycle_check'
+  ),
+  'room timestamps are constrained by lifecycle status'
+);
+
+select is(
+  (
+    select information_schema.columns.column_default::text
+    from information_schema.columns
+    where information_schema.columns.table_schema = 'public'
+      and information_schema.columns.table_name = 'game_states'
+      and information_schema.columns.column_name = 'status'
+  ),
+  null::text,
+  'game state status has no pre-game default'
+);
+
+select ok(
+  (
+    select pg_get_constraintdef(pg_constraint.oid)
+    from pg_constraint
+    where pg_constraint.conname = 'game_states_status_check'
+  ) like '%assigning_roles%playing%ended%'
+    and (
+      select pg_get_constraintdef(pg_constraint.oid)
+      from pg_constraint
+      where pg_constraint.conname = 'game_states_status_check'
+    ) not like '%waiting%',
+  'game state status excludes the pre-game waiting state'
 );
 
 select ok(
@@ -116,6 +210,23 @@ select is(
   'room creation creates one active player'
 );
 
+select is(
+  (select rooms.status from public.rooms where rooms.public_room_code = '910001'),
+  'waiting',
+  'room creation uses the waiting status'
+);
+
+select is(
+  (
+    select count(*)
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910001'
+  ),
+  0::bigint,
+  'room creation does not create game state before start'
+);
+
 select throws_ok(
   $$
     select * from public.app_create_room(
@@ -190,6 +301,11 @@ select throws_ok(
 );
 
 select lives_ok(
+  $$select * from public.app_issue_realtime_grant(9101, '910001', 120)$$,
+  'a waiting-room player can receive a realtime grant'
+);
+
+select lives_ok(
   $$select * from public.app_leave_room(9101, '910001')$$,
   'explicit leave releases room membership'
 );
@@ -202,8 +318,51 @@ select is(
 
 select is(
   (select rooms.status from public.rooms where rooms.public_room_code = '910001'),
-  'disbanded',
-  'the last lobby player leaving disbands the room'
+  'ended',
+  'the last waiting player leaving ends the room'
+);
+
+select is(
+  (
+    select count(*)
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910001'
+  ),
+  0::bigint,
+  'ending an unstarted room keeps game state absent'
+);
+
+select ok(
+  (select rooms.ended_at is not null from public.rooms where rooms.public_room_code = '910001'),
+  'ending an unstarted room records ended_at'
+);
+
+select is(
+  (
+    select room_events.payload ->> 'reason'
+    from public.room_events
+    join public.rooms on rooms.id = room_events.room_id
+    where rooms.public_room_code = '910001'
+      and room_events.event_kind = 'room_ended'
+    order by room_events.id desc
+    limit 1
+  ),
+  'last_player_left_waiting_room',
+  'the unstarted room end event records its distinct reason'
+);
+
+select is(
+  (
+    select count(*)
+    from public.realtime_grants
+    join public.players on players.id = realtime_grants.player_id
+    join public.rooms on rooms.id = players.room_id
+    where rooms.public_room_code = '910001'
+      and realtime_grants.revoked_at is null
+  ),
+  0::bigint,
+  'ending an unstarted room revokes active realtime grants'
 );
 
 select lives_ok(
@@ -221,13 +380,78 @@ select lives_ok(
   'a room can be created for ended-state coverage'
 );
 
-update public.rooms set status = 'ended', ended_at = now()
+select lives_ok(
+  $$
+    select * from public.app_start_room(
+      9103,
+      '910003',
+      array[(
+        select players.id
+        from public.players
+        join public.rooms on rooms.id = players.room_id
+        where rooms.public_room_code = '910003'
+      )],
+      '00000000-0000-0000-0000-000000009103'::uuid,
+      now() + interval '1 minute',
+      '{}'::jsonb,
+      '{}'::jsonb,
+      '{}'::jsonb,
+      'test-role-registry',
+      'test-engine',
+      jsonb_build_array(jsonb_build_object(
+        'player_id',
+        (
+          select players.id
+          from public.players
+          join public.rooms on rooms.id = players.room_id
+          where rooms.public_room_code = '910003'
+        ),
+        'role_id',
+        'werewolf'
+      )),
+      '[]'::jsonb,
+      '[]'::jsonb
+    )
+  $$,
+  'starting a waiting room creates its game state atomically'
+);
+
+select is(
+  (
+    select game_states.status
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910003'
+  ),
+  'playing',
+  'start inserts one playing game state'
+);
+
+update public.game_states
+set phase = null,
+    phase_ends_at = null,
+    phase_instance_id = null,
+    status = 'ended'
+where room_id = (select id from public.rooms where public_room_code = '910003');
+
+update public.rooms set started_at = now(), status = 'ended', ended_at = now()
 where public_room_code = '910003';
 
 select is(
   (select accounts.current_room_id from public.accounts where accounts.id = 9103),
   (select rooms.id from public.rooms where rooms.public_room_code = '910003'),
   'ended rooms remain current until explicit leave'
+);
+
+select is(
+  (
+    select count(*)
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910003'
+  ),
+  1::bigint,
+  'ending a started game preserves its game state'
 );
 
 select lives_ok(
@@ -247,6 +471,11 @@ select lives_ok(
 
 update public.rooms set status = 'playing', started_at = now()
 where public_room_code = '910004';
+
+insert into public.game_states (room_id, status)
+select rooms.id, 'playing'
+from public.rooms
+where rooms.public_room_code = '910004';
 
 select throws_ok(
   $$
@@ -272,13 +501,27 @@ select is(
   'a rejected playing-room switch preserves current membership'
 );
 
-update public.rooms set status = 'disbanded', disbanded_at = now()
+update public.game_states set status = 'ended'
+where room_id = (select id from public.rooms where public_room_code = '910004');
+
+update public.rooms set status = 'ended', ended_at = now()
 where public_room_code = '910004';
 
 select is(
   (select accounts.current_room_id from public.accounts where accounts.id = 9104),
-  null::bigint,
-  'disbanding a room clears current membership through the room trigger'
+  (select rooms.id from public.rooms where rooms.public_room_code = '910004'),
+  'playing-to-ended preserves current membership'
+);
+
+select is(
+  (
+    select count(*)
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910004'
+  ),
+  1::bigint,
+  'playing-to-ended preserves the final game state'
 );
 
 select lives_ok(
@@ -310,8 +553,19 @@ select is(
 
 select is(
   (select rooms.status from public.rooms where rooms.public_room_code = '910005'),
-  'disbanded',
-  'switching the last source player disbands its lobby'
+  'ended',
+  'switching the last source player ends its waiting room'
+);
+
+select is(
+  (
+    select count(*)
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910005'
+  ),
+  0::bigint,
+  'switching the last source player keeps pre-game state absent'
 );
 
 select lives_ok(
@@ -367,19 +621,44 @@ select is(
 
 select lives_ok(
   $$select * from public.app_create_room(9111, '910011', 'room:910011-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', '2000-01-01', 'player-9111-a', 'Host K', 3)$$,
-  'an already expired lobby can be created for expiry processing coverage'
+  'an already expired waiting can be created for expiry processing coverage'
 );
 
 select is(
   (select notification_reason from public.app_get_current_room(9111)),
-  'room_disbanded',
-  'current room lookup processes lobby expiry'
+  'waiting_room_ended',
+  'current room lookup processes waiting expiry'
 );
 
 select is(
   (select accounts.current_room_id from public.accounts where accounts.id = 9111),
   null::bigint,
-  'lobby expiry releases current membership'
+  'waiting expiry releases current membership'
+);
+
+select is(
+  (
+    select count(*)
+    from public.game_states
+    join public.rooms on rooms.id = game_states.room_id
+    where rooms.public_room_code = '910011'
+  ),
+  0::bigint,
+  'waiting expiry keeps pre-start game state absent'
+);
+
+select is(
+  (
+    select room_events.payload ->> 'reason'
+    from public.room_events
+    join public.rooms on rooms.id = room_events.room_id
+    where rooms.public_room_code = '910011'
+      and room_events.event_kind = 'room_ended'
+    order by room_events.id desc
+    limit 1
+  ),
+  'waiting_room_expired',
+  'waiting expiry records its room end reason'
 );
 
 select throws_ok(

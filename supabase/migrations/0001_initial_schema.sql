@@ -52,7 +52,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 
 
-CREATE OR REPLACE FUNCTION "public"."app_cleanup_expired_lobbies"("p_limit" integer DEFAULT 50) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_cleanup_expired_waiting_rooms"("p_limit" integer DEFAULT 50) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -63,19 +63,19 @@ begin
     with expired_rooms as (
       select rooms.id
       from public.rooms
-      where rooms.status = 'lobby'
-        and rooms.lobby_expires_at <= now()
-      order by rooms.lobby_expires_at asc
+      where rooms.status = 'waiting'
+        and rooms.waiting_expires_at <= now()
+      order by rooms.waiting_expires_at asc
       limit v_limit
       for update skip locked
     ),
     updated_rooms as (
       update public.rooms
-      set disbanded_at = now(),
-          status = 'disbanded'
+      set ended_at = now(),
+          status = 'ended'
       from expired_rooms
       where rooms.id = expired_rooms.id
-        and rooms.status = 'lobby'
+        and rooms.status = 'waiting'
       returning rooms.*
     ),
     inserted_events as (
@@ -89,8 +89,8 @@ begin
       select
         null,
         null,
-        'room_disbanded',
-        '{"reason":"lobby_expired_cleanup"}'::jsonb,
+        'room_ended',
+        '{"reason":"waiting_room_expired_cleanup"}'::jsonb,
         updated_rooms.id
       from updated_rooms
       returning room_events.room_id
@@ -101,9 +101,10 @@ begin
       updated_rooms.status,
       updated_rooms.host_account_id,
       updated_rooms.realtime_topic,
-      updated_rooms.lobby_expires_at,
+      updated_rooms.waiting_expires_at,
+      updated_rooms.started_at,
       null::bigint,
-      'room_disbanded'::text
+      'waiting_room_ended'::text
     from updated_rooms
     join inserted_events
       on inserted_events.room_id = updated_rooms.id;
@@ -111,10 +112,10 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."app_cleanup_expired_lobbies"("p_limit" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."app_cleanup_expired_waiting_rooms"("p_limit" integer) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_lobby_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_waiting_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -131,7 +132,7 @@ begin
 
   insert into public.rooms (
     host_account_id,
-    lobby_expires_at,
+    waiting_expires_at,
     public_room_code,
     realtime_topic,
     status,
@@ -139,10 +140,10 @@ begin
   )
   values (
     p_account_id,
-    p_lobby_expires_at,
+    p_waiting_expires_at,
     p_public_room_code,
     p_realtime_topic,
-    'lobby',
+    'waiting',
     p_target_player_count
   )
   returning * into v_room;
@@ -163,9 +164,6 @@ begin
   )
   returning players.id into v_player_id;
 
-  insert into public.game_states (room_id, status)
-  values (v_room.id, 'waiting');
-
   insert into public.realtime_topics (room_id, scope, topic)
   values (v_room.id, 'room', p_realtime_topic);
 
@@ -185,17 +183,18 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_player_id,
       'room_created'::text;
 end;
 $$;
 
 
-ALTER FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_lobby_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_waiting_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_expire_lobby_if_needed"("p_room_id" bigint) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_expire_waiting_room_if_needed"("p_room_id" bigint) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -213,12 +212,12 @@ begin
     raise exception 'Room not found.';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -231,12 +230,12 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
 
-    v_notification_reason := 'room_disbanded';
+    v_notification_reason := 'waiting_room_ended';
   end if;
 
   return query
@@ -246,14 +245,15 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       null::bigint,
       v_notification_reason;
 end;
 $$;
 
 
-ALTER FUNCTION "public"."app_expire_lobby_if_needed"("p_room_id" bigint) OWNER TO "postgres";
+ALTER FUNCTION "public"."app_expire_waiting_room_if_needed"("p_room_id" bigint) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."app_get_realtime_subscriptions"("p_account_id" bigint, "p_room_code" "text", "p_grant_seconds" integer DEFAULT 900) RETURNS TABLE("topic" "text", "scope" "text", "grant_id" "uuid", "expires_at" timestamp with time zone)
@@ -397,7 +397,7 @@ $$;
 ALTER FUNCTION "public"."app_get_realtime_subscriptions"("p_account_id" bigint, "p_room_code" "text", "p_grant_seconds" integer) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_heartbeat_room_player"("p_account_id" bigint, "p_room_code" "text", "p_disconnect_after_seconds" integer DEFAULT 45) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_heartbeat_room_player"("p_account_id" bigint, "p_room_code" "text", "p_disconnect_after_seconds" integer DEFAULT 45) RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -424,12 +424,12 @@ begin
     raise exception 'Room not found.';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -442,8 +442,8 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
 
@@ -454,13 +454,14 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         null::bigint,
-        'room_disbanded'::text;
+        'waiting_room_ended'::text;
     return;
   end if;
 
-  if v_room.status not in ('lobby', 'playing') then
+  if v_room.status not in ('waiting', 'playing') then
     return query
       select
         v_room.id,
@@ -468,7 +469,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         null::bigint,
         null::text;
     return;
@@ -550,7 +552,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_player.id,
       v_notification_reason;
 end;
@@ -707,7 +710,7 @@ $$;
 ALTER FUNCTION "public"."app_insert_game_events"("p_room_id" bigint, "p_phase_instance_id" "uuid", "p_events" "jsonb") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_join_room"("p_account_id" bigint, "p_room_code" "text", "p_public_player_id" "text", "p_display_name" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_join_room"("p_account_id" bigint, "p_room_code" "text", "p_public_player_id" "text", "p_display_name" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -729,12 +732,12 @@ begin
     raise exception 'Room not found.';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -747,13 +750,13 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
   end if;
 
-  if v_room.status not in ('lobby', 'playing') then
+  if v_room.status not in ('waiting', 'playing') then
     raise exception 'Room is not joinable.';
   end if;
 
@@ -788,8 +791,8 @@ begin
     where players.id = v_player.id
     returning * into v_player;
   else
-    if v_room.status <> 'lobby' then
-      raise exception 'New players can only join during lobby.';
+    if v_room.status <> 'waiting' then
+      raise exception 'New players can only join during waiting.';
     end if;
 
     select count(*)
@@ -837,7 +840,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_player.id,
       v_event_kind;
 end;
@@ -847,7 +851,7 @@ $$;
 ALTER FUNCTION "public"."app_join_room"("p_account_id" bigint, "p_room_code" "text", "p_public_player_id" "text", "p_display_name" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_leave_room"("p_account_id" bigint, "p_room_code" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_leave_room"("p_account_id" bigint, "p_room_code" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -869,12 +873,12 @@ begin
     raise exception 'Room not found.';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -887,8 +891,8 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
   end if;
@@ -927,7 +931,7 @@ begin
   )
   values (p_account_id, v_player.id, 'player_left', '{}'::jsonb, v_room.id);
 
-  if v_room.status in ('lobby', 'ended') then
+  if v_room.status in ('waiting', 'ended') then
     select *
     into v_remaining_player
     from public.players
@@ -936,12 +940,12 @@ begin
     order by players.joined_at asc, players.id asc
     limit 1;
 
-    if not found and v_room.status = 'lobby' then
+    if not found and v_room.status = 'waiting' then
       update public.rooms
-      set disbanded_at = now(),
-          status = 'disbanded'
+      set ended_at = now(),
+          status = 'ended'
       where rooms.id = v_room.id
-        and rooms.status = 'lobby'
+        and rooms.status = 'waiting'
       returning * into v_room;
 
       insert into public.room_events (
@@ -954,17 +958,17 @@ begin
       values (
         p_account_id,
         v_player.id,
-        'room_disbanded',
-        '{"reason":"last_player_left_lobby"}'::jsonb,
+        'room_ended',
+        '{"reason":"last_player_left_waiting_room"}'::jsonb,
         v_room.id
       );
 
-      v_notification_reason := 'room_disbanded';
+      v_notification_reason := 'waiting_room_ended';
     elsif found and v_room.host_account_id = p_account_id then
       update public.rooms
       set host_account_id = v_remaining_player.account_id
       where rooms.id = v_room.id
-        and rooms.status in ('lobby', 'ended')
+        and rooms.status in ('waiting', 'ended')
       returning * into v_room;
     end if;
   end if;
@@ -976,7 +980,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_player.id,
       v_notification_reason;
 end;
@@ -986,7 +991,7 @@ $$;
 ALTER FUNCTION "public"."app_leave_room"("p_account_id" bigint, "p_room_code" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_resolve_phase"("p_account_id" bigint, "p_room_code" "text", "p_phase_instance_id" "uuid", "p_expected_revision" integer, "p_expected_current_action_ids" bigint[], "p_expected_pending_action_ids" bigint[], "p_deaths" "jsonb", "p_final_outcome" "jsonb", "p_player_results" "jsonb", "p_next_phase" "text", "p_next_phase_instance_id" "uuid", "p_next_phase_ends_at" timestamp with time zone, "p_next_day_number" integer, "p_next_night_number" integer, "p_actions" "jsonb", "p_day_speech_slots" "jsonb", "p_events" "jsonb") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_resolve_phase"("p_account_id" bigint, "p_room_code" "text", "p_phase_instance_id" "uuid", "p_expected_revision" integer, "p_expected_current_action_ids" bigint[], "p_expected_pending_action_ids" bigint[], "p_deaths" "jsonb", "p_final_outcome" "jsonb", "p_player_results" "jsonb", "p_next_phase" "text", "p_next_phase_instance_id" "uuid", "p_next_phase_ends_at" timestamp with time zone, "p_next_day_number" integer, "p_next_night_number" integer, "p_actions" "jsonb", "p_day_speech_slots" "jsonb", "p_events" "jsonb") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -1039,7 +1044,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -1063,7 +1069,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -1101,7 +1108,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -1127,7 +1135,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_host_player.id,
         null::text;
     return;
@@ -1231,7 +1240,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_host_player.id,
       case
         when p_final_outcome is null then 'phase_changed'::text
@@ -1244,7 +1254,7 @@ $$;
 ALTER FUNCTION "public"."app_resolve_phase"("p_account_id" bigint, "p_room_code" "text", "p_phase_instance_id" "uuid", "p_expected_revision" integer, "p_expected_current_action_ids" bigint[], "p_expected_pending_action_ids" bigint[], "p_deaths" "jsonb", "p_final_outcome" "jsonb", "p_player_results" "jsonb", "p_next_phase" "text", "p_next_phase_instance_id" "uuid", "p_next_phase_ends_at" timestamp with time zone, "p_next_day_number" integer, "p_next_night_number" integer, "p_actions" "jsonb", "p_day_speech_slots" "jsonb", "p_events" "jsonb") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_send_night_conversation_message"("p_account_id" bigint, "p_room_code" "text", "p_phase_instance_id" "uuid", "p_night_number" integer, "p_conversation_group_id" "text", "p_body" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_send_night_conversation_message"("p_account_id" bigint, "p_room_code" "text", "p_phase_instance_id" "uuid", "p_night_number" integer, "p_conversation_group_id" "text", "p_body" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $_$
@@ -1368,7 +1378,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_player.id,
       'private_view_changed'::text;
 end;
@@ -1378,7 +1389,7 @@ $_$;
 ALTER FUNCTION "public"."app_send_night_conversation_message"("p_account_id" bigint, "p_room_code" "text", "p_phase_instance_id" "uuid", "p_night_number" integer, "p_conversation_group_id" "text", "p_body" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_start_room"("p_account_id" bigint, "p_room_code" "text", "p_expected_player_ids" bigint[], "p_phase_instance_id" "uuid", "p_phase_ends_at" timestamp with time zone, "p_role_counts" "jsonb", "p_options" "jsonb", "p_resolved_role_setup" "jsonb", "p_role_registry_version" "text", "p_engine_version" "text", "p_assignments" "jsonb", "p_actions" "jsonb", "p_events" "jsonb") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_start_room"("p_account_id" bigint, "p_room_code" "text", "p_expected_player_ids" bigint[], "p_phase_instance_id" "uuid", "p_phase_ends_at" timestamp with time zone, "p_role_counts" "jsonb", "p_options" "jsonb", "p_resolved_role_setup" "jsonb", "p_role_registry_version" "text", "p_engine_version" "text", "p_assignments" "jsonb", "p_actions" "jsonb", "p_events" "jsonb") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -1386,7 +1397,6 @@ declare
   v_host_player public.players%rowtype;
   v_joined_player_ids bigint[];
   v_room public.rooms%rowtype;
-  v_state public.game_states%rowtype;
 begin
   select *
   into v_room
@@ -1400,12 +1410,12 @@ begin
     raise exception 'Room not found.';
   end if;
 
-  if v_room.status = 'lobby' and v_room.lobby_expires_at <= now() then
+  if v_room.status = 'waiting' and v_room.waiting_expires_at <= now() then
     update public.rooms
-    set disbanded_at = now(),
-        status = 'disbanded'
+    set ended_at = now(),
+        status = 'ended'
     where rooms.id = v_room.id
-      and rooms.status = 'lobby'
+      and rooms.status = 'waiting'
     returning * into v_room;
 
     insert into public.room_events (
@@ -1418,8 +1428,8 @@ begin
     values (
       null,
       null,
-      'room_disbanded',
-      '{"reason":"lobby_expired"}'::jsonb,
+      'room_ended',
+      '{"reason":"waiting_room_expired"}'::jsonb,
       v_room.id
     );
 
@@ -1430,9 +1440,10 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         null::bigint,
-        'room_disbanded'::text;
+        'waiting_room_ended'::text;
     return;
   end if;
 
@@ -1452,18 +1463,16 @@ begin
     raise exception 'Current account is not an active room player.';
   end if;
 
-  if v_room.status <> 'lobby' then
-    raise exception 'Room must be in lobby.';
+  if v_room.status <> 'waiting' then
+    raise exception 'Room must be in waiting.';
   end if;
 
-  select *
-  into v_state
-  from public.game_states
-  where game_states.room_id = v_room.id
-  for update;
-
-  if not found or v_state.status <> 'waiting' then
-    raise exception 'Room must be waiting for start.';
+  if exists (
+    select 1
+    from public.game_states
+    where game_states.room_id = v_room.id
+  ) then
+    raise exception 'Room already has a game state.';
   end if;
 
   select coalesce(array_agg(player_id order by joined_at, player_id), '{}'::bigint[])
@@ -1489,7 +1498,7 @@ begin
   set started_at = now(),
       status = 'playing'
   where rooms.id = v_room.id
-    and rooms.status = 'lobby'
+    and rooms.status = 'waiting'
   returning * into v_room;
 
   insert into public.game_rule_sets (
@@ -1507,17 +1516,28 @@ begin
     v_room.id
   );
 
-  update public.game_states
-  set night_number = 1,
-      phase = 'night',
-      phase_ends_at = p_phase_ends_at,
-      phase_instance_id = p_phase_instance_id,
-      phase_started_at = now(),
-      resolved_role_setup = p_resolved_role_setup,
-      revision = 1,
-      status = 'playing'
-  where game_states.id = v_state.id
-    and game_states.status = 'waiting';
+  insert into public.game_states (
+    night_number,
+    phase,
+    phase_ends_at,
+    phase_instance_id,
+    phase_started_at,
+    resolved_role_setup,
+    revision,
+    room_id,
+    status
+  )
+  values (
+    1,
+    'night',
+    p_phase_ends_at,
+    p_phase_instance_id,
+    now(),
+    p_resolved_role_setup,
+    1,
+    v_room.id,
+    'playing'
+  );
 
   insert into public.role_assignments (player_id, role_id, room_id)
   select assignment.player_id, assignment.role_id, v_room.id
@@ -1551,7 +1571,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_host_player.id,
       'game_started'::text;
 end;
@@ -1561,7 +1582,7 @@ $$;
 ALTER FUNCTION "public"."app_start_room"("p_account_id" bigint, "p_room_code" "text", "p_expected_player_ids" bigint[], "p_phase_instance_id" "uuid", "p_phase_ends_at" timestamp with time zone, "p_role_counts" "jsonb", "p_options" "jsonb", "p_resolved_role_setup" "jsonb", "p_role_registry_version" "text", "p_engine_version" "text", "p_assignments" "jsonb", "p_actions" "jsonb", "p_events" "jsonb") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."app_submit_action"("p_account_id" bigint, "p_room_code" "text", "p_action_key" "text", "p_phase_instance_id" "uuid", "p_expected_revision" integer, "p_target_public_player_id" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "lobby_expires_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
+CREATE OR REPLACE FUNCTION "public"."app_submit_action"("p_account_id" bigint, "p_room_code" "text", "p_action_key" "text", "p_phase_instance_id" "uuid", "p_expected_revision" integer, "p_target_public_player_id" "text") RETURNS TABLE("id" bigint, "public_room_code" "text", "status" "text", "host_account_id" bigint, "realtime_topic" "text", "waiting_expires_at" timestamp with time zone, "started_at" timestamp with time zone, "actor_player_id" bigint, "notification_reason" "text")
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
     AS $$
@@ -1705,7 +1726,8 @@ begin
         v_room.status,
         v_room.host_account_id,
         v_room.realtime_topic,
-        v_room.lobby_expires_at,
+        v_room.waiting_expires_at,
+        v_room.started_at,
         v_player.id,
         null::text;
     return;
@@ -1733,7 +1755,8 @@ begin
       v_room.status,
       v_room.host_account_id,
       v_room.realtime_topic,
-      v_room.lobby_expires_at,
+      v_room.waiting_expires_at,
+      v_room.started_at,
       v_player.id,
       'action_window_changed'::text;
 end;
@@ -2019,7 +2042,7 @@ ALTER TABLE "public"."game_rule_sets" ALTER COLUMN "id" ADD GENERATED ALWAYS AS 
 CREATE TABLE IF NOT EXISTS "public"."game_states" (
     "id" bigint NOT NULL,
     "room_id" bigint NOT NULL,
-    "status" "text" DEFAULT 'waiting'::"text" NOT NULL,
+    "status" "text" NOT NULL,
     "phase" "text",
     "phase_instance_id" "uuid",
     "phase_started_at" timestamp with time zone,
@@ -2035,7 +2058,7 @@ CREATE TABLE IF NOT EXISTS "public"."game_states" (
     "day_state" "jsonb",
     "execution_state" "jsonb",
     CONSTRAINT "game_states_phase_check" CHECK ((("phase" IS NULL) OR ("phase" = ANY (ARRAY['night'::"text", 'day'::"text", 'voting'::"text", 'execution'::"text"])))),
-    CONSTRAINT "game_states_status_check" CHECK (("status" = ANY (ARRAY['waiting'::"text", 'assigning_roles'::"text", 'playing'::"text", 'ended'::"text"])))
+    CONSTRAINT "game_states_status_check" CHECK (("status" = ANY (ARRAY['assigning_roles'::"text", 'playing'::"text", 'ended'::"text"])))
 );
 
 ALTER TABLE ONLY "public"."game_states" FORCE ROW LEVEL SECURITY;
@@ -2262,7 +2285,7 @@ CREATE TABLE IF NOT EXISTS "public"."room_events" (
     "actor_account_id" bigint,
     "payload" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "room_events_event_kind_check" CHECK (("event_kind" = ANY (ARRAY['room_created'::"text", 'player_joined'::"text", 'player_reconnected'::"text", 'player_disconnected'::"text", 'player_left'::"text", 'game_started'::"text", 'room_disbanded'::"text", 'room_ended'::"text"]))),
+    CONSTRAINT "room_events_event_kind_check" CHECK (("event_kind" = ANY (ARRAY['room_created'::"text", 'player_joined'::"text", 'player_reconnected'::"text", 'player_disconnected'::"text", 'player_left'::"text", 'game_started'::"text", 'room_ended'::"text"]))),
     CONSTRAINT "room_events_payload_object_check" CHECK (("jsonb_typeof"("payload") = 'object'::"text"))
 );
 
@@ -2286,19 +2309,19 @@ ALTER TABLE "public"."room_events" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDE
 CREATE TABLE IF NOT EXISTS "public"."rooms" (
     "id" bigint NOT NULL,
     "public_room_code" "text" NOT NULL,
-    "status" "text" DEFAULT 'lobby'::"text" NOT NULL,
+    "status" "text" DEFAULT 'waiting'::"text" NOT NULL,
     "host_account_id" bigint NOT NULL,
     "realtime_topic" "text" NOT NULL,
-    "lobby_expires_at" timestamp with time zone NOT NULL,
+    "waiting_expires_at" timestamp with time zone NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "started_at" timestamp with time zone,
-    "disbanded_at" timestamp with time zone,
     "ended_at" timestamp with time zone,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "target_player_count" integer DEFAULT 6 NOT NULL,
     CONSTRAINT "rooms_public_room_code_check" CHECK (("public_room_code" ~ '^[0-9]{6}$'::"text")),
     CONSTRAINT "rooms_realtime_topic_not_room_code_check" CHECK ((("length"("realtime_topic") >= 32) AND ("realtime_topic" <> "public_room_code"))),
-    CONSTRAINT "rooms_status_check" CHECK (("status" = ANY (ARRAY['lobby'::"text", 'playing'::"text", 'disbanded'::"text", 'ended'::"text"]))),
+    CONSTRAINT "rooms_lifecycle_check" CHECK ((("status" = 'waiting'::"text") AND ("started_at" IS NULL) AND ("ended_at" IS NULL)) OR (("status" = 'playing'::"text") AND ("started_at" IS NOT NULL) AND ("ended_at" IS NULL)) OR (("status" = 'ended'::"text") AND ("ended_at" IS NOT NULL))),
+    CONSTRAINT "rooms_status_check" CHECK (("status" = ANY (ARRAY['waiting'::"text", 'playing'::"text", 'ended'::"text"]))),
     CONSTRAINT "rooms_target_player_count_check" CHECK ((("target_player_count" >= 3) AND ("target_player_count" <= 10)))
 );
 
@@ -2602,7 +2625,7 @@ CREATE INDEX "room_events_room_created_idx" ON "public"."room_events" USING "btr
 
 
 
-CREATE UNIQUE INDEX "rooms_active_code_unique" ON "public"."rooms" USING "btree" ("public_room_code") WHERE ("status" = ANY (ARRAY['lobby'::"text", 'playing'::"text"]));
+CREATE UNIQUE INDEX "rooms_active_code_unique" ON "public"."rooms" USING "btree" ("public_room_code") WHERE ("status" = ANY (ARRAY['waiting'::"text", 'playing'::"text"]));
 
 
 
@@ -2614,7 +2637,7 @@ CREATE INDEX "rooms_public_room_code_idx" ON "public"."rooms" USING "btree" ("pu
 
 
 
-CREATE INDEX "rooms_status_lobby_expires_at_idx" ON "public"."rooms" USING "btree" ("status", "lobby_expires_at");
+CREATE INDEX "rooms_status_waiting_expires_at_idx" ON "public"."rooms" USING "btree" ("status", "waiting_expires_at");
 
 
 
@@ -3042,18 +3065,18 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."app_cleanup_expired_lobbies"("p_limit" integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."app_cleanup_expired_lobbies"("p_limit" integer) TO "service_role";
+REVOKE ALL ON FUNCTION "public"."app_cleanup_expired_waiting_rooms"("p_limit" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."app_cleanup_expired_waiting_rooms"("p_limit" integer) TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_lobby_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_lobby_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) TO "service_role";
+REVOKE ALL ON FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_waiting_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."app_create_room"("p_account_id" bigint, "p_public_room_code" "text", "p_realtime_topic" "text", "p_waiting_expires_at" timestamp with time zone, "p_public_player_id" "text", "p_display_name" "text", "p_target_player_count" integer) TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."app_expire_lobby_if_needed"("p_room_id" bigint) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."app_expire_lobby_if_needed"("p_room_id" bigint) TO "service_role";
+REVOKE ALL ON FUNCTION "public"."app_expire_waiting_room_if_needed"("p_room_id" bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."app_expire_waiting_room_if_needed"("p_room_id" bigint) TO "service_role";
 
 
 

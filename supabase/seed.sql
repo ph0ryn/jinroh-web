@@ -36,7 +36,7 @@ insert into public.rooms (
   status,
   host_account_id,
   realtime_topic,
-  lobby_expires_at,
+  waiting_expires_at,
   created_at,
   updated_at
 )
@@ -44,7 +44,7 @@ overriding system value
 values (
   1001,
   '123456',
-  'lobby',
+  'waiting',
   1001,
   'local_room_topic_123456_000000000001',
   '2026-01-01T00:30:00Z',
@@ -85,11 +85,6 @@ values
     '2026-01-01T00:01:00Z',
     '2026-01-01T00:01:00Z'
   )
-on conflict (id) do nothing;
-
-insert into public.game_states (id, room_id, status, day_number, night_number, revision)
-overriding system value
-values (1001, 1001, 'waiting', 0, 0, 0)
 on conflict (id) do nothing;
 
 insert into public.room_events (

@@ -34,6 +34,7 @@ test("@security @roles private views, grants, and mutations stay scoped", async 
       players: entry.summary.players,
     });
 
+    expect(entry.summary.players.every((player) => player.revealedRoleId === null)).toBe(true);
     expect(publicJson).not.toContain('"roleId"');
     expect(publicJson).not.toContain('"roleName"');
 
@@ -163,8 +164,10 @@ test("@security private Realtime rejects anon clients and delivers authorized br
 });
 
 test("@security maintenance cleanup requires its dedicated credential", async ({ request }) => {
-  const missing = await request.post("/api/maintenance/expire-lobbies", { data: { limit: 1 } });
-  const wrong = await request.post("/api/maintenance/expire-lobbies", {
+  const missing = await request.post("/api/maintenance/expire-waiting-rooms", {
+    data: { limit: 1 },
+  });
+  const wrong = await request.post("/api/maintenance/expire-waiting-rooms", {
     data: { limit: 1 },
     headers: { authorization: "Bearer wrong-maintenance-secret" },
   });
@@ -173,7 +176,7 @@ test("@security maintenance cleanup requires its dedicated credential", async ({
   expect(wrong.status()).toBe(401);
 
   if (process.env["E2E_BASE_URL"] === undefined) {
-    const authorized = await request.post("/api/maintenance/expire-lobbies", {
+    const authorized = await request.post("/api/maintenance/expire-waiting-rooms", {
       data: { limit: 1 },
       headers: {
         authorization: "Bearer jinroh-e2e-maintenance-secret-32-bytes-minimum",

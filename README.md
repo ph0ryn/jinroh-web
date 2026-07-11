@@ -5,7 +5,7 @@ in-person or voice-call werewolf games.
 
 It does not replace table talk, voice chat, or human discussion. Its role is to
 track the state that is tedious or error-prone to manage by hand: anonymous room
-identity, lobby membership, role-safe private views, phase timers, night actions,
+identity, waiting-room membership, role-safe private views, phase timers, night actions,
 voting, execution, and locked final results.
 
 ![Jinroh Web tabletop hero](public/images/jinroh-og.jpg)
@@ -15,9 +15,9 @@ voting, execution, and locked final results.
 - Start a room anonymously and let players join with a six-digit code.
 - Keep the database as the source of truth and use realtime only as a reload
   signal.
-- Never expose Account IDs, raw account tokens, role assignments, night targets,
-  vote details in progress, or role-private night conversation content to the wrong
-  browser view.
+- Never expose Account IDs, raw account tokens, pre-result role assignments, night
+  targets, vote details in progress, or role-private night conversation content to
+  the wrong browser view.
 - Visualize a complete game path with Werewolf, Villager, Madman, Seer, Guard,
   and Fox roles while backend implementation follows the current product spec.
 - Provide a high-polish mobile-first UI that also works as a desktop
@@ -28,12 +28,12 @@ voting, execution, and locked final results.
 The current app shell is a live product surface backed by Next.js API routes
 and Supabase:
 
-- Home and lobby entry for anonymous room creation and code-based joining.
+- Home and waiting-room entry for anonymous room creation and code-based joining.
 - Desktop live table with room metrics, invite tools, player list, host
   controls, private actions, and a public event log.
 - First night, night actions, day progress, voting, execution, result, and
   role-private night conversation.
-- Phase-aware generated tabletop backgrounds for lobby, day, voting,
+- Phase-aware generated tabletop backgrounds for waiting, day, voting,
   execution, night, and result states.
 - Mobile layout with stacked room, control, private view, and public log panels.
 
@@ -174,14 +174,14 @@ Basic play flow:
 Optional maintenance endpoint for cron or manual cleanup:
 
 ```sh
-curl -X POST http://localhost:3000/api/maintenance/expire-lobbies \
+curl -X POST http://localhost:3000/api/maintenance/expire-waiting-rooms \
   -H "authorization: Bearer $MAINTENANCE_SECRET" \
   -H "content-type: application/json" \
   -d '{"limit":50}'
 ```
 
-The endpoint only disbands already-expired lobby rooms and returns the number
-of rooms changed.
+The endpoint ends only already-expired waiting rooms and returns the number of
+rooms changed.
 
 ## Deploy
 
@@ -216,10 +216,10 @@ E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e
 E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e:security
 ```
 
-If using scheduled cleanup, call `/api/maintenance/expire-lobbies` from a
+If using scheduled cleanup, call `/api/maintenance/expire-waiting-rooms` from a
 trusted cron job with `Authorization: Bearer <MAINTENANCE_SECRET>`. The secret
 must contain at least 32 bytes. The endpoint is idempotent for already-expired
-lobbies.
+waiting rooms.
 
 ## Validation
 
@@ -238,7 +238,7 @@ and presentation helpers.
 
 The Playwright suite owns one reproducible local lifecycle. It resets local
 Supabase, builds the application, injects the local Supabase JWT secret into the
-test server, and starts `next start`. Its specs verify the three-browser lobby
+test server, and starts `next start`. Its specs verify the three-browser waiting-room
 and first-night UI flow, eight-player role/private-view boundaries, stale action
 rejection, private night conversation, private Realtime authorization and
 broadcast delivery, and maintenance authentication.

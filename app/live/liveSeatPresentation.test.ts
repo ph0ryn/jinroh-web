@@ -12,6 +12,7 @@ const BASE_PLAYER: PublicPlayer = {
   id: "public-player-1",
   isCurrent: false,
   isHost: false,
+  revealedRoleId: null,
   status: "joined",
 };
 
@@ -153,7 +154,7 @@ function createSummary(
     },
     hostPlayerId: player.isHost ? player.id : null,
     isHost: player.isHost,
-    lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
+    waitingExpiresAt: "2099-01-01T00:00:00.000Z",
     players: [...(overrides.players ?? [player])],
     roleCatalog: [],
     rolePrivate: null,

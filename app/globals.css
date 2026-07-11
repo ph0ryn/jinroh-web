@@ -991,7 +991,7 @@ a {
 }
 
 .tone-home .tableSurface,
-.tone-lobby .tableSurface {
+.tone-waiting .tableSurface {
   background:
     radial-gradient(circle at 50% 50%, rgba(18, 52, 40, 0.96), rgba(7, 11, 10, 0.98) 70%),
     linear-gradient(120deg, rgba(217, 173, 95, 0.12), transparent 48%);
@@ -1381,7 +1381,6 @@ a {
   --live-accent: var(--brass-300);
   --live-accent-rgb: 217, 173, 95;
   --live-avatar-border: rgba(119, 189, 117, 0.86);
-  --live-bg-image: url("/images/jinroh-lobby-same-angle.jpg");
   --live-content-width: 1320px;
   --live-danger-bg: rgba(116, 48, 45, 0.42);
   --live-danger-border: rgba(167, 71, 61, 0.62);
@@ -1391,16 +1390,9 @@ a {
   --live-panel-border: var(--line-strong);
   --live-primary-bg: linear-gradient(135deg, var(--forest-700), rgba(42, 98, 67, 0.88));
   --live-primary-border: rgba(119, 189, 117, 0.45);
-  --live-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.92), rgba(7, 11, 10, 0.72));
   --live-secondary-bg: rgba(241, 230, 202, 0.06);
   --live-soft-surface: rgba(241, 230, 202, 0.05);
-  --live-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.12), rgba(7, 11, 10, 0.46));
-  --live-wash:
-    radial-gradient(circle at 76% 12%, rgba(217, 173, 95, 0.14), transparent 31rem),
-    radial-gradient(circle at 16% 84%, rgba(119, 189, 117, 0.1), transparent 30rem);
-  background:
-    var(--live-scrim),
-    var(--live-bg-image) center top / cover fixed no-repeat;
+  background: var(--ink-950);
   display: grid;
   gap: 12px;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -1409,30 +1401,6 @@ a {
   overflow-x: clip;
   padding: clamp(12px, 1.35vw, 18px);
   position: relative;
-  transition:
-    background 420ms ease,
-    color 240ms ease;
-}
-
-.liveShell::before,
-.liveShell::after {
-  content: "";
-  inset: 0;
-  pointer-events: none;
-  position: fixed;
-  transition:
-    background 420ms ease,
-    opacity 420ms ease;
-  z-index: -1;
-}
-
-.liveShell::before {
-  background: var(--live-wash);
-  opacity: 1;
-}
-
-.liveShell::after {
-  background: var(--live-vignette);
 }
 
 .liveShell > * {
@@ -1442,74 +1410,58 @@ a {
   z-index: 1;
 }
 
+.liveShellGame,
+.liveShellTable {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .liveMood-setup,
-.liveMood-lobby {
+.liveMood-waiting {
   --live-accent: #d8af68;
   --live-accent-rgb: 216, 175, 104;
   --live-avatar-border: rgba(216, 175, 104, 0.58);
-  --live-bg-image: url("/images/jinroh-lobby-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.075);
   --live-muted: #a9a08c;
   --live-panel-bg: rgba(7, 11, 10, 0.76);
   --live-panel-border: rgba(217, 173, 95, 0.24);
   --live-primary-bg: linear-gradient(135deg, rgba(28, 77, 55, 0.8), rgba(95, 75, 43, 0.76));
   --live-primary-border: rgba(216, 175, 104, 0.42);
-  --live-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.9), rgba(12, 18, 16, 0.68));
   --live-secondary-bg: rgba(241, 230, 202, 0.065);
   --live-soft-surface: rgba(241, 230, 202, 0.052);
-  --live-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.1), rgba(7, 11, 10, 0.54));
-  --live-wash:
-    radial-gradient(circle at 14% 13%, rgba(217, 173, 95, 0.14), transparent 24rem),
-    radial-gradient(circle at 82% 78%, rgba(119, 189, 117, 0.07), transparent 28rem);
 }
 
 .liveMood-night {
   --live-accent: #e3b568;
   --live-accent-rgb: 227, 181, 104;
   --live-avatar-border: rgba(227, 181, 104, 0.7);
-  --live-bg-image: url("/images/jinroh-night.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.065);
   --live-muted: #b8aa8e;
   --live-panel-bg: rgba(5, 6, 5, 0.82);
   --live-panel-border: rgba(217, 173, 95, 0.25);
   --live-primary-bg: linear-gradient(135deg, rgba(85, 40, 34, 0.9), rgba(13, 25, 20, 0.96));
   --live-primary-border: rgba(227, 181, 104, 0.46);
-  --live-scrim: linear-gradient(90deg, rgba(3, 5, 4, 0.88), rgba(7, 11, 10, 0.54));
   --live-secondary-bg: rgba(227, 181, 104, 0.068);
   --live-soft-surface: rgba(227, 181, 104, 0.05);
-  --live-vignette: linear-gradient(180deg, rgba(3, 5, 4, 0.04), rgba(2, 3, 3, 0.72));
-  --live-wash:
-    radial-gradient(circle at 14% 12%, rgba(255, 198, 98, 0.18), transparent 22rem),
-    radial-gradient(circle at 47% 84%, rgba(167, 71, 61, 0.12), transparent 24rem),
-    linear-gradient(120deg, rgba(18, 52, 40, 0.1), transparent 58%);
 }
 
 .liveMood-day {
   --live-accent: #f0c66e;
   --live-accent-rgb: 240, 198, 110;
   --live-avatar-border: rgba(119, 189, 117, 0.9);
-  --live-bg-image: url("/images/jinroh-day-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.13);
   --live-muted: #d1c19a;
   --live-panel-bg: rgba(18, 18, 13, 0.6);
   --live-panel-border: rgba(241, 230, 202, 0.34);
   --live-primary-bg: linear-gradient(135deg, rgba(50, 103, 70, 0.92), rgba(139, 103, 48, 0.82));
   --live-primary-border: rgba(240, 198, 110, 0.48);
-  --live-scrim: linear-gradient(90deg, rgba(12, 18, 16, 0.66), rgba(44, 38, 25, 0.32));
   --live-secondary-bg: rgba(241, 230, 202, 0.11);
   --live-soft-surface: rgba(241, 230, 202, 0.09);
-  --live-vignette: linear-gradient(180deg, rgba(255, 232, 164, 0.08), rgba(7, 11, 10, 0.26));
-  --live-wash:
-    radial-gradient(circle at 74% 0%, rgba(255, 220, 138, 0.32), transparent 28rem),
-    radial-gradient(circle at 12% 76%, rgba(119, 189, 117, 0.14), transparent 28rem),
-    linear-gradient(120deg, rgba(255, 238, 184, 0.12), transparent 56%);
 }
 
 .liveMood-voting {
   --live-accent: #e29a58;
   --live-accent-rgb: 226, 154, 88;
   --live-avatar-border: rgba(226, 154, 88, 0.84);
-  --live-bg-image: url("/images/jinroh-voting-same-angle.jpg");
   --live-danger-bg: rgba(116, 48, 45, 0.56);
   --live-input-bg: rgba(241, 230, 202, 0.075);
   --live-muted: #c8ad8b;
@@ -1517,20 +1469,14 @@ a {
   --live-panel-border: rgba(167, 71, 61, 0.38);
   --live-primary-bg: linear-gradient(135deg, rgba(116, 48, 45, 0.92), rgba(170, 93, 45, 0.72));
   --live-primary-border: rgba(226, 154, 88, 0.56);
-  --live-scrim: linear-gradient(90deg, rgba(24, 10, 8, 0.9), rgba(78, 38, 20, 0.5));
   --live-secondary-bg: rgba(226, 154, 88, 0.075);
   --live-soft-surface: rgba(226, 154, 88, 0.06);
-  --live-vignette: linear-gradient(180deg, rgba(226, 154, 88, 0.1), rgba(7, 11, 10, 0.62));
-  --live-wash:
-    radial-gradient(circle at 78% 0%, rgba(240, 160, 78, 0.26), transparent 28rem),
-    radial-gradient(circle at 42% 82%, rgba(167, 71, 61, 0.18), transparent 29rem);
 }
 
 .liveMood-execution {
   --live-accent: #efb36b;
   --live-accent-rgb: 239, 179, 107;
   --live-avatar-border: rgba(167, 71, 61, 0.86);
-  --live-bg-image: url("/images/jinroh-voting-same-angle.jpg");
   --live-danger-bg: rgba(116, 48, 45, 0.66);
   --live-input-bg: rgba(241, 230, 202, 0.07);
   --live-muted: #c2a58a;
@@ -1538,53 +1484,22 @@ a {
   --live-panel-border: rgba(167, 71, 61, 0.44);
   --live-primary-bg: linear-gradient(135deg, rgba(116, 48, 45, 0.94), rgba(43, 18, 18, 0.92));
   --live-primary-border: rgba(239, 179, 107, 0.52);
-  --live-scrim: linear-gradient(90deg, rgba(7, 4, 5, 0.97), rgba(30, 9, 10, 0.7));
   --live-secondary-bg: rgba(239, 179, 107, 0.07);
   --live-soft-surface: rgba(167, 71, 61, 0.065);
-  --live-vignette: linear-gradient(180deg, rgba(7, 4, 5, 0.16), rgba(2, 2, 2, 0.72));
-  --live-wash:
-    radial-gradient(circle at 50% 12%, rgba(239, 179, 107, 0.16), transparent 22rem),
-    radial-gradient(circle at 52% 64%, rgba(167, 71, 61, 0.16), transparent 26rem);
 }
 
 .liveMood-result {
   --live-accent: #d8af68;
   --live-accent-rgb: 216, 175, 104;
   --live-avatar-border: rgba(216, 175, 104, 0.62);
-  --live-bg-image: url("/images/jinroh-result-same-angle.jpg");
   --live-input-bg: rgba(241, 230, 202, 0.08);
   --live-muted: #aaa18d;
   --live-panel-bg: rgba(8, 12, 10, 0.74);
   --live-panel-border: rgba(217, 173, 95, 0.26);
   --live-primary-bg: linear-gradient(135deg, rgba(28, 77, 55, 0.82), rgba(95, 75, 43, 0.78));
   --live-primary-border: rgba(216, 175, 104, 0.44);
-  --live-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.86), rgba(12, 18, 16, 0.6));
   --live-secondary-bg: rgba(241, 230, 202, 0.072);
   --live-soft-surface: rgba(241, 230, 202, 0.058);
-  --live-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.08), rgba(7, 11, 10, 0.5));
-  --live-wash:
-    radial-gradient(circle at 14% 13%, rgba(217, 173, 95, 0.16), transparent 24rem),
-    radial-gradient(circle at 82% 78%, rgba(119, 189, 117, 0.08), transparent 28rem);
-}
-
-.liveMood-closed {
-  --live-accent: #bda982;
-  --live-accent-rgb: 189, 169, 130;
-  --live-avatar-border: rgba(189, 169, 130, 0.6);
-  --live-bg-image: url("/images/jinroh-result-same-angle.jpg");
-  --live-input-bg: rgba(241, 230, 202, 0.055);
-  --live-muted: #9f9788;
-  --live-panel-bg: rgba(7, 8, 8, 0.82);
-  --live-panel-border: rgba(189, 169, 130, 0.2);
-  --live-primary-bg: linear-gradient(135deg, rgba(57, 54, 46, 0.84), rgba(23, 25, 24, 0.9));
-  --live-primary-border: rgba(189, 169, 130, 0.32);
-  --live-scrim: linear-gradient(90deg, rgba(5, 6, 6, 0.96), rgba(12, 12, 11, 0.76));
-  --live-secondary-bg: rgba(189, 169, 130, 0.06);
-  --live-soft-surface: rgba(189, 169, 130, 0.045);
-  --live-vignette: linear-gradient(180deg, rgba(5, 6, 6, 0.08), rgba(2, 2, 2, 0.7));
-  --live-wash:
-    radial-gradient(circle at 72% 12%, rgba(189, 169, 130, 0.09), transparent 25rem),
-    radial-gradient(circle at 16% 80%, rgba(80, 86, 78, 0.1), transparent 28rem);
 }
 
 .liveHero {
@@ -1629,7 +1544,6 @@ a {
 }
 
 .liveEntryPanel,
-.liveStatusBar,
 .livePanel {
   backdrop-filter: blur(18px);
   background: var(--live-panel-bg);
@@ -1644,17 +1558,7 @@ a {
     box-shadow 260ms ease;
 }
 
-.liveTopStack {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-
-.liveTopStackCompact {
-  gap: 0;
-}
-
-.liveSetupSurface {
+.liveEntrySurface {
   align-self: center;
   display: grid;
   gap: 18px;
@@ -1907,116 +1811,6 @@ a {
   min-height: 40px;
 }
 
-.liveStatusBar {
-  align-items: center;
-  display: grid;
-  gap: 4px 14px;
-  grid-template-columns: auto minmax(0, 1fr);
-  justify-self: center;
-  min-height: 46px;
-  padding: 10px 12px;
-  position: relative;
-  width: min(100%, 860px);
-}
-
-.liveStatusBar::before {
-  background: linear-gradient(
-    180deg,
-    rgba(var(--live-accent-rgb), 0.9),
-    rgba(var(--live-accent-rgb), 0.12)
-  );
-  border-radius: 999px;
-  content: "";
-  inset: 10px auto 10px 0;
-  position: absolute;
-  width: 3px;
-}
-
-.liveStatusBar span {
-  color: var(--live-accent);
-  font-weight: 820;
-  white-space: nowrap;
-}
-
-.liveStatusBar strong {
-  color: var(--paper-200);
-  font-size: 0.94rem;
-  font-weight: 650;
-}
-
-.liveToastViewport {
-  display: grid;
-  gap: 8px;
-  pointer-events: none;
-  position: fixed;
-  right: calc(16px + env(safe-area-inset-right, 0px));
-  top: calc(16px + env(safe-area-inset-top, 0px));
-  width: min(380px, calc(100vw - 32px));
-  z-index: 80;
-}
-
-.liveToast {
-  align-items: start;
-  backdrop-filter: blur(18px);
-  background: rgba(7, 11, 10, 0.94);
-  border: 1px solid var(--line-strong);
-  border-left: 4px solid var(--brass-300);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-soft);
-  display: grid;
-  gap: 4px 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 12px;
-  pointer-events: auto;
-}
-
-.liveToast[data-tone="error"] {
-  border-left-color: var(--red-500);
-}
-
-.liveToast[data-tone="success"] {
-  border-left-color: var(--green-400);
-}
-
-.liveToast[data-tone="warning"] {
-  border-left-color: var(--brass-400);
-}
-
-.liveToastTone {
-  color: var(--brass-300);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.liveToast[data-tone="error"] .liveToastTone {
-  color: #f0a299;
-}
-
-.liveToast[data-tone="success"] .liveToastTone {
-  color: #b7e3a2;
-}
-
-.liveToast[data-tone="warning"] .liveToastTone {
-  color: #e3bd77;
-}
-
-.liveToast p {
-  color: var(--paper-100);
-  font-size: 0.92rem;
-  font-weight: 720;
-  grid-column: 1;
-  line-height: 1.4;
-  margin: 0;
-}
-
-.liveShell .liveToastClose {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-}
-
 .liveShell button {
   align-items: center;
   background: var(--live-primary-bg);
@@ -2082,9 +1876,11 @@ a {
   width: min(100%, 520px);
 }
 
-.liveGridLobby {
-  align-items: start;
-  grid-template-columns: minmax(300px, 360px) minmax(420px, 1fr) minmax(300px, 360px);
+.liveGridWaiting {
+  align-items: stretch;
+  grid-template-columns: minmax(520px, 1fr) minmax(320px, 400px);
+  height: 100%;
+  min-height: 0;
   justify-content: center;
   width: min(100%, 1320px);
 }
@@ -2097,8 +1893,10 @@ a {
   width: min(100%, 1320px);
 }
 
-.livePanel.livePlayTablePanel {
+.livePlayTablePanel {
   align-content: stretch;
+  display: grid;
+  min-width: 0;
   min-height: 0;
   overflow: visible;
   padding: 0;
@@ -2122,31 +1920,104 @@ a {
 .livePlayTablePanel .liveTableBoard {
   height: 100%;
   min-height: 0;
-  padding: clamp(18px, 3vw, 34px);
+  padding: clamp(8px, 1.5vw, 18px);
 }
 
 .liveTableSurface {
-  height: 100%;
-  max-width: 700px;
-  max-height: 700px;
-  width: auto;
+  background:
+    radial-gradient(circle at 50% 43%, rgba(var(--live-accent-rgb), 0.2), transparent 18%),
+    repeating-conic-gradient(
+      from 8deg,
+      rgba(124, 76, 38, 0.24) 0deg 3deg,
+      rgba(63, 38, 24, 0.16) 3deg 9deg
+    ),
+    radial-gradient(circle, #765031 0%, #50301f 54%, #241711 78%, #100d0b 100%);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.66);
+  box-shadow:
+    inset 0 0 0 8px rgba(25, 16, 12, 0.88),
+    inset 0 0 0 10px rgba(var(--live-accent-rgb), 0.24),
+    inset 0 0 58px rgba(0, 0, 0, 0.68),
+    0 32px 64px rgba(0, 0, 0, 0.46),
+    0 0 52px rgba(var(--live-accent-rgb), 0.09);
+  height: auto;
+  isolation: isolate;
+  max-width: 100%;
+  width: min(680px, 100%, calc(100svh - 142px));
+}
+
+.liveTableSurface::before {
+  background:
+    repeating-radial-gradient(
+      ellipse at 48% 46%,
+      rgba(255, 255, 255, 0.032) 0 1px,
+      transparent 1px 12px
+    ),
+    radial-gradient(circle, transparent 57%, rgba(0, 0, 0, 0.46) 86%);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.2);
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.46);
+  inset: 11px;
+  z-index: 0;
+}
+
+.liveTableSurface::after {
+  border: 1px solid rgba(var(--live-accent-rgb), 0.28);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.48),
+    inset 0 0 24px rgba(var(--live-accent-rgb), 0.08);
+  content: "";
+  inset: 20%;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+.liveTableInnerRing {
+  border: 1px dashed rgba(var(--live-accent-rgb), 0.2);
+  border-radius: 50%;
+  inset: 26%;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
 }
 
 .liveTableCenter {
-  gap: 10px;
-  inset: 31%;
+  background:
+    radial-gradient(circle, rgba(18, 24, 20, 0.9), rgba(7, 11, 10, 0.76)),
+    linear-gradient(145deg, rgba(var(--live-accent-rgb), 0.12), transparent);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.36);
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.42),
+    0 10px 28px rgba(0, 0, 0, 0.28);
+  gap: 5px;
+  inset: 32%;
+  padding: 12px;
 }
 
 .liveTableCenter strong {
-  font-size: 1.28rem;
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.liveTableCenter .liveTableCenterKicker {
+  color: var(--live-accent);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  max-width: 18ch;
+  text-transform: uppercase;
 }
 
 .liveTablePhaseIcon {
   color: var(--live-accent);
   display: inline-block;
-  height: 42px;
+  height: 36px;
   position: relative;
-  width: 42px;
+  width: 36px;
 }
 
 .liveTablePhaseIcon::before,
@@ -2161,8 +2032,8 @@ a {
 .liveTablePhaseIcon::before {
   border: 2px solid currentColor;
   border-radius: 50%;
-  height: 30px;
-  width: 30px;
+  height: 26px;
+  width: 26px;
 }
 
 .liveTablePhaseIcon.night::before {
@@ -2229,8 +2100,92 @@ a {
 }
 
 .liveTableSeat {
+  backdrop-filter: blur(14px);
+  background:
+    linear-gradient(180deg, rgba(20, 25, 21, 0.96), rgba(6, 9, 8, 0.94)),
+    linear-gradient(135deg, rgba(var(--live-accent-rgb), 0.12), transparent);
+  border-color: rgba(var(--live-accent-rgb), 0.38);
+  border-radius: 13px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 24px rgba(0, 0, 0, 0.42);
   min-height: 92px;
   width: 98px;
+}
+
+.liveTableSeat.selected {
+  background:
+    linear-gradient(180deg, rgba(31, 38, 30, 0.98), rgba(8, 12, 10, 0.96)),
+    linear-gradient(135deg, rgba(var(--live-accent-rgb), 0.18), transparent);
+  box-shadow:
+    0 0 0 3px rgba(var(--live-accent-rgb), 0.12),
+    0 16px 30px rgba(0, 0, 0, 0.48),
+    0 0 28px rgba(var(--live-accent-rgb), 0.1);
+}
+
+.liveTableSeat .seatNumber {
+  background: rgba(7, 11, 10, 0.96);
+  border-color: rgba(var(--live-accent-rgb), 0.42);
+  color: var(--live-accent);
+  font-weight: 850;
+}
+
+.liveTableSeat .avatar {
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.08), transparent 34%),
+    linear-gradient(135deg, rgba(33, 87, 61, 0.96), rgba(7, 17, 13, 0.98));
+  border-color: var(--live-avatar-border);
+  box-shadow: inset 0 0 0 2px rgba(7, 11, 10, 0.52);
+}
+
+.liveTableRoleReveal {
+  color: var(--live-accent) !important;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.liveTableSeatState {
+  background: rgba(7, 11, 10, 0.94);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.34);
+  border-radius: 999px;
+  color: var(--paper-200);
+  font-size: 0.58rem;
+  font-weight: 850;
+  line-height: 1;
+  max-width: 54px;
+  overflow: hidden;
+  padding: 4px 6px;
+  position: absolute;
+  right: 5px;
+  text-overflow: ellipsis;
+  top: 5px;
+  white-space: nowrap;
+}
+
+.liveTableEmptySeat {
+  background: rgba(7, 11, 10, 0.34);
+  border-color: rgba(var(--live-accent-rgb), 0.24);
+  border-style: dashed;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.2);
+  color: rgba(241, 230, 202, 0.56);
+}
+
+.liveTableEmptySeat .avatar {
+  background: rgba(7, 11, 10, 0.28);
+  border-color: rgba(var(--live-accent-rgb), 0.28);
+  border-style: dashed;
+  box-shadow: none;
+  color: rgba(var(--live-accent-rgb), 0.72);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.liveTableEmptySeat .seatLabel strong {
+  color: rgba(241, 230, 202, 0.68);
+}
+
+.liveTableEmptySeat .seatLabel small {
+  color: var(--live-muted);
 }
 
 .liveTableSeat.disconnected .seatLabel small,
@@ -2242,6 +2197,12 @@ a {
 .liveTableSeat.left .avatar {
   filter: grayscale(0.7);
   opacity: 0.68;
+}
+
+.liveTableSeat.eliminated .avatar {
+  filter: grayscale(0.55) brightness(0.72);
+  opacity: 0.68;
+  transform: scale(0.9);
 }
 
 .liveTableSeat.execution .avatar,
@@ -2309,23 +2270,31 @@ a {
 }
 
 .liveSelfRolePanel {
-  align-items: center;
-  display: flex;
+  padding: 0;
+}
+
+.liveRoleRevealButton {
   gap: 12px;
-  justify-content: space-between;
-  padding: 12px 14px;
+  justify-content: flex-start;
+  width: 100%;
 }
 
-.liveSelfRolePanel span {
-  color: var(--live-muted);
-  font-size: 0.78rem;
-  font-weight: 820;
-  text-transform: uppercase;
-}
-
-.liveSelfRolePanel strong {
+.liveRoleRevealButton span {
+  align-items: center;
+  border: 1px solid rgba(var(--live-accent-rgb), 0.38);
+  border-radius: 50%;
   color: var(--live-accent);
-  font-size: 1rem;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.liveRoleRevealButton strong {
+  color: var(--paper-100);
+  font-size: 0.9rem;
 }
 
 .livePopupActions {
@@ -2514,50 +2483,7 @@ a {
   display: block;
 }
 
-.liveLobbyRequirements {
-  background: var(--live-soft-surface);
-  border: 1px solid var(--live-panel-border);
-  border-radius: var(--radius-small);
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-}
-
-.liveLobbyRequirements div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.liveLobbyRequirements span {
-  color: var(--live-muted);
-  font-size: 0.76rem;
-  font-weight: 820;
-  text-transform: uppercase;
-}
-
-.liveLobbyRequirements strong {
-  color: var(--paper-100);
-  font-size: 0.96rem;
-  line-height: 1.3;
-}
-
-.liveProgressTrack {
-  background: rgba(241, 230, 202, 0.12);
-  border-radius: 999px;
-  height: 10px;
-  overflow: hidden;
-}
-
-.liveProgressTrack span {
-  background: linear-gradient(90deg, rgba(var(--live-accent-rgb), 0.96), rgba(119, 189, 117, 0.92));
-  border-radius: inherit;
-  display: block;
-  height: 100%;
-  min-width: 6px;
-}
-
 .livePlayerList,
-.liveSeatGrid,
 .liveActionList,
 .liveEventList,
 .liveControlStack {
@@ -2565,12 +2491,7 @@ a {
   gap: 10px;
 }
 
-.liveSeatGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.livePlayerRow,
-.liveSeatCard {
+.livePlayerRow {
   align-items: center;
   background: var(--live-soft-surface);
   border: 1px solid var(--live-panel-border);
@@ -2582,33 +2503,19 @@ a {
   padding: 8px 10px;
 }
 
-.liveSeatCard {
-  min-height: 72px;
-  padding: 12px;
-}
-
-.livePlayerRow.current,
-.liveSeatCard.current {
+.livePlayerRow.current {
   border-color: var(--live-accent);
   box-shadow: 0 0 0 1px rgba(var(--live-accent-rgb), 0.08);
 }
 
-.liveSeatCard.empty {
-  border-style: dashed;
-  opacity: 0.68;
-}
-
-.livePlayerRow span:not(.liveAvatar),
-.liveSeatCard span:not(.liveAvatar) {
+.livePlayerRow span:not(.liveAvatar) {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
 .livePlayerRow strong,
-.livePlayerRow small,
-.liveSeatCard strong,
-.liveSeatCard small {
+.livePlayerRow small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2616,8 +2523,6 @@ a {
 
 .livePlayerRow small,
 .livePlayerRow em,
-.liveSeatCard small,
-.liveSeatCard em,
 .liveActionRow span,
 .liveEventList time,
 .liveEventList p,
@@ -2625,15 +2530,9 @@ a {
   color: var(--live-muted);
 }
 
-.livePlayerRow em,
-.liveSeatCard em {
+.livePlayerRow em {
   font-size: 0.78rem;
   font-style: normal;
-}
-
-.liveSeatCard.empty .liveAvatar {
-  background: rgba(44, 43, 32, 0.72);
-  border-color: rgba(var(--live-accent-rgb), 0.42);
 }
 
 .liveAvatar {
@@ -2652,7 +2551,7 @@ a {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.liveLobbyPanel {
+.liveWaitingPanel {
   background: var(--live-soft-surface);
   border: 1px solid var(--live-panel-border);
   border-radius: var(--radius-small);
@@ -2661,23 +2560,23 @@ a {
   padding: 10px 12px;
 }
 
-.liveLobbyPanel strong {
+.liveWaitingPanel strong {
   color: var(--paper-100);
 }
 
-.liveLobbyPanel p {
+.liveWaitingPanel p {
   color: var(--live-muted);
   line-height: 1.35;
   margin: 0;
 }
 
-.liveLobbyActions {
+.liveWaitingActions {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.liveLobbyActions button {
+.liveWaitingActions button {
   min-height: 42px;
 }
 
@@ -2694,9 +2593,7 @@ a {
 }
 
 .liveModal {
-  background:
-    linear-gradient(135deg, rgba(14, 20, 17, 0.94), rgba(7, 10, 9, 0.96)),
-    var(--live-bg-image) center / cover no-repeat;
+  background: linear-gradient(135deg, rgba(14, 20, 17, 0.94), rgba(7, 10, 9, 0.96));
   border: 1px solid rgba(var(--live-accent-rgb), 0.34);
   border-radius: var(--radius-panel);
   box-shadow:
@@ -2810,10 +2707,12 @@ a {
 .liveSettingsTabs {
   background: rgba(0, 0, 0, 0.1);
   border-bottom: 1px solid rgba(var(--live-accent-rgb), 0.16);
-  display: flex;
+  display: grid;
   flex: 0 0 auto;
   gap: 10px;
+  grid-template-columns: repeat(3, 126px);
   padding: 14px 26px;
+  position: relative;
 }
 
 .liveSettingsTabs button {
@@ -2828,11 +2727,6 @@ a {
   letter-spacing: 0.04em;
   min-height: 42px;
   min-width: 126px;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
 }
 
 .liveSettingsTabs button:hover:not(.active) {
@@ -2842,9 +2736,9 @@ a {
 }
 
 .liveSettingsTabs button.active {
-  background: linear-gradient(180deg, #f2c77a, var(--live-accent));
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 10px 26px rgba(var(--live-accent-rgb), 0.2);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
   color: #1e1308;
 }
 
@@ -3936,12 +3830,12 @@ a {
 
   .livePlayTablePanel .liveTableBoard {
     height: auto;
-    min-height: clamp(430px, 68vw, 660px);
+    min-height: clamp(430px, 76vw, 720px);
   }
 
   .livePlayTablePanel .liveTableSurface {
     height: auto;
-    width: min(100%, 700px);
+    width: min(100%, 680px);
   }
 
   .liveEntryPanel {
@@ -3985,7 +3879,6 @@ a {
 
 @media (max-width: 720px) {
   .liveShell {
-    background-attachment: scroll;
     padding: 14px;
   }
 
@@ -4003,7 +3896,7 @@ a {
   .liveActionRow,
   .liveConfirmationActions,
   .liveInviteTools,
-  .liveLobbyActions,
+  .liveWaitingActions,
   .liveNightChatComposer,
   .livePlaySideStack,
   .liveRuleSetGrid,
@@ -4011,7 +3904,7 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .liveSetupSurface {
+  .liveEntrySurface {
     gap: 14px;
   }
 
@@ -4066,13 +3959,13 @@ a {
 
   .liveSettingsTabs {
     gap: 8px;
-    overflow-x: auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 12px 18px;
   }
 
   .liveSettingsTabs button {
     flex: 0 0 auto;
-    min-width: 108px;
+    min-width: 0;
   }
 
   .liveSettingsBody {
@@ -4160,21 +4053,65 @@ a {
 
   .liveTableCenter {
     inset: 30%;
+    padding: 8px;
   }
 
-  .liveTableSeat {
-    min-height: 78px;
-    padding: 6px;
-    width: 78px;
-  }
-
-  .liveTableSeat .avatar {
+  .liveTableCenter .liveTablePhaseIcon {
+    display: inline-block;
     height: 30px;
     width: 30px;
   }
 
+  .liveTableCenter .liveTableCenterKicker {
+    display: block;
+    font-size: 0.58rem;
+    letter-spacing: 0.04em;
+  }
+
+  .liveTableSeat {
+    min-height: clamp(64px, 20vw, 78px);
+    padding: 6px;
+    width: clamp(64px, 20vw, 78px);
+  }
+
+  .liveTableSeat .avatar {
+    height: clamp(28px, 7.7vw, 30px);
+    width: clamp(28px, 7.7vw, 30px);
+  }
+
   .liveTableSeat .seatLabel {
-    font-size: 0.84rem;
+    font-size: clamp(0.72rem, 3.4vw, 0.84rem);
+  }
+
+  .liveTableBoard[data-seat-density="compact"] .liveTableSeat {
+    min-height: clamp(54px, 15.5vw, 62px);
+    padding: 5px 3px;
+    width: clamp(54px, 15.5vw, 62px);
+  }
+
+  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .avatar {
+    font-size: 0.72rem;
+    height: clamp(22px, 6.2vw, 25px);
+    width: clamp(22px, 6.2vw, 25px);
+  }
+
+  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .seatNumber {
+    font-size: 0.58rem;
+    height: 18px;
+    top: -10px;
+    width: 18px;
+  }
+
+  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .seatLabel {
+    font-size: clamp(0.58rem, 2.7vw, 0.68rem);
+  }
+
+  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .seatLabel small {
+    font-size: 0.56rem;
+  }
+
+  .liveTableBoard[data-seat-density="compact"] .liveTableSeatState {
+    display: none;
   }
 
   .livePlayPhaseCard {
@@ -4187,12 +4124,6 @@ a {
 
   .liveTimingGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .liveStatusBar {
-    align-items: start;
-    display: grid;
-    grid-template-columns: 1fr;
   }
 
   .liveMetrics {

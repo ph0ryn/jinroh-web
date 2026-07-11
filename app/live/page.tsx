@@ -1,9 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
+import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
+import { LiveBackground } from "@/app/live/effects/ui/LiveBackground";
+import { getLiveBackgroundSnapshot } from "@/app/live/effects/ui/liveBackgroundModel";
+import { LiveSetupTransitionController } from "@/app/live/effects/ui/LiveSetupTransitionController";
+import {
+  createLiveToastRoomSessionScope,
+  LIVE_TOAST_PAGE_SCOPE,
+  type LiveToastScope,
+  type LiveToastTone,
+} from "@/app/live/effects/ui/liveToastModel";
+import { LiveToastRegion } from "@/app/live/effects/ui/LiveToastRegion";
+import { useLiveActionFeedback } from "@/app/live/effects/ui/useLiveActionFeedback";
+import { useLiveToastController } from "@/app/live/effects/ui/useLiveToastController";
+import { useLiveEffectQueue } from "@/app/live/effects/useLiveEffectQueue";
 import {
   apiFetch,
   getLiveRoomUrl,
@@ -21,15 +35,12 @@ import {
   writeStorage,
 } from "@/app/live/liveClient";
 import {
-  canStartRoom,
-  countJoinedPlayers,
   formatRoomStatus,
-  getControlHint,
   getLiveGridClassName,
-  getLiveGuidance,
   getLiveMood,
   getLivePageTitle,
 } from "@/app/live/livePresentation";
+import { LiveRoundTable } from "@/app/live/liveRoundTable";
 import {
   buildStartRuleSetInput,
   DEFAULT_START_RULE_SET_SETTINGS,
@@ -38,15 +49,11 @@ import {
 import { StartSettingsDialog } from "@/app/live/liveStartSettingsDialog";
 import {
   LeaveRoomDialog,
-  LivePlaySurface,
-  LiveSetupSurface,
-  LiveToastRegion,
-  LobbyRequirements,
-  PlayerSeatGrid,
-  RoomInviteTools,
+  LiveEndedSurface,
+  LivePlayingSurface,
+  LiveEntrySurface,
+  LiveWaitingSurface,
   SwitchRoomDialog,
-  type LiveToast,
-  type LiveToastTone,
   type SetupPendingAction,
 } from "@/app/live/liveSurfaces";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
@@ -62,12 +69,14 @@ import {
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
+import type {
+  LiveSetupSurfaceKind,
+  LiveSetupTransitionSnapshot,
+} from "@/app/live/effects/ui/liveSetupTransitionModel";
+import type { ReactNode } from "react";
+
 type IdentityResponse = {
   token: string;
-};
-
-type RememberRoomOptions = {
-  readonly resetActionTargets?: boolean;
 };
 
 type RoomRequestContext = {
@@ -90,6 +99,7 @@ type ClearCurrentRoomOptions = {
 };
 
 type PendingRoomSwitch = {
+  readonly isOpen: boolean;
   readonly request: SwitchRoomRequest;
 };
 
@@ -105,6 +115,8 @@ type RoomSwitchIntent =
       readonly targetRoomCode: string;
     };
 
+type RoomBoundSurfaceStatus = "ended" | "playing" | "waiting";
+
 type RealtimeBroadcastEnvelope = {
   readonly payload?: unknown;
 };
@@ -117,18 +129,9 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 const ROOM_SYNC_INTERVAL_MS = 4_000;
 const TOAST_DEFAULT_DURATION_MS = 4_800;
 const TOAST_IMPORTANT_DURATION_MS = 7_000;
-const LIVE_MOOD_BACKGROUND_SOURCES = [
-  "/images/jinroh-lobby-same-angle.jpg",
-  "/images/jinroh-day-same-angle.jpg",
-  "/images/jinroh-voting-same-angle.jpg",
-  "/images/jinroh-night.jpg",
-  "/images/jinroh-result-same-angle.jpg",
-] as const;
-
 export default function LivePage() {
   const { locale, t } = useI18n();
   const invalidIdentityStatusMessage = t.live.room.identityExpired;
-  const roomClosedStatusMessage = t.live.room.closed;
   const [identityToken, setIdentityToken] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("Sora");
   const [roomCodeInput, setRoomCodeInput] = useState("");
@@ -148,11 +151,9 @@ export default function LivePage() {
   const [isNightConversationOpen, setIsNightConversationOpen] = useState(false);
   const [isPublicLogOpen, setIsPublicLogOpen] = useState(false);
   const [isLeaveConfirmationOpen, setIsLeaveConfirmationOpen] = useState(false);
-  const [toast, setToast] = useState<LiveToast | null>(null);
   const [nightConversationDraft, setNightConversationDraft] = useState("");
   const [copiedInviteRoomCode, setCopiedInviteRoomCode] = useState<string | null>(null);
   const copiedInviteResetTimerRef = useRef<number | null>(null);
-  const toastDismissTimerRef = useRef<number | null>(null);
   const ignoredRoomCodeRef = useRef<string | null>(null);
   const identityTokenRef = useRef<string | null>(null);
   const roomSummaryRef = useRef<RoomSummary | null>(null);
@@ -163,39 +164,53 @@ export default function LivePage() {
   const nextRoomRequestIdRef = useRef(0);
   const appliedRoomSnapshotRef = useRef<AppliedRoomSnapshot | null>(null);
   const isBusyRef = useRef(false);
-  const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
+  const liveShellRef = useRef<HTMLElement>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [setupPendingAction, setSetupPendingAction] = useState<SetupPendingAction>(null);
   const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
+  const {
+    acceptSummary: acceptEffectSummary,
+    activeCue,
+    clearEffects,
+    completeActiveCue,
+    replayRole,
+  } = useLiveEffectQueue();
+  const { completeCue: completeActionFeedbackCue, cue: actionFeedbackCue } =
+    useLiveActionFeedback(roomSummary);
+  const {
+    clearScope: clearToastScope,
+    completeEntry: completeToastEntry,
+    completeExit: completeToastExit,
+    dismiss: dismissToast,
+    request: requestToast,
+    state: toastState,
+  } = useLiveToastController();
 
-  const dismissToast = useCallback(() => {
-    if (toastDismissTimerRef.current !== null) {
-      window.clearTimeout(toastDismissTimerRef.current);
-      toastDismissTimerRef.current = null;
-    }
-
-    setToast(null);
-  }, []);
+  const captureRoomToastScope = useCallback(
+    (): LiveToastScope => createLiveToastRoomSessionScope(roomSessionIdRef.current),
+    [],
+  );
 
   const showToast = useCallback(
-    (message: string, tone: LiveToastTone = "info", durationMs = TOAST_DEFAULT_DURATION_MS) => {
-      if (toastDismissTimerRef.current !== null) {
-        window.clearTimeout(toastDismissTimerRef.current);
-      }
-
-      setToast({ message, tone });
-
-      if (durationMs <= 0) {
-        toastDismissTimerRef.current = null;
+    (
+      message: string,
+      tone: LiveToastTone = "info",
+      durationMs = TOAST_DEFAULT_DURATION_MS,
+      scope: LiveToastScope = LIVE_TOAST_PAGE_SCOPE,
+    ) => {
+      if (scope.kind === "roomSession" && scope.sessionId !== roomSessionIdRef.current) {
         return;
       }
 
-      toastDismissTimerRef.current = window.setTimeout(() => {
-        toastDismissTimerRef.current = null;
-        setToast(null);
-      }, durationMs);
+      requestToast({
+        message,
+        scope,
+        timeoutMs: durationMs > 0 ? durationMs : null,
+        tone,
+      });
     },
-    [setToast],
+    [requestToast],
   );
 
   const updateIdentityToken = useCallback((nextIdentityToken: string | null) => {
@@ -221,12 +236,15 @@ export default function LivePage() {
   );
 
   const beginRoomSession = useCallback(() => {
+    clearEffects();
+    clearToastScope(captureRoomToastScope());
     roomSessionIdRef.current += 1;
     nextCurrentRoomRequestIdRef.current += 1;
     appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = null;
-  }, []);
+    setPendingActionKey(null);
+  }, [captureRoomToastScope, clearEffects, clearToastScope]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -258,32 +276,10 @@ export default function LivePage() {
     return () => window.cancelAnimationFrame(frameId);
   }, [updateIdentityToken]);
 
-  useEffect(() => {
-    const preloadedImages: HTMLImageElement[] = [];
-    const timerId = window.setTimeout(() => {
-      for (const source of LIVE_MOOD_BACKGROUND_SOURCES) {
-        const image = new window.Image();
-
-        image.decoding = "async";
-        image.src = source;
-        preloadedImages.push(image);
-      }
-    }, 600);
-
-    return () => {
-      window.clearTimeout(timerId);
-      preloadedImages.length = 0;
-    };
-  }, []);
-
   useEffect(
     () => () => {
       if (copiedInviteResetTimerRef.current !== null) {
         window.clearTimeout(copiedInviteResetTimerRef.current);
-      }
-
-      if (toastDismissTimerRef.current !== null) {
-        window.clearTimeout(toastDismissTimerRef.current);
       }
     },
     [],
@@ -306,30 +302,35 @@ export default function LivePage() {
     return createIdentityToken();
   }
 
-  const clearCurrentRoom = useCallback((options: ClearCurrentRoomOptions = {}) => {
-    roomSessionIdRef.current += 1;
-    nextCurrentRoomRequestIdRef.current += 1;
-    appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
-    appliedRoomSnapshotRef.current = null;
-    ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
-    roomSummaryRef.current = null;
-    removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
-    setRoomSummary(null);
-    setIsCurrentRoomReady(true);
-    setPendingRoomSwitch(null);
+  const clearCurrentRoom = useCallback(
+    (options: ClearCurrentRoomOptions = {}) => {
+      clearEffects();
+      clearToastScope(captureRoomToastScope());
+      roomSessionIdRef.current += 1;
+      nextCurrentRoomRequestIdRef.current += 1;
+      appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
+      appliedRoomSnapshotRef.current = null;
+      ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
+      roomSummaryRef.current = null;
+      removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
+      setRoomSummary(null);
+      setIsCurrentRoomReady(true);
+      setPendingRoomSwitch(null);
 
-    if (!(options.preserveRoomCodeInput ?? false)) {
-      setRoomCodeInput("");
-    }
+      if (!(options.preserveRoomCodeInput ?? false)) {
+        setRoomCodeInput("");
+      }
 
-    setTargetByActionKey({});
-    setIsNightConversationOpen(false);
-    setIsPublicLogOpen(false);
-    setNightConversationDraft("");
-    setIsStartSettingsOpen(false);
-    setIsLeaveConfirmationOpen(false);
-    window.requestAnimationFrame(() => window.scrollTo({ left: 0, top: 0 }));
-  }, []);
+      setPendingActionKey(null);
+      setIsNightConversationOpen(false);
+      setIsPublicLogOpen(false);
+      setNightConversationDraft("");
+      setIsStartSettingsOpen(false);
+      setIsLeaveConfirmationOpen(false);
+      window.requestAnimationFrame(() => window.scrollTo({ left: 0, top: 0 }));
+    },
+    [captureRoomToastScope, clearEffects, clearToastScope],
+  );
 
   const resetInvalidIdentity = useCallback(
     (nextStatusMessage = invalidIdentityStatusMessage) => {
@@ -350,6 +351,7 @@ export default function LivePage() {
       return;
     }
 
+    const toastScope = captureRoomToastScope();
     isBusyRef.current = true;
     setIsBusy(true);
     setSetupPendingAction(pendingAction);
@@ -364,7 +366,7 @@ export default function LivePage() {
 
       const failureMessage = toRequestFailureMessage(error, t);
 
-      showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS);
+      showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
     } finally {
       isBusyRef.current = false;
       setIsBusy(false);
@@ -392,11 +394,7 @@ export default function LivePage() {
   }
 
   const rememberRoom = useCallback(
-    (
-      nextSummary: RoomSummary,
-      requestContext: RoomRequestContext,
-      options: RememberRoomOptions = {},
-    ) => {
+    (nextSummary: RoomSummary, requestContext: RoomRequestContext) => {
       if (!isRoomRequestContextCurrent(requestContext)) {
         return false;
       }
@@ -426,15 +424,6 @@ export default function LivePage() {
         return false;
       }
 
-      if (nextSummary.status === "disbanded") {
-        clearCurrentRoom({
-          ignoredRoomCode: nextSummary.code,
-          preserveRoomCodeInput: true,
-        });
-        showToast(roomClosedStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
-        return false;
-      }
-
       writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
       appliedRoomSnapshotRef.current = {
         requestId: requestContext.requestId,
@@ -442,23 +431,14 @@ export default function LivePage() {
         sessionId: requestContext.sessionId,
         snapshotRevision: nextSummary.snapshotRevision,
       };
+      acceptEffectSummary(nextSummary);
       roomSummaryRef.current = nextSummary;
       setRoomSummary(nextSummary);
       setIsCurrentRoomReady(true);
 
-      if (options.resetActionTargets ?? true) {
-        setTargetByActionKey({});
-      }
-
       return true;
     },
-    [
-      clearCurrentRoom,
-      displayName,
-      isRoomRequestContextCurrent,
-      roomClosedStatusMessage,
-      showToast,
-    ],
+    [acceptEffectSummary, displayName, isRoomRequestContextCurrent],
   );
 
   const syncCurrentRoom = useCallback(
@@ -495,9 +475,7 @@ export default function LivePage() {
 
       ignoredRoomCodeRef.current = null;
       const requestContext = createRoomRequestContext(response.room.code, token);
-      const didRememberRoom = rememberRoom(response.room, requestContext, {
-        resetActionTargets: roomSummaryRef.current?.code !== response.room.code,
-      });
+      const didRememberRoom = rememberRoom(response.room, requestContext);
 
       return didRememberRoom ? response.room : roomSummaryRef.current;
     },
@@ -510,6 +488,7 @@ export default function LivePage() {
     }
 
     let isCancelled = false;
+    const toastScope = captureRoomToastScope();
     const timerId = window.setTimeout(() => {
       void syncCurrentRoom(identityToken).catch((error: unknown) => {
         if (isCancelled) {
@@ -521,7 +500,12 @@ export default function LivePage() {
           return;
         }
 
-        showToast(t.live.room.currentCouldNotLoad, "error", TOAST_IMPORTANT_DURATION_MS);
+        showToast(
+          t.live.room.currentCouldNotLoad,
+          "error",
+          TOAST_IMPORTANT_DURATION_MS,
+          toastScope,
+        );
       });
     }, 0);
 
@@ -530,6 +514,7 @@ export default function LivePage() {
       window.clearTimeout(timerId);
     };
   }, [
+    captureRoomToastScope,
     identityToken,
     isIdentityHydrated,
     resetInvalidIdentity,
@@ -600,12 +585,13 @@ export default function LivePage() {
     let isCancelled = false;
     let refreshTimerId: number | null = null;
     const activeToken = identityToken;
+    const abortController = new AbortController();
 
     async function refreshRealtimeAuthorization(): Promise<void> {
       try {
         const authorization = await apiFetch<RealtimeAuthorization>(
           `/api/rooms/${activeRoomCode}/realtime-token`,
-          { method: "POST", token: activeToken },
+          { method: "POST", signal: abortController.signal, token: activeToken },
         );
 
         if (isCancelled) {
@@ -642,6 +628,7 @@ export default function LivePage() {
 
     return () => {
       isCancelled = true;
+      abortController.abort();
       if (refreshTimerId !== null) {
         window.clearTimeout(refreshTimerId);
       }
@@ -669,6 +656,7 @@ export default function LivePage() {
       }
 
       isSyncing = true;
+      const toastScope = captureRoomToastScope();
       try {
         await syncCurrentRoom(activeToken);
       } catch (error) {
@@ -679,7 +667,7 @@ export default function LivePage() {
           }
 
           if (isCurrentRoomReady) {
-            showToast(t.live.room.syncFailed, "warning", TOAST_IMPORTANT_DURATION_MS);
+            showToast(t.live.room.syncFailed, "warning", TOAST_IMPORTANT_DURATION_MS, toastScope);
           }
         }
       } finally {
@@ -696,6 +684,7 @@ export default function LivePage() {
       window.clearInterval(intervalId);
     };
   }, [
+    captureRoomToastScope,
     identityToken,
     isCurrentRoomReady,
     isIdentityHydrated,
@@ -733,7 +722,7 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, requestContext, { resetActionTargets: false });
+          rememberRoom(summary, requestContext);
         }
       } catch (error) {
         if (
@@ -797,6 +786,7 @@ export default function LivePage() {
     const activeRealtimeClient = realtimeClient;
     const realtimeRoomCode = activeRoomCode;
     const realtimeAccessToken = realtimeAuthorization.accessToken;
+    const toastScope = captureRoomToastScope();
     const channels: ReturnType<typeof activeRealtimeClient.channel>[] = [];
 
     async function syncRoomFromRealtime(): Promise<void> {
@@ -818,7 +808,7 @@ export default function LivePage() {
 
           const nextStatusMessage = t.live.status.realtimeFailed;
 
-          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
+          showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS, toastScope);
         }
       } finally {
         isSyncing = false;
@@ -868,6 +858,7 @@ export default function LivePage() {
   }, [
     activeRealtimeSubscriptionKey,
     activeRoomCode,
+    captureRoomToastScope,
     identityToken,
     realtimeAuthorization,
     resetInvalidIdentity,
@@ -923,15 +914,13 @@ export default function LivePage() {
           t.live.room.switchForbidden(currentRoom.code),
           "warning",
           TOAST_IMPORTANT_DURATION_MS,
+          captureRoomToastScope(),
         );
         return;
       }
 
-      if (currentRoom.status !== "lobby" && currentRoom.status !== "ended") {
-        return;
-      }
-
       setPendingRoomSwitch({
+        isOpen: true,
         request:
           intent.kind === "create"
             ? {
@@ -948,7 +937,7 @@ export default function LivePage() {
               },
       });
     },
-    [showToast, t.live.room],
+    [captureRoomToastScope, showToast, t.live.room],
   );
 
   useEffect(() => {
@@ -972,14 +961,15 @@ export default function LivePage() {
   }, [displayName, invitationRoomCode, isCurrentRoomReady, offerRoomSwitch, roomSummary]);
 
   useEffect(() => {
-    if (pendingRoomSwitch === null || roomSummary === null) {
+    if (pendingRoomSwitch === null || !pendingRoomSwitch.isOpen || roomSummary === null) {
       return;
     }
 
+    const toastScope = captureRoomToastScope();
     const timerId = window.setTimeout(() => {
       if (pendingRoomSwitch.request.expectedCurrentRoomCode !== roomSummary.code) {
         setPendingRoomSwitch(null);
-        showToast(t.live.room.currentChanged, "warning", TOAST_IMPORTANT_DURATION_MS);
+        showToast(t.live.room.currentChanged, "warning", TOAST_IMPORTANT_DURATION_MS, toastScope);
         return;
       }
 
@@ -989,12 +979,13 @@ export default function LivePage() {
           t.live.room.switchForbidden(roomSummary.code),
           "warning",
           TOAST_IMPORTANT_DURATION_MS,
+          toastScope,
         );
       }
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [pendingRoomSwitch, roomSummary, showToast, t.live.room]);
+  }, [captureRoomToastScope, pendingRoomSwitch, roomSummary, showToast, t.live.room]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
     setDisplayName(nextDisplayName);
@@ -1150,7 +1141,7 @@ export default function LivePage() {
   function handleConfirmRoomSwitch(): void {
     const pendingSwitch = pendingRoomSwitch;
 
-    if (pendingSwitch === null) {
+    if (pendingSwitch === null || !pendingSwitch.isOpen) {
       return;
     }
 
@@ -1167,7 +1158,9 @@ export default function LivePage() {
         beginRoomSession();
         const requestContext = createRoomRequestContext(summary.code, token);
         rememberRoom(summary, requestContext);
-        setPendingRoomSwitch(null);
+        setPendingRoomSwitch((currentSwitch) =>
+          currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
+        );
         setInvitationRoomCode(null);
         broadcastRoomMembershipInvalidation();
       } catch (error) {
@@ -1175,8 +1168,14 @@ export default function LivePage() {
           isApiRequestErrorCode(error, "current_room_changed") ||
           isApiRequestErrorCode(error, "room_switch_forbidden")
         ) {
-          setPendingRoomSwitch(null);
+          const failureMessage = toRequestFailureMessage(error, t);
+
+          setPendingRoomSwitch((currentSwitch) =>
+            currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
+          );
           await syncCurrentRoom(token);
+          showToast(failureMessage, "error", TOAST_IMPORTANT_DURATION_MS, captureRoomToastScope());
+          return;
         }
 
         throw error;
@@ -1184,30 +1183,37 @@ export default function LivePage() {
     });
   }
 
-  function handleSubmitAction(action: PublicAction): void {
+  function handleSubmitAction(action: PublicAction, targetPlayerId: string | null): void {
     void withBusy(async () => {
-      const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
-      const expectedRevision = roomSummary?.game?.revision;
-      const targetPlayerId = action.targetKind === "single_player" ? getActionTarget(action) : null;
+      setPendingActionKey(action.key);
 
-      if (expectedRevision === undefined) {
-        throw new Error(t.live.status.actionWindowClosed);
+      try {
+        const token = await ensureIdentityToken();
+        const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+        const expectedRevision = roomSummary?.game?.revision;
+
+        if (expectedRevision === undefined) {
+          throw new Error(t.live.status.actionWindowClosed);
+        }
+
+        const requestContext = createRoomRequestContext(roomCode, token);
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
+          body: {
+            actionKey: action.key,
+            phaseInstanceId: action.phaseInstanceId,
+            revision: expectedRevision,
+            targetPlayerId,
+          },
+          method: "POST",
+          token,
+        });
+
+        rememberRoom(summary, requestContext);
+      } finally {
+        setPendingActionKey((currentActionKey) =>
+          currentActionKey === action.key ? null : currentActionKey,
+        );
       }
-
-      const requestContext = createRoomRequestContext(roomCode, token);
-      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
-        body: {
-          actionKey: action.key,
-          phaseInstanceId: action.phaseInstanceId,
-          revision: expectedRevision,
-          targetPlayerId,
-        },
-        method: "POST",
-        token,
-      });
-
-      rememberRoom(summary, requestContext);
     });
   }
 
@@ -1234,11 +1240,12 @@ export default function LivePage() {
       });
 
       setNightConversationDraft("");
-      rememberRoom(summary, requestContext, { resetActionTargets: false });
+      rememberRoom(summary, requestContext);
     });
   }
 
   async function handleCopyRoomCode(roomCode: string): Promise<void> {
+    const toastScope = captureRoomToastScope();
     const didCopy = await writeClipboardText(roomCode);
 
     if (didCopy) {
@@ -1256,10 +1263,11 @@ export default function LivePage() {
       return;
     }
 
-    showToast(t.live.invite.copyFailed, "error", TOAST_IMPORTANT_DURATION_MS);
+    showToast(t.live.invite.copyFailed, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
   }
 
   async function handleShareRoom(roomCode: string): Promise<void> {
+    const toastScope = captureRoomToastScope();
     const roomUrl = getLiveRoomUrl(roomCode, window.location.origin);
     const inviteText = t.live.invite.inviteText(roomCode, roomUrl);
 
@@ -1270,7 +1278,7 @@ export default function LivePage() {
           title: "Jinroh Web",
           url: roomUrl,
         });
-        showToast(t.live.invite.shareSucceeded, "success");
+        showToast(t.live.invite.shareSucceeded, "success", TOAST_DEFAULT_DURATION_MS, toastScope);
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -1282,41 +1290,151 @@ export default function LivePage() {
     const didCopy = await writeClipboardText(inviteText);
 
     if (didCopy) {
-      showToast(t.live.invite.shareFallbackCopied, "success");
+      showToast(
+        t.live.invite.shareFallbackCopied,
+        "success",
+        TOAST_DEFAULT_DURATION_MS,
+        toastScope,
+      );
       return;
     }
 
-    showToast(t.live.invite.shareFailed, "error", TOAST_IMPORTANT_DURATION_MS);
-  }
-
-  function getActionTarget(action: PublicAction): string {
-    return targetByActionKey[action.key] ?? action.eligibleTargetIds[0] ?? "";
+    showToast(t.live.invite.shareFailed, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
   }
 
   const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
   const selfActions = isCurrentRoomParticipant ? (roomSummary.self?.actions ?? []) : [];
   const roomStatusLabel = formatRoomStatus(roomSummary, t);
-  const liveGuidance = getLiveGuidance(roomSummary, selfActions.length, isBusy, t);
-  const canStartGame = isCurrentRoomParticipant && !isBusy && canStartRoom(roomSummary);
   const canConfigureStartSettings =
-    isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "lobby";
+    isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "waiting";
   const canLeaveRoom =
-    isCurrentRoomParticipant && (roomSummary.status === "lobby" || roomSummary.status === "ended");
-  const isGameSurface =
-    roomSummary !== null &&
+    isCurrentRoomParticipant &&
+    (roomSummary.status === "waiting" || roomSummary.status === "ended");
+  let roomBoundSurfaceStatus: RoomBoundSurfaceStatus | null = null;
+
+  if (isCurrentRoomParticipant && roomSummary.status === "waiting") {
+    roomBoundSurfaceStatus = "waiting";
+  } else if (
+    isCurrentRoomParticipant &&
     roomSummary.game !== null &&
-    (roomSummary.status === "playing" || roomSummary.status === "ended");
-  const controlHint = getControlHint(roomSummary, isBusy, t);
+    (roomSummary.status === "playing" || roomSummary.status === "ended")
+  ) {
+    roomBoundSurfaceStatus = roomSummary.status;
+  }
+
+  const isGameSurface = roomBoundSurfaceStatus === "playing" || roomBoundSurfaceStatus === "ended";
   const liveMood = getLiveMood(roomSummary);
+  const liveBackgroundSnapshot = useMemo(
+    () =>
+      getLiveBackgroundSnapshot(
+        liveMood,
+        roomSummary?.code ?? null,
+        roomSummary?.currentPlayerId ?? null,
+      ),
+    [liveMood, roomSummary?.code, roomSummary?.currentPlayerId],
+  );
   const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
+  let liveSetupSurfaceKind: LiveSetupSurfaceKind = "game";
+
+  if (!isCurrentRoomReady) {
+    liveSetupSurfaceKind = "loading";
+  } else if (roomBoundSurfaceStatus === "waiting") {
+    liveSetupSurfaceKind = "waiting";
+  } else if (roomSummary === null) {
+    liveSetupSurfaceKind = "entry";
+  }
+
+  const liveSetupRoomCode = roomSummary?.code ?? null;
+  const liveSetupViewerPlayerId = roomSummary?.currentPlayerId ?? null;
+  const liveSetupTransitionSnapshot = useMemo(
+    (): LiveSetupTransitionSnapshot => ({
+      kind: liveSetupSurfaceKind,
+      roomCode: liveSetupRoomCode,
+      viewerPlayerId: liveSetupViewerPlayerId,
+    }),
+    [liveSetupRoomCode, liveSetupSurfaceKind, liveSetupViewerPlayerId],
+  );
   const liveGridClassName = getLiveGridClassName(roomSummary);
+  const liveShellClassName = [
+    "liveShell",
+    `liveMood-${liveMood}`,
+    isGameSurface ? "liveShellGame" : "",
+    roomSummary?.status === "waiting" ? "liveShellTable" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const roomInviteUrl =
     liveOrigin === null || roomSummary === null
       ? null
       : getLiveRoomUrl(roomSummary.code, liveOrigin);
+  let roomBoundSurface: ReactNode = null;
+
+  if (roomSummary !== null && roomBoundSurfaceStatus === "waiting") {
+    roomBoundSurface = (
+      <LiveWaitingSurface
+        copiedRoomCode={copiedInviteRoomCode}
+        isBusy={isBusy}
+        isSettingsOpen={isStartSettingsOpen}
+        roomStatusLabel={roomStatusLabel}
+        roomUrl={roomInviteUrl}
+        summary={roomSummary}
+        t={t}
+        onCopyRoomCode={handleCopyRoomCode}
+        onOpenSettings={() => setIsStartSettingsOpen(true)}
+        onRefreshRoom={handleRefreshRoom}
+        onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+        onShareRoom={handleShareRoom}
+        onStartGame={handleStartGame}
+      />
+    );
+  } else if (roomSummary !== null && roomBoundSurfaceStatus === "playing") {
+    roomBoundSurface = (
+      <LivePlayingSurface
+        actionFeedbackCue={actionFeedbackCue}
+        isBusy={isBusy}
+        isNightConversationOpen={isNightConversationOpen}
+        isPublicLogOpen={isPublicLogOpen}
+        isCinematicObscured={activeCue !== null}
+        nightConversationDraft={nightConversationDraft}
+        pendingActionKey={pendingActionKey}
+        selfActions={selfActions}
+        summary={roomSummary}
+        locale={locale}
+        t={t}
+        onActionFeedbackComplete={completeActionFeedbackCue}
+        onCloseNightConversation={() => setIsNightConversationOpen(false)}
+        onClosePublicLog={() => setIsPublicLogOpen(false)}
+        onNightConversationDraftChange={setNightConversationDraft}
+        onOpenNightConversation={() => setIsNightConversationOpen(true)}
+        onOpenPublicLog={() => setIsPublicLogOpen(true)}
+        onRevealRole={replayRole}
+        onSendNightConversation={handleSendNightConversation}
+        onSubmitAction={handleSubmitAction}
+      />
+    );
+  } else if (roomSummary !== null && roomBoundSurfaceStatus === "ended") {
+    roomBoundSurface = (
+      <LiveEndedSurface
+        isBusy={isBusy}
+        isPublicLogOpen={isPublicLogOpen}
+        isCinematicObscured={activeCue !== null}
+        locale={locale}
+        summary={roomSummary}
+        t={t}
+        onClosePublicLog={() => setIsPublicLogOpen(false)}
+        onOpenPublicLog={() => setIsPublicLogOpen(true)}
+        onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+      />
+    );
+  }
 
   return (
-    <main className={`liveShell liveMood-${liveMood}`} data-live-mood={liveMood}>
+    <main className={liveShellClassName} data-live-mood={liveMood} ref={liveShellRef}>
+      <LiveBackground snapshot={liveBackgroundSnapshot} />
+      <LiveSetupTransitionController
+        rootRef={liveShellRef}
+        snapshot={liveSetupTransitionSnapshot}
+      />
       <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
         <div className="liveHeroTitle">
           <h1 className={isGameSurface ? "srOnly" : undefined}>
@@ -1327,32 +1445,21 @@ export default function LivePage() {
         <LanguageSwitcher />
       </section>
 
-      {isGameSurface ? null : (
-        <>
-          {isRoomEntryAvailable ? (
-            <LiveSetupSurface
-              displayName={displayName}
-              isBusy={isBusy}
-              pendingAction={setupPendingAction}
-              roomCodeInput={roomCodeInput}
-              t={t}
-              targetPlayerCount={targetPlayerCount}
-              onCreateRoom={handleCreateRoom}
-              onDisplayNameChange={handleDisplayNameChange}
-              onJoinRoom={handleJoinRoom}
-              onRoomCodeChange={handleRoomCodeChange}
-              onTargetPlayerCountChange={handleTargetPlayerCountChange}
-            />
-          ) : (
-            <div className="liveTopStack liveTopStackCompact">
-              <section className="liveStatusBar" aria-live="polite">
-                <span>{liveGuidance.label}</span>
-                <strong>{liveGuidance.message}</strong>
-              </section>
-            </div>
-          )}
-        </>
-      )}
+      {isRoomEntryAvailable ? (
+        <LiveEntrySurface
+          displayName={displayName}
+          isBusy={isBusy}
+          pendingAction={setupPendingAction}
+          roomCodeInput={roomCodeInput}
+          t={t}
+          targetPlayerCount={targetPlayerCount}
+          onCreateRoom={handleCreateRoom}
+          onDisplayNameChange={handleDisplayNameChange}
+          onJoinRoom={handleJoinRoom}
+          onRoomCodeChange={handleRoomCodeChange}
+          onTargetPlayerCountChange={handleTargetPlayerCountChange}
+        />
+      ) : null}
 
       {isRoomEntryAvailable ? null : (
         <div className={liveGridClassName}>
@@ -1368,141 +1475,30 @@ export default function LivePage() {
             </section>
           ) : null}
 
-          {roomSummary?.status === "lobby" && isCurrentRoomParticipant ? (
-            <>
-              <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
-                <div className="livePanelHeading">
-                  <span>{t.live.aria.invite}</span>
-                  <div className="livePanelHeadingActions">
-                    <strong>{roomStatusLabel}</strong>
-                    <button
-                      className="secondaryButton liveCompactButton"
-                      type="button"
-                      onClick={handleRefreshRoom}
-                      disabled={isBusy}
-                    >
-                      {t.live.buttons.refresh}
-                    </button>
-                  </div>
-                </div>
-
-                <RoomInviteTools
-                  copiedRoomCode={copiedInviteRoomCode}
-                  roomUrl={roomInviteUrl}
-                  summary={roomSummary}
-                  t={t}
-                  onCopyRoomCode={handleCopyRoomCode}
-                  onShareRoom={handleShareRoom}
-                />
-                <LobbyRequirements summary={roomSummary} t={t} />
-              </section>
-
-              <section className="livePanel liveSeatPanel" aria-label={t.live.aria.lobbySeats}>
-                <div className="livePanelHeading">
-                  <span>{t.game.phase.lobby}</span>
-                  <strong>
-                    {t.live.lobby.seated(
-                      countJoinedPlayers(roomSummary),
-                      roomSummary.targetPlayerCount,
-                    )}
-                  </strong>
-                </div>
-                <PlayerSeatGrid summary={roomSummary} t={t} />
-              </section>
-            </>
-          ) : null}
-
-          {roomSummary?.status === "lobby" && isCurrentRoomParticipant ? (
-            <section className="livePanel liveControlPanel" aria-label={t.live.aria.lobbyControls}>
-              <div className="livePanelHeading">
-                <span>
-                  {roomSummary.isHost ? t.live.lobby.hostControls : t.live.lobby.playerControls}
-                </span>
-                <div className="livePanelHeadingActions">
-                  <strong>{roomSummary.isHost ? t.live.lobby.host : t.live.lobby.player}</strong>
-                  {canConfigureStartSettings ? (
-                    <button
-                      className="secondaryButton liveCompactButton"
-                      aria-controls="start-settings-dialog"
-                      aria-expanded={isStartSettingsOpen}
-                      aria-haspopup="dialog"
-                      type="button"
-                      onClick={() => setIsStartSettingsOpen(true)}
-                    >
-                      {t.live.buttons.settings}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="liveLobbyPanel">
-                <strong>
-                  {roomSummary.isHost
-                    ? t.live.lobby.startWhenEveryoneSeated
-                    : t.live.lobby.waitingForHost}
-                </strong>
-                {canStartGame ? null : <p>{controlHint}</p>}
-              </div>
-
-              <div className="liveLobbyActions">
-                {roomSummary.isHost ? (
-                  <button
-                    className="primaryLiveButton"
-                    aria-describedby={canStartGame ? undefined : "control-hint"}
-                    type="button"
-                    onClick={handleStartGame}
-                    disabled={!canStartGame}
-                  >
-                    {t.live.buttons.startGame}
-                  </button>
-                ) : null}
-                <button
-                  className="dangerButton"
-                  type="button"
-                  onClick={() => setIsLeaveConfirmationOpen(true)}
-                  disabled={isBusy}
-                >
-                  {t.live.buttons.leaveRoom}
-                </button>
-              </div>
-              {canStartGame ? null : (
-                <p className="srOnly" id="control-hint">
-                  {controlHint}
-                </p>
-              )}
+          {roomSummary !== null && roomBoundSurfaceStatus !== null ? (
+            <section
+              className={
+                roomBoundSurfaceStatus === "waiting"
+                  ? "livePlayTablePanel liveWaitingTablePanel"
+                  : "livePlayTablePanel"
+              }
+              aria-label={t.live.aria.roundTable}
+              data-live-setup-transition-item={
+                roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined
+              }
+            >
+              <LiveRoundTable summary={roomSummary} t={t} />
             </section>
           ) : null}
 
-          {roomSummary !== null && isGameSurface ? (
-            <LivePlaySurface
-              isBusy={isBusy}
-              isNightConversationOpen={isNightConversationOpen}
-              isPublicLogOpen={isPublicLogOpen}
-              nightConversationDraft={nightConversationDraft}
-              selfActions={selfActions}
-              summary={roomSummary}
-              targetByActionKey={targetByActionKey}
-              locale={locale}
-              t={t}
-              onCloseNightConversation={() => setIsNightConversationOpen(false)}
-              onClosePublicLog={() => setIsPublicLogOpen(false)}
-              onNightConversationDraftChange={setNightConversationDraft}
-              onOpenNightConversation={() => setIsNightConversationOpen(true)}
-              onOpenPublicLog={() => setIsPublicLogOpen(true)}
-              onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
-              onSendNightConversation={handleSendNightConversation}
-              onSubmitAction={handleSubmitAction}
-              onTargetChange={(actionKey, playerId) =>
-                setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
-              }
-            />
-          ) : null}
+          {roomBoundSurface}
         </div>
       )}
 
-      {canConfigureStartSettings && isStartSettingsOpen ? (
+      {canConfigureStartSettings ? (
         <StartSettingsDialog
           defaultRoleCounts={roomSummary.defaultRoleCounts}
+          isOpen={isStartSettingsOpen}
           playerCount={roomSummary.targetPlayerCount}
           roleCatalog={roomSummary.roleCatalog}
           settings={startRuleSetSettings}
@@ -1512,9 +1508,10 @@ export default function LivePage() {
         />
       ) : null}
 
-      {roomSummary !== null && canLeaveRoom && isLeaveConfirmationOpen ? (
+      {roomSummary !== null && canLeaveRoom ? (
         <LeaveRoomDialog
           isBusy={isBusy}
+          isOpen={isLeaveConfirmationOpen}
           t={t}
           onClose={() => setIsLeaveConfirmationOpen(false)}
           onConfirm={handleConfirmLeaveRoom}
@@ -1524,14 +1521,37 @@ export default function LivePage() {
       {pendingRoomSwitch === null || roomSummary === null ? null : (
         <SwitchRoomDialog
           isBusy={isBusy}
+          isOpen={pendingRoomSwitch.isOpen}
           request={pendingRoomSwitch.request}
           t={t}
-          onClose={() => setPendingRoomSwitch(null)}
+          onClose={() =>
+            setPendingRoomSwitch((currentSwitch) =>
+              currentSwitch === null ? null : { ...currentSwitch, isOpen: false },
+            )
+          }
           onConfirm={handleConfirmRoomSwitch}
+          onExitComplete={() =>
+            setPendingRoomSwitch((currentSwitch) =>
+              currentSwitch?.isOpen === false ? null : currentSwitch,
+            )
+          }
         />
       )}
 
-      <LiveToastRegion toast={toast} t={t} onDismiss={dismissToast} />
+      <LiveGameEffects
+        activeCue={activeCue}
+        shellRef={liveShellRef}
+        summary={roomSummary}
+        t={t}
+        onComplete={completeActiveCue}
+      />
+      <LiveToastRegion
+        state={toastState}
+        t={t}
+        onDismiss={dismissToast}
+        onEntryComplete={completeToastEntry}
+        onExitComplete={completeToastExit}
+      />
     </main>
   );
 }

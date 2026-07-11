@@ -2,6 +2,8 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
+  ACTION_KINDS,
+  type ActionSubmissionReceipt,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   type PrivateGameEvent,
@@ -12,7 +14,6 @@ import {
   type PublicGameView,
   type PublicPhaseFocus,
   type PublicPlayer,
-  type PublicSubmittedAction,
   type RealtimeScope,
   type RealtimeSubscription,
   type RoleId,
@@ -72,9 +73,10 @@ type RoomRecord = {
   status: RoomStatus;
   host_account_id: number;
   realtime_topic: string;
-  lobby_expires_at: string;
+  started_at: string | null;
   target_player_count: number;
   view_revision: number;
+  waiting_expires_at: string;
 };
 
 type RoomMutationResultRecord = Omit<RoomRecord, "target_player_count" | "view_revision"> & {
@@ -86,11 +88,12 @@ type RoomSwitchMutationResultRecord = RoomMutationResultRecord & {
   source_actor_player_id: number | null;
   source_host_account_id: number;
   source_id: number;
-  source_lobby_expires_at: string;
+  source_started_at: string | null;
   source_notification_reason: string | null;
   source_public_room_code: string;
   source_realtime_topic: string;
   source_status: RoomStatus;
+  source_waiting_expires_at: string;
 };
 
 type PlayerRecord = {
@@ -113,7 +116,7 @@ type GameStateRecord = {
   revision: number;
   resolved_role_setup: JsonObject | null;
   room_id: number;
-  status: "waiting" | "assigning_roles" | "playing" | "ended";
+  status: "assigning_roles" | "playing" | "ended";
 };
 
 type RoleAssignmentRecord = {
@@ -156,6 +159,7 @@ type GameEventRecord = {
   event_kind: string;
   id: number;
   payload: Record<string, unknown>;
+  phase_instance_id: string | null;
   visibility: "public" | "private" | "internal";
 };
 
@@ -225,7 +229,7 @@ export type IdentityResult = {
   token: string;
 };
 
-export type ExpiredLobbyCleanupResult = {
+export type ExpiredWaitingRoomCleanupResult = {
   expiredRooms: number;
 };
 
@@ -301,17 +305,17 @@ export async function createRoom(
 
   const supabase = createServiceClient();
 
-  await cleanupExpiredLobbiesWithClient(supabase, 50);
+  await cleanupExpiredWaitingRoomsWithClient(supabase, 50);
 
   const roomCode = await createUniqueRoomCode(supabase);
-  const lobbyExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const waitingExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const realtimeTopic = `room:${randomBytes(24).toString("base64url")}`;
   const playerId = createPublicPlayerId();
   const normalizedDisplayName = normalizeDisplayName(displayName);
   const transactionResult = await callRoomMutationRpc(supabase, "app_create_room", {
     p_account_id: account.id,
     p_display_name: normalizedDisplayName,
-    p_lobby_expires_at: lobbyExpiresAt,
+    p_waiting_expires_at: waitingExpiresAt,
     p_public_player_id: playerId,
     p_public_room_code: roomCode,
     p_realtime_topic: realtimeTopic,
@@ -324,9 +328,11 @@ export async function createRoom(
   return getRoomViewByRoom(supabase, account, room);
 }
 
-export async function cleanupExpiredLobbies(limit = 50): Promise<ExpiredLobbyCleanupResult> {
+export async function cleanupExpiredWaitingRooms(
+  limit = 50,
+): Promise<ExpiredWaitingRoomCleanupResult> {
   const supabase = createServiceClient();
-  const expiredRooms = await cleanupExpiredLobbiesWithClient(supabase, limit);
+  const expiredRooms = await cleanupExpiredWaitingRoomsWithClient(supabase, limit);
 
   return { expiredRooms: expiredRooms.length };
 }
@@ -372,7 +378,10 @@ export async function getCurrentRoom(account: AccountRecord): Promise<RoomSummar
     // The database mutation remains authoritative when invalidation delivery fails.
   }
 
-  if (room.status === "disbanded") {
+  if (
+    data.notification_reason === "waiting_room_ended" ||
+    isRoomEndedBeforeStart(room.status, room.started_at)
+  ) {
     return null;
   }
 
@@ -387,7 +396,7 @@ export async function switchRoom(
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
 
-  await cleanupExpiredLobbiesWithClient(supabase, 50);
+  await cleanupExpiredWaitingRoomsWithClient(supabase, 50);
 
   const transactionResult =
     request.kind === "create"
@@ -408,7 +417,11 @@ export async function switchRoom(
 export async function getRoomView(account: AccountRecord, roomCode: string): Promise<RoomSummary> {
   const supabase = createServiceClient();
   const room = await getRoomByCodeOrThrow(supabase, roomCode);
-  const activeRoom = await expireLobbyIfNeeded(supabase, room);
+  const activeRoom = await expireWaitingRoomIfNeeded(supabase, room);
+
+  if (isRoomEndedBeforeStart(activeRoom.status, activeRoom.started_at)) {
+    throw new RoomNotFoundError();
+  }
 
   await resolveRoom({ id: activeRoom.host_account_id }, roomCode);
 
@@ -480,7 +493,10 @@ export async function startRoom(
   ruleSetInput: RuleSetInput | null,
 ): Promise<RoomSummary> {
   const supabase = createServiceClient();
-  const room = await expireLobbyIfNeeded(supabase, await getRoomByCodeOrThrow(supabase, roomCode));
+  const room = await expireWaitingRoomIfNeeded(
+    supabase,
+    await getRoomByCodeOrThrow(supabase, roomCode),
+  );
 
   if (room.host_account_id !== account.id) {
     throw new Error("Only the host can start the game.");
@@ -488,8 +504,8 @@ export async function startRoom(
 
   await requireJoinedPlayerForAccount(supabase, room.id, account.id);
 
-  if (room.status !== "lobby") {
-    throw new Error("Room must be in lobby.");
+  if (room.status !== "waiting") {
+    throw new Error("Room must be waiting for the game to start.");
   }
 
   const players = await getPlayers(supabase, room.id);
@@ -827,16 +843,21 @@ async function buildRoomViewByRoom(
     id: player.public_player_id,
     isCurrent: currentPlayer?.id === player.id,
     isHost: player.account_id === currentRoom.host_account_id,
+    revealedRoleId: toRevealedRoleId(
+      currentRoom.status,
+      state?.status ?? null,
+      assignmentByPlayer.get(player.id)?.role_id ?? null,
+    ),
     status: player.status,
   }));
   const currentAssignment =
     currentPlayer === null ? null : (assignmentByPlayer.get(currentPlayer.id) ?? null);
   const currentRoleId = currentAssignment?.role_id ?? null;
-  const [events, visiblePrivateEvents] = await Promise.all([
+  const [events, visiblePrivateEventRecords] = await Promise.all([
     getPublicEvents(supabase, currentRoom.id, players),
     currentPlayer === null
-      ? Promise.resolve<PrivateGameEvent[]>([])
-      : getVisiblePrivateEvents(supabase, currentRoom.id, players, currentPlayer, currentRoleId),
+      ? Promise.resolve<GameEventRecord[]>([])
+      : getVisiblePrivateEventRecords(supabase, currentRoom.id, currentPlayer, currentRoleId),
   ]);
   const publicGame: PublicGameView | null =
     state === null
@@ -858,18 +879,15 @@ async function buildRoomViewByRoom(
     currentPlayer === null
       ? null
       : {
+          actionReceipts: visiblePrivateEventRecords.flatMap(toActionSubmissionReceipt),
           actions: toPublicActions(actions, pendingActions, players, currentPlayer, currentRoleId),
-          events: visiblePrivateEvents,
+          events: visiblePrivateEventRecords
+            .filter((event) => event.event_kind !== "action_submitted")
+            .map((event) => toPrivateGameEvent(event, players)),
           playerId: currentPlayer.public_player_id,
           result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
           roleId: currentRoleId,
           roleName: getRoleDisplayName(currentRoleId),
-          submittedActions: toSubmittedActions(
-            actions,
-            pendingActions,
-            currentPlayer,
-            currentRoleId,
-          ),
         };
 
   return {
@@ -883,7 +901,7 @@ async function buildRoomViewByRoom(
       players.find((player) => player.account_id === currentRoom.host_account_id)
         ?.public_player_id ?? null,
     isHost,
-    lobbyExpiresAt: currentRoom.lobby_expires_at,
+    waitingExpiresAt: currentRoom.waiting_expires_at,
     players: publicPlayers,
     rolePrivate: toRolePrivateView(
       players,
@@ -910,11 +928,21 @@ function assertPersistedGameState(
   outcome: FinalOutcomeRecord | null,
   results: readonly PlayerResultRecord[],
 ): void {
-  if (room.status !== "playing" && room.status !== "ended") {
+  const expectedGameStatus = getExpectedPersistedGameStatus(room.status, room.started_at);
+
+  if (expectedGameStatus === null) {
+    if (
+      state !== null ||
+      assignments.length !== 0 ||
+      playerStates.length !== 0 ||
+      outcome !== null ||
+      results.length !== 0
+    ) {
+      throw new Error("Pre-game room contains persisted game artifacts.");
+    }
+
     return;
   }
-
-  const expectedGameStatus = room.status === "ended" ? "ended" : "playing";
 
   if (state?.status !== expectedGameStatus) {
     throw new Error("Stored room and game statuses are inconsistent.");
@@ -940,7 +968,11 @@ function assertPersistedGameState(
     throw new Error("Stored player runtime state is incomplete or invalid.");
   }
 
-  if (room.status !== "ended") {
+  if (expectedGameStatus === "playing") {
+    if (outcome !== null || results.length !== 0) {
+      throw new Error("An in-progress game contains final result artifacts.");
+    }
+
     return;
   }
 
@@ -954,6 +986,41 @@ function assertPersistedGameState(
   ) {
     throw new Error("Stored final game result is incomplete or invalid.");
   }
+}
+
+export function getExpectedPersistedGameStatus(
+  roomStatus: RoomStatus,
+  startedAt: string | null,
+): "playing" | "ended" | null {
+  if (roomStatus === "waiting") {
+    if (startedAt !== null) {
+      throw new Error("A waiting room cannot have a start time.");
+    }
+
+    return null;
+  }
+
+  if (roomStatus === "playing") {
+    if (startedAt === null) {
+      throw new Error("A playing room must have a start time.");
+    }
+
+    return "playing";
+  }
+
+  return startedAt === null ? null : "ended";
+}
+
+export function isRoomEndedBeforeStart(roomStatus: RoomStatus, startedAt: string | null): boolean {
+  return roomStatus === "ended" && startedAt === null;
+}
+
+export function toRevealedRoleId(
+  roomStatus: RoomStatus,
+  gameStatus: PublicGameView["status"] | null,
+  roleId: RoleId | null,
+): RoleId | null {
+  return roomStatus === "ended" && gameStatus === "ended" ? roleId : null;
 }
 
 function getSharedRoleCatalog(): RoleCatalogItem[] {
@@ -1013,31 +1080,6 @@ function toPublicActions(
       status: submittedActionIds.has(action.id) ? "submitted" : "open",
       targetKind: action.target_kind,
     }));
-}
-
-function toSubmittedActions(
-  actions: readonly CurrentActionRecord[],
-  pendingActions: readonly PendingActionRecord[],
-  currentPlayer: PlayerRecord,
-  currentRoleId: RoleId | null,
-): PublicSubmittedAction[] {
-  const actionById = new Map(actions.map((action) => [action.id, action]));
-
-  return pendingActions.flatMap((pendingAction) => {
-    const action = actionById.get(pendingAction.current_action_id);
-
-    if (action === undefined || !isActionVisibleToPlayer(action, currentPlayer.id, currentRoleId)) {
-      return [];
-    }
-
-    return [
-      {
-        kind: action.action_kind as PublicSubmittedAction["kind"],
-        label: labelAction(action.action_kind),
-        submittedAt: pendingAction.submitted_at,
-      },
-    ];
-  });
 }
 
 function isActionVisibleToPlayer(
@@ -1286,6 +1328,34 @@ function groupSetByEventId<Value>(
   return grouped;
 }
 
+function toActionSubmissionReceipt(event: GameEventRecord): ActionSubmissionReceipt[] {
+  const actionKey = event.payload["actionKey"];
+  const actionKind = event.payload["actionKind"];
+
+  if (
+    event.event_kind !== "action_submitted" ||
+    event.phase_instance_id === null ||
+    typeof actionKey !== "string" ||
+    !isActionKind(actionKind)
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      actionKey,
+      id: String(event.id),
+      kind: actionKind,
+      phaseInstanceId: event.phase_instance_id,
+      submittedAt: event.created_at,
+    },
+  ];
+}
+
+function isActionKind(value: unknown): value is ActionSubmissionReceipt["kind"] {
+  return typeof value === "string" && ACTION_KINDS.some((actionKind) => actionKind === value);
+}
+
 function toPrivateGameEvent(
   event: GameEventRecord,
   players: readonly PlayerRecord[],
@@ -1460,7 +1530,7 @@ async function createUniqueRoomCode(supabase: SupabaseClient): Promise<string> {
       .from("rooms")
       .select("id")
       .eq("public_room_code", code)
-      .in("status", ["lobby", "playing"])
+      .in("status", ["waiting", "playing"])
       .maybeSingle<{ id: number }>();
 
     if (error !== null) {
@@ -1492,7 +1562,7 @@ async function getRoomByCodeOrThrow(
   const { data, error } = await supabase
     .from("rooms")
     .select(
-      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count,view_revision",
+      "id,public_room_code,status,host_account_id,realtime_topic,started_at,waiting_expires_at,target_player_count,view_revision",
     )
     .eq("public_room_code", roomCode)
     .order("created_at", { ascending: false })
@@ -1514,7 +1584,7 @@ async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Pro
   const { data, error } = await supabase
     .from("rooms")
     .select(
-      "id,public_room_code,status,host_account_id,realtime_topic,lobby_expires_at,target_player_count,view_revision",
+      "id,public_room_code,status,host_account_id,realtime_topic,started_at,waiting_expires_at,target_player_count,view_revision",
     )
     .eq("id", roomId)
     .maybeSingle<RoomRecord>();
@@ -1530,20 +1600,29 @@ async function getRoomByIdOrThrow(supabase: SupabaseClient, roomId: number): Pro
   return data;
 }
 
-async function expireLobbyIfNeeded(
+async function expireWaitingRoomIfNeeded(
   supabase: SupabaseClient,
   room: RoomRecord,
 ): Promise<RoomRecord> {
-  if (room.status !== "lobby" || Date.parse(room.lobby_expires_at) > Date.now()) {
+  if (room.status !== "waiting" || Date.parse(room.waiting_expires_at) > Date.now()) {
     return room;
   }
 
-  const transactionResult = await callRoomMutationRpc(supabase, "app_expire_lobby_if_needed", {
-    p_room_id: room.id,
-  });
+  const transactionResult = await callRoomMutationRpc(
+    supabase,
+    "app_expire_waiting_room_if_needed",
+    { p_room_id: room.id },
+  );
   const expiredRoom = toRoomRecord(transactionResult);
 
   await broadcastMutationResult(supabase, expiredRoom, transactionResult);
+
+  if (
+    transactionResult.notification_reason === "waiting_room_ended" ||
+    isRoomEndedBeforeStart(expiredRoom.status, expiredRoom.started_at)
+  ) {
+    throw new RoomNotFoundError();
+  }
 
   return expiredRoom;
 }
@@ -1850,7 +1929,7 @@ async function getPublicEvents(
 ): Promise<PublicGameEvent[]> {
   const { data, error } = await supabase
     .from("game_events")
-    .select("id,event_kind,visibility,payload,created_at")
+    .select("id,event_kind,visibility,payload,phase_instance_id,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "public")
     .order("created_at", { ascending: true })
@@ -1931,19 +2010,19 @@ function toPublicPlayerId(value: unknown, players: readonly PlayerRecord[]): unk
   return player?.public_player_id ?? value;
 }
 
-async function getVisiblePrivateEvents(
+async function getVisiblePrivateEventRecords(
   supabase: SupabaseClient,
   roomId: number,
-  players: readonly PlayerRecord[],
   currentPlayer: PlayerRecord,
   currentRoleId: RoleId | null,
-): Promise<PrivateGameEvent[]> {
+): Promise<GameEventRecord[]> {
   const { data: events, error: eventError } = await supabase
     .from("game_events")
-    .select("id,event_kind,visibility,payload,created_at")
+    .select("id,event_kind,visibility,payload,phase_instance_id,created_at")
     .eq("room_id", roomId)
     .eq("visibility", "private")
     .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .returns<GameEventRecord[]>();
 
   if (eventError !== null) {
@@ -1972,17 +2051,15 @@ async function getVisiblePrivateEvents(
     })),
   );
 
-  return events
-    .filter((event) => {
-      const playerIds = visiblePlayerIdsByEvent.get(event.id);
-      const roleIds = visibleRoleIdsByEvent.get(event.id);
+  return events.filter((event) => {
+    const playerIds = visiblePlayerIdsByEvent.get(event.id);
+    const roleIds = visibleRoleIdsByEvent.get(event.id);
 
-      return (
-        playerIds?.has(currentPlayer.id) === true ||
-        (currentRoleId !== null && roleIds?.has(currentRoleId) === true)
-      );
-    })
-    .map((event) => toPrivateGameEvent(event, players));
+    return (
+      playerIds?.has(currentPlayer.id) === true ||
+      (currentRoleId !== null && roleIds?.has(currentRoleId) === true)
+    );
+  });
 }
 
 async function getEventVisiblePlayers(
@@ -2183,7 +2260,7 @@ async function switchToCreatedRoom(
       p_account_id: account.id,
       p_display_name: normalizeDisplayName(request.displayName),
       p_expected_current_room_code: request.expectedCurrentRoomCode.trim().toUpperCase(),
-      p_lobby_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      p_waiting_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       p_public_player_id: createPublicPlayerId(),
       p_public_room_code: await createUniqueRoomCode(supabase),
       p_realtime_topic: `room:${randomBytes(24).toString("base64url")}`,
@@ -2227,19 +2304,22 @@ function toSourceRoomMutationResult(
     actor_player_id: record.source_actor_player_id,
     host_account_id: record.source_host_account_id,
     id: record.source_id,
-    lobby_expires_at: record.source_lobby_expires_at,
+    started_at: record.source_started_at,
     notification_reason: record.source_notification_reason,
     public_room_code: record.source_public_room_code,
     realtime_topic: record.source_realtime_topic,
     status: record.source_status,
+    waiting_expires_at: record.source_waiting_expires_at,
   };
 }
 
-async function cleanupExpiredLobbiesWithClient(
+async function cleanupExpiredWaitingRoomsWithClient(
   supabase: SupabaseClient,
   limit: number,
 ): Promise<RoomMutationResultRecord[]> {
-  const { data, error } = await supabase.rpc("app_cleanup_expired_lobbies", { p_limit: limit });
+  const { data, error } = await supabase.rpc("app_cleanup_expired_waiting_rooms", {
+    p_limit: limit,
+  });
 
   if (error !== null) {
     throw new Error(error.message);
@@ -2260,12 +2340,13 @@ function toRoomRecord(record: RoomMutationResultRecord): RoomRecord {
   return {
     host_account_id: record.host_account_id,
     id: record.id,
-    lobby_expires_at: record.lobby_expires_at,
     public_room_code: record.public_room_code,
     realtime_topic: record.realtime_topic,
+    started_at: record.started_at,
     status: record.status,
     target_player_count: 10,
     view_revision: 0,
+    waiting_expires_at: record.waiting_expires_at,
   };
 }
 

@@ -49,6 +49,61 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   base64 encoded 32-byte HMAC key.
 - Keep user-supplied display names as text. Do not render them as HTML.
 
+## Live Animation Boundaries
+
+- Implement new time-based `/live` motion with GSAP and the shared registration
+  in `app/live/effects/liveGsap.ts`.
+- Keep animation cues, queueing, and choreography under `app/live/effects/`.
+  Do not attach animations directly to polling, realtime callbacks, or API
+  handlers.
+- Reserve the shared FIFO queue for interruptive cinematic effects. Keep
+  component-local state feedback under `app/live/effects/ui/` with its own
+  scoped timeline so frequent UI changes cannot delay role, phase, death, or
+  victory cues.
+- Derive cues only from room snapshots after request ordering and stale-response
+  checks have accepted them. Realtime messages remain invalidation signals.
+- Diff only viewer-visible, semantic presentation state for component-local motion.
+  Treat the first snapshot, room or viewer changes, unchanged polling results,
+  and updates received while the document is hidden as settled baselines rather
+  than effects to replay.
+- Setup surface navigation may reveal an accepted entry-to-waiting or
+  waiting-to-entry change even though the room session changes. A restored
+  room, a viewer change within a room, and a room-to-room switch remain settled
+  baselines.
+- Treat action submission as confirmed only when a submitter-private receipt is
+  present in an accepted snapshot. Do not infer personal confirmation from HTTP
+  success, shared action status, or public progress. If the accepted submission
+  already advanced the phase and removed its row, let the phase effect own the
+  transition.
+- Let the round table own player-specific membership motion. Lobby progress may
+  animate only the accepted aggregate joined count against the fixed target;
+  room, viewer, and target changes are settled baselines, and readiness requires
+  exact equality rather than a visually full bar.
+- Give each effect component one scoped `useGSAP()` timeline and let React remain
+  the source of truth for game state and final CSS classes.
+- Route `/live` notifications through the shared toast controller. Keep one
+  active notification plus the latest pending replacement, scope room-bound
+  notifications to the current room session, and keep dismissal timers out of
+  page and request handlers.
+- Hold accepted stable-ID list additions, including public-log rows and night
+  conversation messages, while an interruptive cinematic cue obscures their
+  dialog, then reveal only the latest bounded batch after the cue queue clears.
+  Discard held items on close, session changes, hidden updates, and reduced
+  motion rather than replaying them later.
+- Separate static placement, animated transform/opacity, and final visual state
+  onto different DOM layers when they could compete for the same CSS property.
+  Clear transient GSAP properties and diagnostic markers after settlement.
+- Use CSS Modules for static effect layout and appearance. Do not add CSS
+  keyframes or CSS-driven timing for new `/live` game animations.
+- Every effect must provide reduced-motion behavior through a shortened timeline
+  or immediate final-state settlement, clean up on unmount or room changes,
+  avoid blocking input, and preserve a non-transient way to read current game
+  state.
+- Route `/live` dialogs through `app/live/effects/ui/LiveModalFrame.tsx`. Keep
+  dialog content mounted until its exit completes, and leave focus trapping,
+  background inertness, scroll locking, and stacked-dialog ownership to the
+  shared modal infrastructure.
+
 ## Role Architecture Boundaries
 
 Keep role behavior owned by `Role` classes and `RoleRegistry`.

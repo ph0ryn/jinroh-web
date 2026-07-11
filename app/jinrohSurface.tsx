@@ -9,7 +9,7 @@ import { LanguageSwitcher } from "./languageSwitcher";
 import type { Localization } from "@/lib/i18n/localization";
 import type { CSSProperties, ReactNode } from "react";
 
-type LocalView = "home" | "lobby" | "board" | "night" | "day" | "voting" | "execution" | "result";
+type LocalView = "home" | "waiting" | "board" | "night" | "day" | "voting" | "execution" | "result";
 
 type IconName =
   | "board"
@@ -62,7 +62,7 @@ type Scenario = {
   readonly nightNumber: number;
   readonly primaryAction: string;
   readonly secondaryAction: string;
-  readonly boardTone: "home" | "lobby" | "night" | "day" | "voting" | "execution" | "result";
+  readonly boardTone: "home" | "waiting" | "night" | "day" | "voting" | "execution" | "result";
   readonly notice: string;
 };
 
@@ -86,7 +86,14 @@ const defaultRoleCounts: Record<RoleId, number> = {
   werewolf: 2,
 };
 
-const phaseTrack: readonly LocalView[] = ["lobby", "night", "day", "voting", "execution", "result"];
+const phaseTrack: readonly LocalView[] = [
+  "waiting",
+  "night",
+  "day",
+  "voting",
+  "execution",
+  "result",
+];
 
 function primaryIconForPhase(phase: GamePhase | null): IconName {
   if (phase === "voting") {
@@ -182,16 +189,16 @@ const scenarios: Record<LocalView, Scenario> = {
     summary: "Create a room, join with a six-digit code, and keep the shared game state tidy.",
     title: "Run the table",
   },
-  lobby: {
-    boardTone: "lobby",
+  waiting: {
+    boardTone: "waiting",
     dayNumber: 0,
     nightNumber: 0,
-    notice: "Lobby rooms expire if the game never starts. Host controls stay server-authorized.",
+    notice: "Rooms expire if the game never starts. Host controls stay server-authorized.",
     phase: null,
     primaryAction: "Start game",
     secondaryAction: "Copy room code",
     summary: "Hosts can confirm players, tune the rule set, and start when everyone is present.",
-    title: "Lobby",
+    title: "Waiting",
   },
   night: {
     boardTone: "night",
@@ -403,11 +410,11 @@ function getLocalizedNavItems(t: Localization): readonly NavItem[] {
       view: "home",
     },
     {
-      detail: t.home.nav.lobby.detail,
+      detail: t.home.nav.waiting.detail,
       icon: "people",
-      label: t.home.nav.lobby.label,
-      mobileLabel: t.home.nav.lobby.mobileLabel,
-      view: "lobby",
+      label: t.home.nav.waiting.label,
+      mobileLabel: t.home.nav.waiting.mobileLabel,
+      view: "waiting",
     },
     {
       detail: t.home.nav.board.detail,
@@ -460,7 +467,7 @@ function getLocalizedScenarios(t: Localization): Record<LocalView, Scenario> {
     day: { ...scenarios.day, ...t.home.scenarios.day },
     execution: { ...scenarios.execution, ...t.home.scenarios.execution },
     home: { ...scenarios.home, ...t.home.scenarios.home },
-    lobby: { ...scenarios.lobby, ...t.home.scenarios.lobby },
+    waiting: { ...scenarios.waiting, ...t.home.scenarios.waiting },
     night: { ...scenarios.night, ...t.home.scenarios.night },
     result: { ...scenarios.result, ...t.home.scenarios.result },
     voting: { ...scenarios.voting, ...t.home.scenarios.voting },
@@ -506,18 +513,18 @@ export function JinrohSurface() {
     setActivityItems((currentItems) => [nextActivityItem, ...currentItems].slice(0, 6));
 
     if (activeView === "home") {
-      setActiveView("lobby");
+      setActiveView("waiting");
     }
   }
 
   function handleSecondaryAction() {
-    if (activeView === "home" || activeView === "lobby") {
-      setActiveView("lobby");
+    if (activeView === "home" || activeView === "waiting") {
+      setActiveView("waiting");
       return;
     }
 
     const currentTrackIndex = phaseTrack.findIndex((view) => view === activeView);
-    const nextView = phaseTrack[currentTrackIndex + 1] ?? "lobby";
+    const nextView = phaseTrack[currentTrackIndex + 1] ?? "waiting";
 
     setActiveView(nextView);
   }
@@ -567,7 +574,7 @@ export function JinrohSurface() {
             <button
               className="primaryButton compactButton"
               type="button"
-              onClick={() => setActiveView("lobby")}
+              onClick={() => setActiveView("waiting")}
             >
               {t.home.buttons.createRoom}
             </button>
@@ -625,7 +632,7 @@ export function JinrohSurface() {
                 setRoomCode={setRoomCode}
                 t={t}
                 onCreateRoom={handlePrimaryAction}
-                onJoinRoom={() => setActiveView("lobby")}
+                onJoinRoom={() => setActiveView("waiting")}
               />
             ) : (
               <GameBoard
@@ -819,8 +826,8 @@ function getPhaseTrackLabel(view: LocalView, t: Localization): string {
       return t.game.phase.day;
     case "execution":
       return t.game.phase.execution;
-    case "lobby":
-      return t.game.phase.lobby;
+    case "waiting":
+      return t.game.phase.waiting;
     case "night":
       return t.game.phase.night;
     case "result":

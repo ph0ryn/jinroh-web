@@ -1,0 +1,440 @@
+.stage[data-live-effect] {
+  --effect-accent: #f2ca79;
+  --effect-accent-rgb: 242, 202, 121;
+  color: #f7efd9;
+  display: grid;
+  height: 100dvh;
+  inset: 0;
+  margin: 0;
+  max-width: none;
+  opacity: 0;
+  overflow: hidden;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px))
+    max(24px, env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
+  place-items: center;
+  pointer-events: none;
+  position: fixed;
+  visibility: hidden;
+  width: 100vw;
+  z-index: 60;
+}
+
+.roleStage {
+  background:
+    radial-gradient(circle at 50% 44%, rgba(var(--effect-accent-rgb), 0.15), transparent 25rem),
+    rgba(3, 5, 4, 0.93);
+  perspective: 1200px;
+}
+
+.roleCard {
+  background:
+    radial-gradient(circle at 50% 32%, rgba(var(--effect-accent-rgb), 0.16), transparent 13rem),
+    linear-gradient(155deg, rgba(38, 35, 25, 0.98), rgba(7, 10, 8, 0.99) 72%);
+  border: 1px solid rgba(var(--effect-accent-rgb), 0.58);
+  border-radius: 22px;
+  box-shadow:
+    0 36px 96px rgba(0, 0, 0, 0.68),
+    inset 0 0 0 8px rgba(var(--effect-accent-rgb), 0.026);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: min(530px, calc(100svh - 48px));
+  justify-items: center;
+  max-height: 530px;
+  max-width: 330px;
+  min-height: 410px;
+  padding: 22px 20px;
+  position: relative;
+  text-align: center;
+  transform-style: preserve-3d;
+  width: min(330px, calc(100vw - 36px));
+  will-change: filter, opacity, transform;
+}
+
+.roleCard > small {
+  color: rgba(var(--effect-accent-rgb), 0.74);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.67rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.cardCorner {
+  border-color: rgba(var(--effect-accent-rgb), 0.68);
+  height: 20px;
+  position: absolute;
+  width: 20px;
+}
+
+.cardCorner:nth-of-type(1) {
+  border-left: 1px solid;
+  border-top: 1px solid;
+  left: 14px;
+  top: 14px;
+}
+
+.cardCorner:nth-of-type(2) {
+  border-right: 1px solid;
+  border-top: 1px solid;
+  right: 14px;
+  top: 14px;
+}
+
+.cardCorner:nth-of-type(3) {
+  border-bottom: 1px solid;
+  border-left: 1px solid;
+  bottom: 14px;
+  left: 14px;
+}
+
+.cardCorner:nth-of-type(4) {
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+  bottom: 14px;
+  right: 14px;
+}
+
+.roleMain {
+  align-content: center;
+  display: grid;
+  justify-items: center;
+}
+
+.roleSigil {
+  align-items: center;
+  background: radial-gradient(circle, rgba(var(--effect-accent-rgb), 0.16), rgba(0, 0, 0, 0.28));
+  border: 1px solid rgba(var(--effect-accent-rgb), 0.46);
+  border-radius: 50%;
+  box-shadow: 0 0 48px rgba(var(--effect-accent-rgb), 0.16);
+  color: var(--effect-accent);
+  display: flex;
+  font-size: 2rem;
+  font-weight: 920;
+  height: 98px;
+  justify-content: center;
+  width: 98px;
+  will-change: filter, opacity, transform;
+}
+
+.effectKicker {
+  color: rgba(247, 239, 217, 0.66);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  margin: 25px 0 0;
+  text-transform: uppercase;
+}
+
+.roleTitle {
+  color: var(--effect-accent);
+  font-size: clamp(2.65rem, 11vw, 4.4rem);
+  letter-spacing: -0.06em;
+  line-height: 1;
+  margin: 9px 0 0;
+  text-shadow: 0 0 42px rgba(var(--effect-accent-rgb), 0.24);
+}
+
+.roleDescription {
+  border-top: 1px solid rgba(var(--effect-accent-rgb), 0.2);
+  color: rgba(247, 239, 217, 0.72);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  margin: 0;
+  padding: 17px 5px 2px;
+  width: 100%;
+}
+
+.phaseStage {
+  background: rgba(3, 5, 4, 0.89);
+}
+
+.phaseStage[data-phase="day"] {
+  --effect-accent: #f2ca79;
+  --effect-accent-rgb: 242, 202, 121;
+}
+
+.phaseStage[data-phase="voting"],
+.phaseStage[data-phase="execution"] {
+  --effect-accent: #e37468;
+  --effect-accent-rgb: 227, 116, 104;
+}
+
+.phaseStage[data-phase="night"] {
+  --effect-accent: #9fc6e4;
+  --effect-accent-rgb: 159, 198, 228;
+}
+
+.chapter {
+  display: grid;
+  justify-items: center;
+  max-width: 760px;
+  text-align: center;
+  width: min(78vw, 760px);
+}
+
+.chapterDiamond {
+  border: 1px solid var(--effect-accent);
+  box-shadow: 0 0 20px rgba(var(--effect-accent-rgb), 0.38);
+  height: 13px;
+  transform: rotate(45deg);
+  width: 13px;
+  will-change: opacity, transform;
+}
+
+.chapterCode {
+  color: rgba(var(--effect-accent-rgb), 0.8);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(0.66rem, 1.7vw, 0.82rem);
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  margin-top: 20px;
+}
+
+.chapterTitle {
+  font-size: clamp(2.5rem, 8vw, 5.2rem);
+  letter-spacing: -0.065em;
+  line-height: 1.02;
+  margin: 13px 0 20px;
+  text-shadow: 0 0 38px rgba(var(--effect-accent-rgb), 0.17);
+}
+
+.chapterLine {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--effect-accent-rgb), 0.82),
+    transparent
+  );
+  height: 1px;
+  transform-origin: center;
+  width: 100%;
+  will-change: opacity, transform;
+}
+
+.chapterLabel {
+  color: rgba(247, 239, 217, 0.64);
+  font-size: 0.75rem;
+  font-weight: 820;
+  letter-spacing: 0.14em;
+  margin: 17px 0 0;
+  text-transform: uppercase;
+}
+
+.deathStage {
+  align-items: end;
+  background: linear-gradient(180deg, transparent 28%, rgba(3, 5, 4, 0.84));
+  padding-bottom: max(9svh, env(safe-area-inset-bottom, 0px));
+}
+
+.deathCard {
+  align-items: center;
+  backdrop-filter: blur(18px);
+  background: rgba(7, 10, 8, 0.86);
+  border: 1px solid rgba(220, 225, 214, 0.24);
+  border-radius: 18px;
+  box-shadow: 0 26px 74px rgba(0, 0, 0, 0.5);
+  display: grid;
+  gap: 17px;
+  grid-template-columns: 60px minmax(0, 1fr);
+  max-width: 680px;
+  padding: 17px 21px;
+  width: min(82vw, 680px);
+  will-change: filter, opacity, transform;
+}
+
+.deathIconFrame {
+  align-items: center;
+  border: 1px solid rgba(220, 225, 214, 0.3);
+  border-radius: 50%;
+  color: #d6ddd3;
+  display: flex;
+  height: 60px;
+  justify-content: center;
+  width: 60px;
+}
+
+.deathIcon {
+  height: 30px;
+  width: 30px;
+}
+
+.deathKicker {
+  color: #a9b1a8;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.17em;
+}
+
+.deathTitle {
+  color: #f4eee0;
+  font-size: clamp(1.12rem, 3.8vw, 2rem);
+  font-weight: 880;
+  letter-spacing: -0.035em;
+  line-height: 1.35;
+  margin: 6px 0 0;
+}
+
+.soul {
+  background: linear-gradient(
+    rgba(231, 240, 232, 0.74),
+    rgba(151, 185, 169, 0.18) 58%,
+    transparent
+  );
+  border-radius: 50%;
+  filter: blur(5px);
+  height: 44px;
+  left: 0;
+  opacity: 0;
+  position: fixed;
+  top: 0;
+  visibility: hidden;
+  width: 28px;
+  will-change: opacity, transform;
+}
+
+.victoryStage {
+  background:
+    radial-gradient(circle at 50% 43%, rgba(var(--effect-accent-rgb), 0.18), transparent 27rem),
+    rgba(3, 5, 4, 0.95);
+}
+
+.victory {
+  display: grid;
+  justify-items: center;
+  max-width: 850px;
+  text-align: center;
+}
+
+.crestFrame {
+  align-items: center;
+  background: radial-gradient(circle, rgba(var(--effect-accent-rgb), 0.19), rgba(0, 0, 0, 0.3) 68%);
+  border: 1px solid rgba(var(--effect-accent-rgb), 0.62);
+  border-radius: 50%;
+  box-shadow:
+    0 0 88px rgba(var(--effect-accent-rgb), 0.23),
+    inset 0 0 0 9px rgba(var(--effect-accent-rgb), 0.04);
+  color: var(--effect-accent);
+  display: flex;
+  height: clamp(132px, 23vw, 174px);
+  justify-content: center;
+  position: relative;
+  width: clamp(132px, 23vw, 174px);
+  will-change: filter, opacity, transform;
+}
+
+.crestRing {
+  border: 1px solid rgba(var(--effect-accent-rgb), 0.25);
+  border-radius: 50%;
+  inset: -20px;
+  position: absolute;
+  will-change: opacity, transform;
+}
+
+.crestRing:nth-child(2) {
+  border-style: dashed;
+  inset: -38px;
+}
+
+.crestIcon {
+  height: 62%;
+  width: 62%;
+}
+
+.victoryKicker {
+  color: rgba(var(--effect-accent-rgb), 0.82);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.26em;
+  margin-top: clamp(38px, 8vw, 58px);
+}
+
+.victoryTitle {
+  font-size: clamp(2.65rem, 9vw, 5.7rem);
+  letter-spacing: -0.065em;
+  line-height: 1;
+  margin: 11px 0 0;
+  text-shadow: 0 0 48px rgba(var(--effect-accent-rgb), 0.22);
+  will-change: filter, opacity, transform;
+}
+
+.victorySub {
+  color: rgba(247, 239, 217, 0.68);
+  font-size: clamp(0.86rem, 2.1vw, 1.05rem);
+  line-height: 1.5;
+  margin: 15px 0 0;
+}
+
+.victoryResult {
+  border: 1px solid rgba(var(--effect-accent-rgb), 0.3);
+  border-radius: 999px;
+  color: var(--effect-accent);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  margin-top: 18px;
+  padding: 7px 13px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 620px) {
+  .deathCard {
+    gap: 12px;
+    grid-template-columns: 48px minmax(0, 1fr);
+    padding: 14px;
+    width: calc(100vw - 28px);
+  }
+
+  .deathIconFrame {
+    height: 48px;
+    width: 48px;
+  }
+
+  .deathIcon {
+    height: 24px;
+    width: 24px;
+  }
+
+  .chapter {
+    width: 88vw;
+  }
+}
+
+@media (max-height: 520px) {
+  .stage[data-live-effect] {
+    padding: max(10px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+      max(10px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  }
+
+  .roleCard {
+    height: 100%;
+    min-height: 0;
+    padding: 14px 16px;
+  }
+
+  .roleCard > small {
+    font-size: 0.62rem;
+  }
+
+  .roleSigil {
+    font-size: 1.55rem;
+    height: 76px;
+    width: 76px;
+  }
+
+  .effectKicker {
+    font-size: 0.65rem;
+    margin-top: 12px;
+  }
+
+  .roleTitle {
+    font-size: clamp(2rem, 10vw, 3rem);
+    margin-top: 6px;
+  }
+
+  .roleDescription {
+    font-size: 0.76rem;
+    line-height: 1.4;
+    padding: 11px 4px 0;
+  }
+}

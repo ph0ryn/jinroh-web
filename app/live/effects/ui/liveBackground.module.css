@@ -1,0 +1,98 @@
+:global(.liveShell) > .root {
+  contain: paint;
+  inset: 0;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  width: 100vw;
+  z-index: 0;
+}
+
+.scene {
+  --live-background-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.9), rgba(12, 18, 16, 0.68));
+  --live-background-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.1), rgba(7, 11, 10, 0.54));
+  --live-background-wash:
+    radial-gradient(circle at 14% 13%, rgba(217, 173, 95, 0.14), transparent 24rem),
+    radial-gradient(circle at 82% 78%, rgba(119, 189, 117, 0.07), transparent 28rem);
+  inset: 0;
+  overflow: hidden;
+  position: absolute;
+}
+
+.image,
+.scrim,
+.wash,
+.vignette {
+  inset: 0;
+  position: absolute;
+}
+
+.image {
+  background-color: #070b0a;
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.scrim {
+  background: var(--live-background-scrim);
+}
+
+.wash {
+  background: var(--live-background-wash);
+}
+
+.vignette {
+  background: var(--live-background-vignette);
+}
+
+.scene[data-live-background-mood="night"] {
+  --live-background-scrim: linear-gradient(90deg, rgba(3, 5, 4, 0.88), rgba(7, 11, 10, 0.54));
+  --live-background-vignette: linear-gradient(180deg, rgba(3, 5, 4, 0.04), rgba(2, 3, 3, 0.72));
+  --live-background-wash:
+    radial-gradient(circle at 14% 12%, rgba(255, 198, 98, 0.18), transparent 22rem),
+    radial-gradient(circle at 47% 84%, rgba(167, 71, 61, 0.12), transparent 24rem),
+    linear-gradient(120deg, rgba(18, 52, 40, 0.1), transparent 58%);
+}
+
+.scene[data-live-background-mood="day"] {
+  --live-background-scrim: linear-gradient(90deg, rgba(12, 18, 16, 0.66), rgba(44, 38, 25, 0.32));
+  --live-background-vignette: linear-gradient(
+    180deg,
+    rgba(255, 232, 164, 0.08),
+    rgba(7, 11, 10, 0.26)
+  );
+  --live-background-wash:
+    radial-gradient(circle at 74% 0%, rgba(255, 220, 138, 0.32), transparent 28rem),
+    radial-gradient(circle at 12% 76%, rgba(119, 189, 117, 0.14), transparent 28rem),
+    linear-gradient(120deg, rgba(255, 238, 184, 0.12), transparent 56%);
+}
+
+.scene[data-live-background-mood="voting"] {
+  --live-background-scrim: linear-gradient(90deg, rgba(24, 10, 8, 0.9), rgba(78, 38, 20, 0.5));
+  --live-background-vignette: linear-gradient(
+    180deg,
+    rgba(226, 154, 88, 0.1),
+    rgba(7, 11, 10, 0.62)
+  );
+  --live-background-wash:
+    radial-gradient(circle at 78% 0%, rgba(240, 160, 78, 0.26), transparent 28rem),
+    radial-gradient(circle at 42% 82%, rgba(167, 71, 61, 0.18), transparent 29rem);
+}
+
+.scene[data-live-background-mood="execution"] {
+  --live-background-scrim: linear-gradient(90deg, rgba(7, 4, 5, 0.97), rgba(30, 9, 10, 0.7));
+  --live-background-vignette: linear-gradient(180deg, rgba(7, 4, 5, 0.16), rgba(2, 2, 2, 0.72));
+  --live-background-wash:
+    radial-gradient(circle at 50% 12%, rgba(239, 179, 107, 0.16), transparent 22rem),
+    radial-gradient(circle at 52% 64%, rgba(167, 71, 61, 0.16), transparent 26rem);
+}
+
+.scene[data-live-background-mood="result"] {
+  --live-background-scrim: linear-gradient(90deg, rgba(7, 11, 10, 0.86), rgba(12, 18, 16, 0.6));
+  --live-background-vignette: linear-gradient(180deg, rgba(7, 11, 10, 0.08), rgba(7, 11, 10, 0.5));
+  --live-background-wash:
+    radial-gradient(circle at 14% 13%, rgba(217, 173, 95, 0.16), transparent 24rem),
+    radial-gradient(circle at 82% 78%, rgba(119, 189, 117, 0.08), transparent 28rem);
+}

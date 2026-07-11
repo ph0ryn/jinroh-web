@@ -498,7 +498,7 @@ export function createEmptyGameStateForRuleSet(
     },
     roleByPlayerId: new Map(),
     ruleOptions: ruleSet.options,
-    status: GameStatus.Waiting,
+    status: GameStatus.AssigningRoles,
     nightConversationMessages: [],
   };
 }

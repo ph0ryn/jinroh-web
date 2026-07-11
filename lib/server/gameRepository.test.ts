@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { toPublicActionProgress, toPublicPhaseFocus } from "./gameRepository";
+import {
+  getExpectedPersistedGameStatus,
+  isRoomEndedBeforeStart,
+  toPublicActionProgress,
+  toPublicPhaseFocus,
+  toRevealedRoleId,
+} from "./gameRepository";
 
 type GameState = Parameters<typeof toPublicActionProgress>[0];
 type CurrentAction = Parameters<typeof toPublicActionProgress>[1][number];
@@ -136,5 +142,101 @@ describe("public game view metadata", () => {
     );
 
     expect(focus).toBeNull();
+  });
+});
+
+describe("final role reveal boundary", () => {
+  it.each([
+    {
+      expected: null,
+      gameStatus: null,
+      name: "a waiting room without game state",
+      roomStatus: "waiting",
+    },
+    {
+      expected: null,
+      gameStatus: "playing",
+      name: "an in-progress game",
+      roomStatus: "playing",
+    },
+    {
+      expected: null,
+      gameStatus: "ended",
+      name: "an inconsistent room that has not ended",
+      roomStatus: "playing",
+    },
+    {
+      expected: null,
+      gameStatus: "playing",
+      name: "an inconsistent game that has not ended",
+      roomStatus: "ended",
+    },
+    {
+      expected: null,
+      gameStatus: null,
+      name: "a waiting room that ended before starting",
+      roomStatus: "ended",
+    },
+    {
+      expected: "seer",
+      gameStatus: "ended",
+      name: "a fully ended game",
+      roomStatus: "ended",
+    },
+  ] as const)("returns $expected for $name", ({ expected, gameStatus, roomStatus }) => {
+    expect(toRevealedRoleId(roomStatus, gameStatus, "seer")).toBe(expected);
+  });
+
+  it("does not invent a missing assignment after the game ends", () => {
+    expect(toRevealedRoleId("ended", "ended", null)).toBeNull();
+  });
+});
+
+describe("persisted room and game lifecycle", () => {
+  it.each([
+    {
+      expected: null,
+      name: "a waiting room",
+      roomStatus: "waiting",
+      startedAt: null,
+    },
+    {
+      expected: "playing",
+      name: "a started room in progress",
+      roomStatus: "playing",
+      startedAt: "2099-01-01T00:00:00.000Z",
+    },
+    {
+      expected: null,
+      name: "a waiting room that ended before starting",
+      roomStatus: "ended",
+      startedAt: null,
+    },
+    {
+      expected: "ended",
+      name: "a completed game",
+      roomStatus: "ended",
+      startedAt: "2099-01-01T00:00:00.000Z",
+    },
+  ] as const)("returns $expected for $name", ({ expected, roomStatus, startedAt }) => {
+    expect(getExpectedPersistedGameStatus(roomStatus, startedAt)).toBe(expected);
+  });
+
+  it("rejects a waiting room with a start time", () => {
+    expect(() => getExpectedPersistedGameStatus("waiting", "2099-01-01T00:00:00.000Z")).toThrow(
+      /waiting room cannot have a start time/u,
+    );
+  });
+
+  it("rejects a playing room without a start time", () => {
+    expect(() => getExpectedPersistedGameStatus("playing", null)).toThrow(
+      /playing room must have a start time/u,
+    );
+  });
+
+  it("distinguishes a waiting room that ended before start from a completed game", () => {
+    expect(isRoomEndedBeforeStart("ended", null)).toBe(true);
+    expect(isRoomEndedBeforeStart("ended", "2099-01-01T00:00:00.000Z")).toBe(false);
+    expect(isRoomEndedBeforeStart("waiting", null)).toBe(false);
   });
 });

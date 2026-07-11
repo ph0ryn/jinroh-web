@@ -29,7 +29,6 @@ export enum Team {
 }
 
 export enum GameStatus {
-  Waiting = "waiting",
   AssigningRoles = "assigning_roles",
   Playing = "playing",
   Ended = "ended",

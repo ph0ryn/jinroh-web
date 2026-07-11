@@ -1,0 +1,7 @@
+.root {
+  isolation: isolate;
+}
+
+.root[data-live-modal-phase="exiting"] {
+  pointer-events: none;
+}

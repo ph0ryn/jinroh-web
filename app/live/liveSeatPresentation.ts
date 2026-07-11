@@ -15,17 +15,47 @@ export type LiveSeatPresentation = {
   readonly visibleLabel: string | null;
 };
 
+export function getLiveSeatState(
+  player: PublicPlayer,
+  summary: Pick<RoomSummary, "game">,
+): LiveSeatState {
+  if (player.alive === false) {
+    return "eliminated";
+  }
+
+  if (player.status === "disconnected") {
+    return "disconnected";
+  }
+
+  if (player.status === "left") {
+    return "left";
+  }
+
+  const phaseFocus = summary.game?.phaseFocus ?? null;
+
+  if (phaseFocus?.playerId === player.id && phaseFocus.kind === "current_speaker") {
+    return "speaking";
+  }
+
+  if (phaseFocus?.playerId === player.id && phaseFocus.kind === "execution_candidate") {
+    return "execution";
+  }
+
+  return "active";
+}
+
 export function getLiveSeatPresentation(
   player: PublicPlayer,
   summary: RoomSummary,
   t: Localization,
 ): LiveSeatPresentation {
+  const state = getLiveSeatState(player, summary);
   const identityLabels = [
     ...(player.isCurrent ? [t.game.seatStatus.you] : []),
     ...(player.isHost ? [t.game.seatStatus.host] : []),
   ];
 
-  if (player.alive === false) {
+  if (state === "eliminated") {
     return {
       ariaLabels: [t.game.seatStatus.out, ...identityLabels],
       state: "eliminated",
@@ -33,7 +63,7 @@ export function getLiveSeatPresentation(
     };
   }
 
-  if (player.status === "disconnected") {
+  if (state === "disconnected") {
     return {
       ariaLabels: [t.game.seatStatus.disconnected, ...identityLabels],
       state: "disconnected",
@@ -41,7 +71,7 @@ export function getLiveSeatPresentation(
     };
   }
 
-  if (player.status === "left") {
+  if (state === "left") {
     return {
       ariaLabels: [t.game.seatStatus.left, ...identityLabels],
       state: "left",
@@ -49,9 +79,7 @@ export function getLiveSeatPresentation(
     };
   }
 
-  const phaseFocus = summary.game?.phaseFocus ?? null;
-
-  if (phaseFocus?.playerId === player.id && phaseFocus.kind === "current_speaker") {
+  if (state === "speaking") {
     return {
       ariaLabels: [t.game.seatStatus.speaking, ...identityLabels],
       state: "speaking",
@@ -59,7 +87,7 @@ export function getLiveSeatPresentation(
     };
   }
 
-  if (phaseFocus?.playerId === player.id && phaseFocus.kind === "execution_candidate") {
+  if (state === "execution") {
     return {
       ariaLabels: [t.game.phase.execution, ...identityLabels],
       state: "execution",

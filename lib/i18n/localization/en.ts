@@ -230,10 +230,6 @@ export const enLocalization = {
           body: "Join a room to load role-specific prompts.",
           title: "No private actions",
         },
-        roomClosed: {
-          body: "This room is closed. Create or join a new room to continue.",
-          title: "Room closed",
-        },
         waitingForStart: {
           body: "Private actions appear here after the host starts the game.",
           title: "Waiting for start",
@@ -247,7 +243,7 @@ export const enLocalization = {
       day: "Day",
       execution: "Execution",
       game: "Game",
-      lobby: "Lobby",
+      waiting: "Waiting",
       night: "Night",
       result: "Result",
       setup: "Setup",
@@ -349,7 +345,7 @@ export const enLocalization = {
       day: { detail: "Discussion", label: "Day", mobileLabel: "Day" },
       execution: { detail: "Reveal", label: "Execution", mobileLabel: "Exec" },
       home: { detail: "Create or rejoin", label: "Home", mobileLabel: "Home" },
-      lobby: { detail: "Room setup", label: "Lobby", mobileLabel: "Lobby" },
+      waiting: { detail: "Room setup", label: "Waiting", mobileLabel: "Waiting" },
       night: { detail: "Role actions", label: "Night", mobileLabel: "Night" },
       result: { detail: "Outcome", label: "Result", mobileLabel: "Result" },
       voting: { detail: "Ballots", label: "Voting", mobileLabel: "Vote" },
@@ -373,7 +369,7 @@ export const enLocalization = {
     room: {
       code: (roomCode: string) => `Room ${roomCode}`,
       codeLabel: "Room code",
-      createBody: "Open a lobby, become host, and invite players with a six-digit code.",
+      createBody: "Create a room, become host, and invite players with a six-digit code.",
       createTitle: "Create room",
       joinTitle: "Join with code",
     },
@@ -415,14 +411,13 @@ export const enLocalization = {
         summary: "Create a room, join with a six-digit code, and keep the shared game state tidy.",
         title: "Run the table",
       },
-      lobby: {
-        notice:
-          "Lobby rooms expire if the game never starts. Host controls stay server-authorized.",
+      waiting: {
+        notice: "Rooms expire if the game never starts. Host controls stay server-authorized.",
         primaryAction: "Start game",
         secondaryAction: "Copy room code",
         summary:
           "Hosts can confirm players, tune the rule set, and start when everyone is present.",
-        title: "Lobby",
+        title: "Waiting",
       },
       night: {
         notice:
@@ -453,12 +448,11 @@ export const enLocalization = {
   },
   live: {
     aria: {
+      actionTarget: (actionName: string) => `Target for ${actionName}`,
       commonPhaseTiming: "Game timing",
       currentPhase: "Current scene",
       invite: "Invite",
-      liveGameTable: "Live game table",
-      lobbyControls: "Lobby controls",
-      lobbySeats: "Lobby seats",
+      roundTable: "Round table",
       nightConversation: "Night conversation",
       notifications: "Notifications",
       popupPanels: "Popup panels",
@@ -470,6 +464,7 @@ export const enLocalization = {
       roomSetup: "Room setup",
       roomState: "Room state",
       settingsSections: "Settings sections",
+      waitingControls: "Waiting controls",
     },
     buttons: {
       applySettings: "Apply settings",
@@ -504,47 +499,99 @@ export const enLocalization = {
       meta: (count: number) => `${count} events`,
       title: "Public log",
     },
+    effects: {
+      action: {
+        announcement: (actionName: string) => `${actionName} was confirmed.`,
+        confirmed: "Confirmed",
+      },
+      death: {
+        kicker: "DEATH REPORT",
+        message: (playerNames: readonly string[]) => {
+          if (playerNames.length === 0) {
+            return "A player has died";
+          }
+
+          if (playerNames.length === 1) {
+            return `${playerNames[0]} has died`;
+          }
+
+          const leadingNames = playerNames.slice(0, -1).join(", ");
+          const finalName = playerNames.at(-1);
+
+          return `${leadingNames} and ${finalName} have died`;
+        },
+      },
+      phase: {
+        code: {
+          day: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+          execution: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+          night: (nightNumber: number) => `NIGHT ${String(nightNumber).padStart(2, "0")}`,
+          voting: (dayNumber: number) => `DAY ${String(dayNumber).padStart(2, "0")}`,
+        },
+        label: (phaseName: string) => `${phaseName} phase`,
+        title: {
+          day: "Dawn has come",
+          execution: "The execution begins",
+          night: "Night has fallen",
+          voting: "Voting is open",
+        },
+      },
+      role: {
+        assignment: "ROLE ASSIGNMENT",
+        identity: (roleName: string) => `Your current role is ${roleName}.`,
+        kicker: "Your role",
+        reveal: "Reveal role card",
+      },
+      vote: {
+        announcement: {
+          candidate: (playerName: string, voteCount: number) =>
+            `${playerName} received the most votes with ${voteCount}.`,
+          noVotes: "Voting ended without any valid votes.",
+          tie: (voteCount: number) =>
+            `Voting ended in a tie at ${voteCount} vote${voteCount === 1 ? "" : "s"}.`,
+        },
+        ballotDetails: {
+          noVotes: "NO VOTES",
+          sealed: "SEALED BALLOTS",
+        },
+        header: (dayNumber: number) => `OFFICIAL COUNT · DAY ${String(dayNumber).padStart(2, "0")}`,
+        outcome: {
+          candidateBody: (voteCount: number) =>
+            `${voteCount} vote${voteCount === 1 ? "" : "s"} · highest total`,
+          candidateKicker: "EXECUTION CANDIDATE",
+          noCandidate: "No execution candidate",
+          noVotesBody: "No valid ballots were recorded",
+          noVotesKicker: "NO VALID VOTES",
+          tieBody: (voteCount: number) =>
+            `Highest total tied at ${voteCount} vote${voteCount === 1 ? "" : "s"}`,
+          tieKicker: "TIED VOTE",
+        },
+        seal: {
+          candidate: "VERDICT",
+          noVotes: "VOID",
+          tie: "TIED",
+        },
+        title: "Vote results",
+      },
+      victory: {
+        announcement: (title: string, result: string | null) =>
+          result === null ? title : `${title}. Your result: ${result}`,
+        kicker: "FINAL OUTCOME",
+        resultLabel: "Your result",
+        subtitle: "The result is final. Review the outcome and public log.",
+        title: (winner: string) => `Victory: ${winner}`,
+      },
+    },
     privateEventLog: {
       meta: (count: number) => `${count} private result${count === 1 ? "" : "s"}`,
       title: "Private results",
-    },
-    guidance: {
-      closed: { label: "Closed", message: "This room has been disbanded." },
-      full: { label: "Full", message: "Leave extra seats before starting this room." },
-      host: {
-        label: "Host",
-        message: "Continue when every player has finished their action.",
-      },
-      invite: (count: number) => ({
-        label: "Invite",
-        message: `${count} more player${count === 1 ? "" : "s"} needed before starting.`,
-      }),
-      lobby: (joined: number, target: number) => ({
-        label: "Lobby",
-        message: `${joined}/${target} seats filled. Waiting for the host.`,
-      }),
-      privateNight: (label: string) => ({ label: "Private night", message: label }),
-      progress: (submitted: number, required: number, label: string) => ({
-        label: "Progress",
-        message: `${submitted}/${required} ${label}`,
-      }),
-      ready: { label: "Ready", message: "Every selected seat is filled. Start when ready." },
-      result: (winner: string) => ({
-        label: "Result",
-        message: `${winner} won. Start a new room when ready.`,
-      }),
-      setup: { label: "Setup", message: "Create a room or join one with a six-digit code." },
-      syncing: { label: "Updating", message: "Loading the latest room information." },
-      waiting: { label: "Waiting", message: "Waiting for other players or the host." },
-      yourTurn: { label: "Your turn", message: "Submit the private action shown below." },
     },
     hints: {
       controlsNeedRoom: "Create or join a room to use table controls.",
       hostOnlyStart: "Only the host can start the game.",
       reviewResult: "Review the result from this table.",
-      roomClosed: "This room is closed.",
       startAfterSync: "You can start when the update finishes.",
-      startInLobby: "Start is only available while the room is in lobby.",
+      startInWaiting: "Start is only available while the room is waiting.",
       startNeedsRoom: "Create or join a room before starting.",
       startWhenSeated: "Start the game when every player is seated.",
       tooManyPlayers: "More players have joined than the selected room size allows.",
@@ -560,6 +607,7 @@ export const enLocalization = {
       morePlayersNeeded: (count: number) => `${count} more player${count === 1 ? "" : "s"} needed.`,
       openSeats: (count: number) => `${count} seats open`,
       progressLabel: (joined: number, target: number) => `${joined} of ${target} seats filled`,
+      ready: "Ready",
       requirement: "Start requirement",
       shareText: (roomCode: string) => `Join Jinroh Web room ${roomCode}.`,
       shareFailed: "Could not share or copy the room invite.",
@@ -571,7 +619,7 @@ export const enLocalization = {
         share: "Share the room code with the other players.",
       },
     },
-    lobby: {
+    waiting: {
       host: "Host",
       hostControls: "Host controls",
       open: "Open",
@@ -605,14 +653,12 @@ export const enLocalization = {
     page: {
       result: "Result",
       room: (roomCode: string) => `Room ${roomCode}`,
-      roomClosed: "Room closed",
       roomSetup: "Room setup",
     },
     player: {
       yourRole: "Your role",
     },
     phasePanel: {
-      closed: { label: "Closed", message: "This table is closed." },
       day: { label: "Day", message: "Dawn has come. Discuss who you will vote for." },
       execution: { label: "Execution", message: "Waiting for the condemned player's last words." },
       game: { label: "Game", message: "Loading the current game." },
@@ -623,7 +669,6 @@ export const enLocalization = {
     },
     room: {
       checkingCurrent: "Checking your current room...",
-      closed: "Room closed. Create or join a room.",
       created: (roomCode: string) => `Room ${roomCode} created. Share the code with players.`,
       currentChanged: "Your current room changed. The latest room is now displayed.",
       currentCouldNotLoad:
@@ -650,15 +695,14 @@ export const enLocalization = {
     roomStatus: {
       noRoom: "No room",
       status: {
-        disbanded: "Closed",
         ended: "Ended",
-        lobby: "Lobby",
         playing: "Playing",
+        waiting: "Waiting",
       },
       value: (status: string, phase: string) => `${status} / ${phase}`,
     },
     setup: {
-      createHint: "Open a new lobby and prepare the game as host.",
+      createHint: "Create a new room and prepare the game as host.",
       createTitle: "Create a room",
       displayName: "Display name",
       guest: "Guest",
@@ -775,7 +819,7 @@ export const enLocalization = {
         needsAdjustment: "Needs adjustment",
         readyToApply: "Ready to apply",
         removeRoles: (count: number) => `Remove ${count} role${count === 1 ? "" : "s"}.`,
-        validForLobby: "Role counts are valid for this lobby.",
+        validForWaiting: "Role counts match this room.",
       },
       description: "Adjust the room flow before the first night starts.",
     },
@@ -785,7 +829,6 @@ export const enLocalization = {
       realtimeFailed: "Automatic updates paused. The room will still refresh periodically.",
     },
     table: {
-      closed: "Closed",
       gameStateLoading: "Loading the game.",
       noticeDay: "When discussion ends, get ready to vote.",
       noticeExecution: "Waiting for the condemned player's last words.",

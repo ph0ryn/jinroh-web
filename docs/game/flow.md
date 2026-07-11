@@ -17,19 +17,19 @@ Game Engine は game status と phase を分けて持つ。
 `role assignment` や `result` は phase ではなく、ゲーム前後の status として扱う。
 結果画面は `ended` status と final outcome から表示する。
 
-代表的な status。
+Game state が存在する場合の status。
 
-- waiting
 - assigning_roles
 - playing
 - ended
 
-`status` が `waiting`、`assigning_roles`、`ended` の場合、`phase` は `null` でもよい。
+Room が `waiting` の間は game state を持たない。Game state は game start transaction
+内で初めて作成する。`status` が `assigning_roles`、`ended` の場合、`phase` は `null` でもよい。
 
 基本サイクル。
 
 ```text
-waiting
+Room waiting / game = null
   -> assigning_roles
   -> playing / night
   -> day

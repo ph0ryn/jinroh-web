@@ -46,10 +46,13 @@ internal game state
 
 ルール。
 
-- public game view に他人の役職を含めない
+- game status と Room status がともに `ended` になる前は、public game view に他人の役職を
+  含めない
 - public game view に夜 action の対象を含めない
 - realtime message に秘密情報を含めない
-- 自分の役職は self private view にだけ含める
+- ゲーム終了前の自分の役職は self private view にだけ含める
+- game status と Room status がともに `ended` になった後は、固定済み role assignment から
+  全 Player の役職を public result view に含められる
 - 人狼仲間などの共有秘密は group private view にだけ含める
 - 夜会話は resolved group に含まれる Role を持つ Player の private view にだけ含める
 - Night 以外では、夜会話を読み取り専用で private view に含められる

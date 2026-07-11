@@ -27,11 +27,14 @@ type RoomSnapshot = {
   readonly status: string;
 };
 
+const MINIMUM_TOUCH_TARGET_SIZE = 44;
+const BOUNDING_BOX_PRECISION_TOLERANCE = 0.01;
+
 test("an account keeps one current room until it explicitly leaves", async ({ request }) => {
   const account = await createApiPlayer(request, "account", "Aster");
   const otherHost = await createApiPlayer(request, "otherHost", "Birch");
-  const roomA = await createLobby(request, account.token, account.displayName);
-  const roomB = await createLobby(request, otherHost.token, otherHost.displayName);
+  const roomA = await createWaitingRoom(request, account.token, account.displayName);
+  const roomB = await createWaitingRoom(request, otherHost.token, otherHost.displayName);
   const originalPlayerId = roomA.currentPlayerId;
 
   expect(originalPlayerId).not.toBeNull();
@@ -83,8 +86,8 @@ test("an account keeps one current room until it explicitly leaves", async ({ re
 test("concurrent membership requests produce exactly one current room", async ({ request }) => {
   const targetHostA = await createApiPlayer(request, "targetHostA", "Cedar");
   const targetHostB = await createApiPlayer(request, "targetHostB", "Dahlia");
-  const targetA = await createLobby(request, targetHostA.token, targetHostA.displayName);
-  const targetB = await createLobby(request, targetHostB.token, targetHostB.displayName);
+  const targetA = await createWaitingRoom(request, targetHostA.token, targetHostA.displayName);
+  const targetB = await createWaitingRoom(request, targetHostB.token, targetHostB.displayName);
 
   for (const scenario of ["create-create", "create-join", "join-join"] as const) {
     const account = await createApiPlayer(request, scenario, `Player ${scenario}`);
@@ -122,8 +125,8 @@ test("confirmed switching is atomic and preserves the source room on failure", a
 }) => {
   const account = await createApiPlayer(request, "switcher", "Elm");
   const targetHost = await createApiPlayer(request, "target", "Fir");
-  const source = await createLobby(request, account.token, account.displayName);
-  const target = await createLobby(request, targetHost.token, targetHost.displayName);
+  const source = await createWaitingRoom(request, account.token, account.displayName);
+  const target = await createWaitingRoom(request, targetHost.token, targetHost.displayName);
 
   const failedSwitch = await readJsonResponse<ApiError>(request, "/api/rooms/switch", {
     body: {
@@ -262,7 +265,7 @@ test("an ended room stays current until explicit leave or confirmed switch", asy
     token: host.token,
   });
 
-  expect(switched.status).toBe("lobby");
+  expect(switched.status).toBe("waiting");
   await expectCurrentRoom(request, host.token, switched.code);
 });
 
@@ -271,7 +274,7 @@ test("same-account tabs converge after restore, switch, and leave", async ({
   request,
 }) => {
   const targetHost = await createApiPlayer(request, "browserTargetHost", "Juniper");
-  const targetRoom = await createLobby(request, targetHost.token, targetHost.displayName);
+  const targetRoom = await createWaitingRoom(request, targetHost.token, targetHost.displayName);
   const context = await browser.newContext({ viewport: { height: 720, width: 1280 } });
   const firstPage = await context.newPage();
 
@@ -324,8 +327,12 @@ test("same-account tabs converge after restore, switch, and leave", async ({
     const confirmSwitchBox = await confirmSwitchButton.boundingBox();
     const cancelSwitchBox = await cancelSwitchButton.boundingBox();
 
-    expect(confirmSwitchBox?.height).toBeGreaterThanOrEqual(44);
-    expect(cancelSwitchBox?.height).toBeGreaterThanOrEqual(44);
+    expect(
+      (confirmSwitchBox?.height ?? 0) + BOUNDING_BOX_PRECISION_TOLERANCE,
+    ).toBeGreaterThanOrEqual(MINIMUM_TOUCH_TARGET_SIZE);
+    expect(
+      (cancelSwitchBox?.height ?? 0) + BOUNDING_BOX_PRECISION_TOLERANCE,
+    ).toBeGreaterThanOrEqual(MINIMUM_TOUCH_TARGET_SIZE);
     expect(confirmSwitchBox?.y).toBeGreaterThan(cancelSwitchBox?.y ?? Number.POSITIVE_INFINITY);
 
     await secondPage.keyboard.press("Escape");
@@ -362,7 +369,7 @@ test("same-account tabs converge after restore, switch, and leave", async ({
   }
 });
 
-async function createLobby(
+async function createWaitingRoom(
   request: Parameters<typeof apiFetch>[0],
   token: string,
   displayName: string,

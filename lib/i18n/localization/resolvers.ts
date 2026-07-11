@@ -1,5 +1,6 @@
+import { ACTION_KINDS } from "@/lib/shared/game";
+
 import type { Localization } from "./en";
-import type { ActionKind } from "@/lib/shared/game";
 
 export const LOCALIZED_ROLE_IDS = [
   "fox",
@@ -12,17 +13,7 @@ export const LOCALIZED_ROLE_IDS = [
   "werewolf",
 ] as const;
 
-export const LOCALIZED_ACTION_KINDS = [
-  "attack",
-  "day_ready",
-  "end_speech",
-  "execution_skip",
-  "first_night_ready",
-  "guard",
-  "hunter_retaliate",
-  "inspect",
-  "vote",
-] as const satisfies readonly ActionKind[];
+export const LOCALIZED_ACTION_KINDS = ACTION_KINDS;
 
 export const LOCALIZED_ACTION_PROGRESS_KINDS = [
   "current_speech_turn",

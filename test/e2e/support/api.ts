@@ -1,3 +1,6 @@
+import { DEFAULT_RULE_SET_OPTIONS } from "@/lib/shared/game";
+
+import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 import type { APIRequestContext } from "playwright/test";
 
 export type ApiPlayer = {
@@ -45,6 +48,7 @@ export async function createApiPlayer(
 export async function createStartedRoom(
   request: APIRequestContext,
   displayNames: readonly string[],
+  options: { readonly voteResultVisibility?: "count_only" | "voter_to_target" } = {},
 ): Promise<{ readonly players: readonly ApiPlayer[]; readonly roomCode: string }> {
   const players = await Promise.all(
     displayNames.map((displayName, index) =>
@@ -71,13 +75,80 @@ export async function createStartedRoom(
     });
   }
 
+  const waitingSummary = await readRoomSummary(request, room.code, host);
+  const ruleSet =
+    options.voteResultVisibility === undefined
+      ? undefined
+      : {
+          ...DEFAULT_RULE_SET_OPTIONS,
+          roleCounts: waitingSummary.defaultRoleCounts,
+          voteResultVisibility: options.voteResultVisibility,
+        };
+
   await apiFetch(request, `/api/rooms/${room.code}/start`, {
-    body: {},
+    body: ruleSet === undefined ? {} : { ruleSet },
     method: "POST",
     token: host.token,
   });
 
   return { players, roomCode: room.code };
+}
+
+export async function joinWaitingRoom(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+): Promise<RoomSummary> {
+  return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/join`, {
+    body: { displayName: player.displayName },
+    method: "POST",
+    token: player.token,
+  });
+}
+
+export async function readRoomSummary(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+): Promise<RoomSummary> {
+  return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}`, { token: player.token });
+}
+
+export async function submitOpenActions(
+  request: APIRequestContext,
+  roomCode: string,
+  players: readonly ApiPlayer[],
+  selectTarget: (action: PublicAction) => string | null = () => null,
+): Promise<void> {
+  for (const player of players) {
+    await submitOpenAction(request, roomCode, player, selectTarget);
+  }
+}
+
+export async function submitOpenAction(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+  selectTarget: (action: PublicAction) => string | null = () => null,
+): Promise<void> {
+  const summary = await readRoomSummary(request, roomCode, player);
+  const action = summary.self?.actions.find((candidate) => candidate.status === "open");
+  const revision = summary.game?.revision;
+
+  if (action === undefined || revision === undefined) {
+    throw new Error(`No open action was available for ${player.label}.`);
+  }
+
+  await apiFetch(request, `/api/rooms/${roomCode}/action`, {
+    body: {
+      actionKey: action.key,
+      phaseInstanceId: action.phaseInstanceId,
+      revision,
+      targetPlayerId: selectTarget(action),
+    },
+    method: "POST",
+    token: player.token,
+  });
 }
 
 export async function readJsonResponse<Body>(

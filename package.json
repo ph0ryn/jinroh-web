@@ -21,7 +21,9 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
+    "@gsap/react": "catalog:",
     "@supabase/supabase-js": "catalog:",
+    "gsap": "catalog:",
     "next": "catalog:",
     "qrcode.react": "catalog:",
     "react": "catalog:",

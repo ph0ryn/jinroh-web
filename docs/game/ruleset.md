@@ -140,5 +140,8 @@ Role assignment は、ゲーム開始時に実行する。
 
 - Role assignment は Player ID を基準に行う
 - Account ID は使わない
-- 割り当て結果は各 Player にのみ秘密情報として見せる
-- 公開 room state には他人の役職を含めない
+- ゲーム終了前の割り当て結果は各 Player にのみ秘密情報として見せる
+- game status と Room status がともに `ended` になる前は、公開 room state に他人の役職を
+  含めない
+- game status と Room status がともに `ended` になった後は、固定済み role assignment から
+  全 Player の役職を公開 result view に含められる
