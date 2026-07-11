@@ -11,6 +11,7 @@ import {
   getLiveTableTitle,
   getPlayerInitial,
 } from "./livePresentation";
+import styles from "./liveRoundTable.module.css";
 import { getLiveRoundTableSeats } from "./liveRoundTableModel";
 import { getLiveSeatPresentation } from "./liveSeatPresentation";
 
@@ -30,17 +31,17 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
 
   return (
     <div
-      className="tableBoard liveTableBoard"
+      className={styles["board"]}
       data-live-round-table
       data-seat-count={seats.length}
       data-seat-density={seats.length >= 9 ? "compact" : "comfortable"}
       ref={rootRef}
     >
-      <div className="tableSurface liveTableSurface">
-        <span className="liveTableInnerRing" aria-hidden="true" />
-        <div className="tableCenter liveTableCenter">
-          <span className={`liveTablePhaseIcon ${mood}`} aria-hidden="true" />
-          <span className="liveTableCenterKicker">{getLiveTableMeta(summary, t)}</span>
+      <div className={styles["surface"]} data-live-table-surface>
+        <span className={styles["innerRing"]} aria-hidden="true" />
+        <div className={styles["center"]}>
+          <span className={`${styles["phaseIcon"]} ${styles[mood] ?? ""}`} aria-hidden="true" />
+          <span className={styles["centerKicker"]}>{getLiveTableMeta(summary, t)}</span>
           <strong>{getLiveTableTitle(summary, t)}</strong>
         </div>
 
@@ -64,15 +65,15 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
               >
                 <div
                   aria-label={`${t.live.waiting.openSeat}, ${t.live.waiting.seat(seatNumber)}`}
-                  className={`seat liveTableSeat liveTableEmptySeat ${motionStyles["seatVisual"]}`}
+                  className={`${styles["seat"]} ${styles["emptySeat"]} ${motionStyles["seatVisual"]}`}
                   data-live-seat-number={seatNumber}
                   data-live-seat-state="empty"
                 >
-                  <span className="seatNumber">{seatNumber}</span>
-                  <span className="avatar" aria-hidden="true">
+                  <span className={styles["seatNumber"]}>{seatNumber}</span>
+                  <span className={styles["avatar"]} aria-hidden="true">
                     <span>+</span>
                   </span>
-                  <span className="seatLabel">
+                  <span className={styles["seatLabel"]}>
                     <strong>{t.live.waiting.openSeat}</strong>
                     <small>{t.live.waiting.seat(seatNumber)}</small>
                   </span>
@@ -88,11 +89,9 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
               : null;
 
           const seatClassName = [
-            "seat",
-            "liveTableSeat",
-            seatPresentation.state,
-            player.isHost ? "host" : "",
-            player.isCurrent ? "selected" : "",
+            styles["seat"],
+            styles[seatPresentation.state],
+            player.isCurrent ? styles["selected"] : "",
           ]
             .filter(Boolean)
             .join(" ");
@@ -112,6 +111,7 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
                 ].join(", ")}
                 className={`${seatClassName} ${motionStyles["seatVisual"]}`}
                 data-live-player-id={player.id}
+                data-live-current-seat={player.isCurrent ? "" : undefined}
                 data-live-role-id={revealedRole === null ? undefined : player.revealedRoleId}
                 data-live-seat-number={seatNumber}
                 data-live-seat-presentation-state={seatPresentation.state}
@@ -122,21 +122,21 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
                   className={motionStyles["attentionHalo"]}
                   data-live-seat-attention
                 />
-                <span className="seatNumber">{seatNumber}</span>
-                <span className="avatar" aria-hidden="true" data-live-seat-avatar>
+                <span className={styles["seatNumber"]}>{seatNumber}</span>
+                <span className={styles["avatar"]} aria-hidden="true" data-live-seat-avatar>
                   {getPlayerInitial(player.displayName)}
                 </span>
-                <span className="seatLabel">
+                <span className={styles["seatLabel"]}>
                   <strong>{player.displayName}</strong>
                   {revealedRole === null && seatPresentation.visibleLabel !== null ? (
                     <small>{seatPresentation.visibleLabel}</small>
                   ) : null}
                   {revealedRole === null ? null : (
-                    <small className="liveTableRoleReveal">{revealedRole.name}</small>
+                    <small className={styles["roleReveal"]}>{revealedRole.name}</small>
                   )}
                 </span>
                 {revealedRole !== null && seatPresentation.visibleLabel !== null ? (
-                  <span className="liveTableSeatState">{seatPresentation.visibleLabel}</span>
+                  <span className={styles["seatState"]}>{seatPresentation.visibleLabel}</span>
                 ) : null}
               </div>
             </LiveSeatPosition>

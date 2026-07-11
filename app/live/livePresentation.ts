@@ -27,18 +27,6 @@ export function getLiveMood(summary: RoomSummary | null): LiveMood {
   return summary.game?.phase ?? "setup";
 }
 
-export function getLiveGridClassName(summary: RoomSummary | null): string {
-  if (summary === null) {
-    return "liveGrid liveGridSetup";
-  }
-
-  if (summary.status === "waiting") {
-    return "liveGrid livePlayGrid liveGridWaiting";
-  }
-
-  return "liveGrid livePlayGrid";
-}
-
 export function getLivePageTitle(summary: RoomSummary | null, t: Localization): string {
   if (summary === null) {
     return t.live.page.roomSetup;

@@ -485,7 +485,7 @@ export const jaLocalization = {
       send: "送信",
       settings: "設定",
       shareInvite: "招待を共有",
-      showInviteDetails: "招待の詳細を表示",
+      showInviteDetails: "招待を表示",
       startGame: "ゲーム開始",
       switchingRoom: "部屋を切り替え中...",
     },
@@ -693,12 +693,14 @@ export const jaLocalization = {
     },
     setup: {
       createHint: "新しい部屋を作り、ホストとしてゲームを準備します。",
+      createPanelTitle: "ゲームを準備",
       createTitle: "部屋を作る",
       displayName: "表示名",
       guest: "ゲスト",
       host: "ホスト",
       joinHint:
         "6桁コードを貼り付けるか入力してください。全桁が埋まると参加ボタンが有効になります。",
+      joinPanelTitle: "招待コードを入力",
       joinTitle: "コードで参加",
       player: "プレイヤー",
       players: "プレイヤー数",

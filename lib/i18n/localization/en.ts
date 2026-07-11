@@ -492,7 +492,7 @@ export const enLocalization = {
       send: "Send",
       settings: "Settings",
       shareInvite: "Share invite",
-      showInviteDetails: "Show invite details",
+      showInviteDetails: "Show invite",
       startGame: "Start game",
       switchingRoom: "Switching rooms...",
     },
@@ -706,12 +706,14 @@ export const enLocalization = {
     },
     setup: {
       createHint: "Create a new room and prepare the game as host.",
+      createPanelTitle: "Prepare the game",
       createTitle: "Create a room",
       displayName: "Display name",
       guest: "Guest",
       host: "Host",
       joinHint:
         "Paste or type the six-digit code. The join button becomes active once all digits are filled.",
+      joinPanelTitle: "Enter an invite code",
       joinTitle: "Join with code",
       player: "Player",
       players: "Players",

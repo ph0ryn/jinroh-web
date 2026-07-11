@@ -1,0 +1,498 @@
+.shell {
+  --live-layout-gap: 14px;
+  --live-page-padding: clamp(12px, 1.35vw, 18px);
+  --live-safe-top: env(safe-area-inset-top, 0px);
+  --live-safe-right: env(safe-area-inset-right, 0px);
+  --live-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --live-safe-left: env(safe-area-inset-left, 0px);
+  container-type: size;
+  display: grid;
+  gap: var(--live-layout-gap);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  padding: max(var(--live-page-padding), var(--live-safe-top))
+    max(var(--live-page-padding), var(--live-safe-right))
+    max(var(--live-page-padding), var(--live-safe-bottom))
+    max(var(--live-page-padding), var(--live-safe-left));
+}
+
+.entryShell {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.roomShell {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.entryHeader {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 48px;
+  position: relative;
+  z-index: 1;
+}
+
+.entrySurface {
+  align-self: stretch;
+  display: grid;
+  gap: var(--live-layout-gap);
+  grid-template-rows: minmax(0, 1fr);
+  justify-self: center;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.entryGrid {
+  align-content: center;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.entryModeSwitcher {
+  display: none;
+}
+
+.entryModePanel {
+  display: contents;
+}
+
+.entryModeActive {
+  background: rgba(var(--live-accent-rgb), 0.08) !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 -3px 0 var(--live-accent) !important;
+  color: var(--paper-100) !important;
+}
+
+.roomLayout {
+  --live-controls-min-inline: 340px;
+  --live-table-max-size: 720px;
+  --live-table-size: min(
+    100cqb,
+    calc(100cqi - var(--live-controls-min-inline) - var(--live-layout-gap)),
+    var(--live-table-max-size)
+  );
+  --live-layout-mode: tablet-landscape-desktop;
+  container-type: size;
+  display: grid;
+  gap: var(--live-layout-gap);
+  grid-template-columns: var(--live-table-size) minmax(var(--live-controls-min-inline), 1fr);
+  height: 100%;
+  justify-content: center;
+  justify-self: center;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  width: min(100%, 1320px);
+  z-index: 1;
+}
+
+.tableRegion {
+  align-self: center;
+  block-size: var(--live-table-size);
+  container-type: size;
+  display: grid;
+  inline-size: var(--live-table-size);
+  min-height: 0;
+  min-width: 0;
+  overflow: visible;
+  place-items: center;
+}
+
+.controlsRegion {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.controls {
+  --live-controls-gap: 10px;
+  display: grid;
+  gap: var(--live-controls-gap);
+  grid-template-areas:
+    "status"
+    "scroll"
+    "primary"
+    "utilities";
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.controlsStatus,
+.controlsPrimary,
+.controlsUtilities {
+  min-height: 0;
+  min-width: 0;
+}
+
+.controlsStatus {
+  grid-area: status;
+}
+
+.controlsScroll {
+  grid-area: scroll;
+}
+
+.controlsPrimary {
+  grid-area: primary;
+}
+
+.controlsUtilities {
+  grid-area: utilities;
+}
+
+.controlsScroll {
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
+  scrollbar-width: thin;
+}
+
+.controlsPrimary,
+.controlsUtilities {
+  display: grid;
+  gap: 8px;
+}
+
+.controls :global(.livePanel) {
+  max-height: none;
+  overflow: visible;
+}
+
+.controls :global(.liveControlScrollStack) {
+  display: grid;
+  gap: var(--live-controls-gap);
+}
+
+.controlsScroll :global(.liveInviteDetailsPanel) {
+  border-color: rgba(var(--live-accent-rgb), 0.52);
+  box-shadow:
+    inset 3px 0 0 rgba(var(--live-accent-rgb), 0.44),
+    var(--shadow-tight);
+}
+
+@media (orientation: portrait) {
+  .entryModeSwitcher {
+    background: rgba(7, 11, 10, 0.32);
+    border-bottom: 1px solid var(--live-panel-border);
+    display: grid;
+    gap: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0;
+  }
+
+  .entryModePanel {
+    background: linear-gradient(180deg, rgba(19, 21, 16, 0.94), rgba(12, 15, 12, 0.84));
+    border: 1px solid rgba(var(--live-accent-rgb), 0.34);
+    border-radius: 16px;
+    box-shadow:
+      var(--shadow-tight),
+      0 0 42px rgba(var(--live-accent-rgb), 0.04);
+    display: grid;
+    overflow: hidden;
+  }
+
+  .entryModePanel > :global(.liveSetupPanel) {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .entryModeSwitcher button {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 50px;
+    transform: none;
+  }
+
+  .entrySurface[data-live-entry-mode="create"] .entryModePanel > [data-live-entry-panel="join"],
+  .entrySurface[data-live-entry-mode="join"] .entryModePanel > [data-live-entry-panel="create"] {
+    display: none;
+  }
+
+  .entryGrid {
+    align-content: start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .roomLayout {
+    --live-controls-min-block: 340px;
+    --live-layout-mode: tablet-portrait;
+    --live-table-size: min(
+      100cqi,
+      calc(100cqb - var(--live-controls-min-block) - var(--live-layout-gap)),
+      var(--live-table-max-size)
+    );
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--live-table-size) minmax(var(--live-controls-min-block), 1fr);
+  }
+
+  .tableRegion {
+    justify-self: center;
+  }
+
+  .controls :global(.livePanel) {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .controls [data-live-lobby-progress] {
+    gap: 4px;
+    min-height: 0;
+    padding: 6px;
+  }
+
+  .controls [data-live-lobby-progress] > :last-child,
+  .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
+    display: none;
+  }
+
+  .controlsPrimary :global(.liveWaitingActions) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: portrait) and (max-width: 599px) {
+  .shell {
+    --live-layout-gap: clamp(6px, 1.5vw, 10px);
+    --live-page-padding: clamp(6px, 2vw, 12px);
+  }
+
+  .roomLayout {
+    --live-controls-min-block: 280px;
+    --live-layout-mode: phone-portrait;
+  }
+
+  .entrySurface,
+  .entryGrid {
+    gap: 6px;
+  }
+
+  .entryGrid :global(.liveSetupPanelHeader) {
+    padding: 10px 12px 0;
+  }
+
+  .entryGrid :global(.liveSetupPanelBody) {
+    gap: 8px;
+    padding: 10px 12px 12px;
+  }
+
+  .entryGrid :global(.liveSetupProfileCard) {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .entryGrid :global(.liveSetupHint) {
+    font-size: 0.74rem;
+    line-height: 1.3;
+  }
+
+  .controls {
+    --live-controls-gap: 4px;
+  }
+
+  .controls :global(.livePanel) {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .controlsPrimary :global(.liveWaitingActions) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .controls :global(.livePanelHeading) {
+    gap: 6px;
+  }
+
+  .controls :global(.livePanelHeading > span) {
+    font-size: 0.7rem;
+  }
+
+  .controls :global(.livePlayPhaseCard),
+  .controls :global(.liveActionRow) {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .controls :global(.livePlayPhaseCard strong) {
+    font-size: 0.86rem;
+    line-height: 1.2;
+  }
+
+  .controls :global(.livePlayPhaseCard time) {
+    font-size: 1.05rem;
+  }
+
+  .controlsScroll {
+    min-height: 52px;
+  }
+
+  .controls :global(.liveInviteTools) {
+    gap: 4px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px;
+  }
+
+  .controls :global(.liveInviteInlineContent) {
+    display: none;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+    display: none;
+  }
+
+  .controls :global(.liveInviteDisclosure) {
+    background: rgba(var(--live-accent-rgb), 0.14);
+    border-color: rgba(var(--live-accent-rgb), 0.54);
+    display: inline-flex !important;
+    width: 100%;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsUtilities :global(.livePopupActions) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .controlsUtilities {
+    padding-inline-end: 52px;
+  }
+
+  .controlsPrimary :global(.liveActionRow) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (orientation: landscape) and (max-width: 959px) and (max-height: 599px) {
+  .shell {
+    --live-layout-gap: clamp(6px, 1.2vw, 10px);
+    --live-page-padding: clamp(6px, 1.5vw, 12px);
+  }
+
+  .roomLayout {
+    --live-controls-min-inline: 300px;
+    --live-layout-mode: phone-landscape;
+  }
+
+  .controls {
+    --live-controls-gap: 4px;
+  }
+
+  .controls :global(.livePanel) {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .controlsPrimary :global(.liveActionRow) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .controlsPrimary :global(.liveWaitingActions),
+  .controlsUtilities :global(.livePopupActions) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsUtilities :global(.livePopupActions) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .controlsUtilities {
+    padding-inline-end: 52px;
+  }
+
+  .controls :global(.liveInviteTools) {
+    gap: 4px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px;
+  }
+
+  .controls :global(.liveInviteInlineContent) {
+    display: none;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+    display: none;
+  }
+
+  .controls [data-live-lobby-progress] {
+    gap: 4px;
+    min-height: 0;
+    padding: 6px;
+  }
+
+  .controls [data-live-lobby-progress] > :last-child,
+  .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
+    display: none;
+  }
+
+  .controlsScroll {
+    min-height: 52px;
+  }
+
+  .controls :global(.liveInviteDisclosure) {
+    background: rgba(var(--live-accent-rgb), 0.14);
+    border-color: rgba(var(--live-accent-rgb), 0.54);
+    display: inline-flex !important;
+    width: 100%;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 599px) and (max-height: 650px) {
+  .roomLayout {
+    --live-controls-min-block: 250px;
+  }
+
+  .entryGrid :global(.liveSetupProfilePanel .liveSetupProfileCard),
+  .entryGrid :global(.liveSetupProfilePanel .liveSetupHint) {
+    display: none;
+  }
+
+  .entryGrid :global(.liveSetupButtonRow) {
+    padding-inline-end: 50px;
+  }
+}
+
+@media (orientation: landscape) and (min-width: 960px) and (max-height: 599px) {
+  .shell {
+    --live-layout-gap: 8px;
+    --live-page-padding: 8px;
+  }
+
+  .controls {
+    --live-controls-gap: 6px;
+  }
+
+  .controls :global(.livePanel) {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .controls [data-live-lobby-progress] {
+    gap: 4px;
+    min-height: 0;
+    padding: 6px;
+  }
+
+  .controls [data-live-lobby-progress] > :last-child,
+  .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
+    display: none;
+  }
+
+  .controlsScroll {
+    min-height: 52px;
+  }
+}

@@ -37,7 +37,7 @@
     inset 0 0 0 8px rgba(var(--effect-accent-rgb), 0.026);
   display: grid;
   grid-template-rows: auto 1fr auto;
-  height: min(530px, calc(100svh - 48px));
+  height: min(530px, calc(100dvh - 48px));
   justify-items: center;
   max-height: 530px;
   max-width: 330px;
