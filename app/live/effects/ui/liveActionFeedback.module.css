@@ -1,0 +1,79 @@
+.frame {
+  isolation: isolate;
+  position: relative;
+}
+
+.frame[data-live-action-feedback-state="pending"] {
+  border-color: rgba(var(--live-accent-rgb), 0.48);
+}
+
+.motionLayer {
+  border-radius: inherit;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+
+.progress {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--live-accent-rgb), 0.88),
+    rgba(183, 227, 162, 0.92)
+  );
+  bottom: 0;
+  height: 2px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  transform: scaleX(0.12);
+  transform-origin: 0 50%;
+  width: 100%;
+}
+
+.sweep {
+  background: linear-gradient(90deg, transparent, rgba(var(--live-accent-rgb), 0.2), transparent);
+  inset: -20% auto -20% -55%;
+  opacity: 0;
+  position: absolute;
+  transform: skewX(-16deg);
+  width: 46%;
+}
+
+.frame .confirmation {
+  align-items: center;
+  backdrop-filter: blur(7px);
+  background:
+    radial-gradient(circle at 50% 40%, rgba(var(--live-accent-rgb), 0.17), transparent 72%),
+    rgba(7, 11, 10, 0.72);
+  color: var(--live-accent);
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  gap: 8px;
+  inset: 0;
+  justify-content: center;
+  letter-spacing: 0.12em;
+  opacity: 0;
+  position: absolute;
+  text-transform: uppercase;
+  visibility: hidden;
+}
+
+.confirmation .seal {
+  align-items: center;
+  border: 1px solid rgba(var(--live-accent-rgb), 0.72);
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(var(--live-accent-rgb), 0.2);
+  display: inline-flex;
+  font-size: 0.78rem;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.frame [data-live-action-submit-motion] {
+  color: inherit;
+}

@@ -62,10 +62,15 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
   victory cues.
 - Derive cues only from room snapshots after request ordering and stale-response
   checks have accepted them. Realtime messages remain invalidation signals.
-- Diff only public, semantic presentation state for component-local motion.
+- Diff only viewer-visible, semantic presentation state for component-local motion.
   Treat the first snapshot, room or viewer changes, unchanged polling results,
   and updates received while the document is hidden as settled baselines rather
   than effects to replay.
+- Treat action submission as confirmed only when a submitter-private receipt is
+  present in an accepted snapshot. Do not infer personal confirmation from HTTP
+  success, shared action status, or public progress. If the accepted submission
+  already advanced the phase and removed its row, let the phase effect own the
+  transition.
 - Give each effect component one scoped `useGSAP()` timeline and let React remain
   the source of truth for game state and final CSS classes.
 - Separate static placement, animated transform/opacity, and final visual state

@@ -448,6 +448,7 @@ export const enLocalization = {
   },
   live: {
     aria: {
+      actionTarget: (actionName: string) => `Target for ${actionName}`,
       commonPhaseTiming: "Game timing",
       currentPhase: "Current scene",
       invite: "Invite",
@@ -499,6 +500,10 @@ export const enLocalization = {
       title: "Public log",
     },
     effects: {
+      action: {
+        announcement: (actionName: string) => `${actionName} was confirmed.`,
+        confirmed: "Confirmed",
+      },
       death: {
         kicker: "DEATH REPORT",
         message: (playerNames: readonly string[]) => {

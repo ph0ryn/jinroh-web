@@ -3,10 +3,12 @@ import { expect, test } from "playwright/test";
 import { getLocalizedRole } from "@/lib/i18n/localization";
 import { enLocalization } from "@/lib/i18n/localization/en";
 
-import { apiFetch, createStartedRoom, type ApiPlayer } from "./support/api";
-
-import type { PublicAction, RoomSummary } from "@/lib/shared/game";
-import type { APIRequestContext } from "playwright/test";
+import {
+  createStartedRoom,
+  readRoomSummary,
+  submitOpenAction,
+  submitOpenActions,
+} from "./support/api";
 
 test("role, phase, death, and victory effects play once in game order", async ({
   page,
@@ -206,48 +208,3 @@ test("reduced motion keeps the role reveal static and short", async ({ page, req
   await expect(page.locator("[data-live-effect-announcement]")).toBeEmpty();
   await expect(page.getByRole("button", { name: "Reveal role card" })).toBeVisible();
 });
-
-async function readRoomSummary(
-  request: APIRequestContext,
-  roomCode: string,
-  player: ApiPlayer,
-): Promise<RoomSummary> {
-  return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}`, { token: player.token });
-}
-
-async function submitOpenActions(
-  request: APIRequestContext,
-  roomCode: string,
-  players: readonly ApiPlayer[],
-  selectTarget: (action: PublicAction) => string | null = () => null,
-): Promise<void> {
-  for (const player of players) {
-    await submitOpenAction(request, roomCode, player, selectTarget);
-  }
-}
-
-async function submitOpenAction(
-  request: APIRequestContext,
-  roomCode: string,
-  player: ApiPlayer,
-  selectTarget: (action: PublicAction) => string | null = () => null,
-): Promise<void> {
-  const summary = await readRoomSummary(request, roomCode, player);
-  const action = summary.self?.actions.find((candidate) => candidate.status === "open");
-  const revision = summary.game?.revision;
-
-  if (action === undefined || revision === undefined) {
-    throw new Error(`No open action was available for ${player.label}.`);
-  }
-
-  await apiFetch(request, `/api/rooms/${roomCode}/action`, {
-    body: {
-      actionKey: action.key,
-      phaseInstanceId: action.phaseInstanceId,
-      revision,
-      targetPlayerId: selectTarget(action),
-    },
-    method: "POST",
-    token: player.token,
-  });
-}

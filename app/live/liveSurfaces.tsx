@@ -4,7 +4,6 @@ import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState } from "react";
 
 import {
-  getLocalizedActionLabel,
   getLocalizedActionProgressLabel,
   getLocalizedNightConversationLabel,
   getLocalizedRole,
@@ -21,6 +20,7 @@ import {
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
 
+import { LiveActionList } from "./liveActionList";
 import {
   formatDateTime,
   formatPrivateEvent,
@@ -32,7 +32,6 @@ import {
   countJoinedPlayers,
   formatActionProgress,
   formatPhaseCountdown,
-  getActionButtonLabel,
   getActionPanelTitle,
   getControlHint,
   getPlayerInitial,
@@ -41,6 +40,7 @@ import {
 import { useFollowScrollEnd } from "./useFollowScrollEnd";
 import { useModalDialog } from "./useModalDialog";
 
+import type { LiveActionFeedbackCue } from "./effects/ui/liveActionFeedbackModel";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export type LiveToastTone = "error" | "info" | "success" | "warning";
@@ -69,15 +69,17 @@ type LiveWaitingSurfaceProps = {
 };
 
 type LivePlayingSurfaceProps = {
+  readonly actionFeedbackCue: LiveActionFeedbackCue | null;
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
   readonly locale: Locale;
   readonly nightConversationDraft: string;
+  readonly pendingActionKey: string | null;
   readonly selfActions: readonly PublicAction[];
   readonly summary: RoomSummary;
-  readonly targetByActionKey: Record<string, string>;
   readonly t: Localization;
+  readonly onActionFeedbackComplete: (receiptId: string) => void;
   readonly onCloseNightConversation: () => void;
   readonly onClosePublicLog: () => void;
   readonly onNightConversationDraftChange: (value: string) => void;
@@ -85,8 +87,7 @@ type LivePlayingSurfaceProps = {
   readonly onOpenPublicLog: () => void;
   readonly onRevealRole: () => void;
   readonly onSendNightConversation: (conversation: NightConversationView) => void;
-  readonly onSubmitAction: (action: PublicAction) => void;
-  readonly onTargetChange: (actionKey: string, playerId: string) => void;
+  readonly onSubmitAction: (action: PublicAction, targetPlayerId: string | null) => void;
 };
 
 type LiveEndedSurfaceProps = {
@@ -746,15 +747,17 @@ export function LiveWaitingSurface({
 }
 
 export function LivePlayingSurface({
+  actionFeedbackCue,
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
   locale,
   nightConversationDraft,
+  pendingActionKey,
   selfActions,
   summary,
-  targetByActionKey,
   t,
+  onActionFeedbackComplete,
   onCloseNightConversation,
   onClosePublicLog,
   onNightConversationDraftChange,
@@ -763,7 +766,6 @@ export function LivePlayingSurface({
   onRevealRole,
   onSendNightConversation,
   onSubmitAction,
-  onTargetChange,
 }: LivePlayingSurfaceProps) {
   const hasCurrentPlayer = summary.currentPlayerId !== null;
   const actionProgress = summary.game?.actionProgress ?? null;
@@ -851,14 +853,15 @@ export function LivePlayingSurface({
             </div>
 
             <div className="liveNightActionStack">
-              <ActionList
+              <LiveActionList
                 actions={selfActions}
+                feedbackCue={actionFeedbackCue}
                 isBusy={isBusy}
+                pendingActionKey={pendingActionKey}
                 players={summary.players}
-                targetByActionKey={targetByActionKey}
                 t={t}
+                onFeedbackComplete={onActionFeedbackComplete}
                 onSubmitAction={onSubmitAction}
-                onTargetChange={onTargetChange}
               />
             </div>
           </section>
@@ -1095,78 +1098,6 @@ function NightConversationPanel({
           </small>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function ActionList({
-  actions,
-  isBusy,
-  players,
-  t,
-  targetByActionKey,
-  onTargetChange,
-  onSubmitAction,
-}: {
-  readonly actions: readonly PublicAction[];
-  readonly isBusy: boolean;
-  readonly players: readonly PublicPlayer[];
-  readonly t: Localization;
-  readonly targetByActionKey: Record<string, string>;
-  readonly onTargetChange: (actionKey: string, playerId: string) => void;
-  readonly onSubmitAction: (action: PublicAction) => void;
-}) {
-  if (actions.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="liveActionList">
-      {actions.map((action) => {
-        const selectedTarget = targetByActionKey[action.key] ?? action.eligibleTargetIds[0] ?? "";
-        const targetPlayers = players.filter((player) =>
-          action.eligibleTargetIds.includes(player.id),
-        );
-
-        return (
-          <div
-            className={action.status === "submitted" ? "liveActionRow submitted" : "liveActionRow"}
-            key={action.key}
-          >
-            <div>
-              <strong>{getLocalizedActionLabel(t, action.kind)}</strong>
-              {action.status === "submitted" ? <span>{t.game.actionStatus.submitted}</span> : null}
-            </div>
-
-            {action.targetKind === "single_player" && action.status === "open" ? (
-              <select
-                value={selectedTarget}
-                onChange={(event) => onTargetChange(action.key, event.target.value)}
-              >
-                {targetPlayers.map((player) => (
-                  <option key={player.id} value={player.id}>
-                    {player.displayName}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="liveActionState">
-                {action.status === "submitted"
-                  ? t.game.actionStatus.locked
-                  : t.game.actionStatus.noTarget}
-              </span>
-            )}
-
-            <button
-              type="button"
-              onClick={() => onSubmitAction(action)}
-              disabled={isBusy || action.status === "submitted"}
-            >
-              {getActionButtonLabel(action, isBusy, t)}
-            </button>
-          </div>
-        );
-      })}
     </div>
   );
 }

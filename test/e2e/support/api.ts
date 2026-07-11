@@ -1,3 +1,4 @@
+import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 import type { APIRequestContext } from "playwright/test";
 
 export type ApiPlayer = {
@@ -78,6 +79,51 @@ export async function createStartedRoom(
   });
 
   return { players, roomCode: room.code };
+}
+
+export async function readRoomSummary(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+): Promise<RoomSummary> {
+  return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}`, { token: player.token });
+}
+
+export async function submitOpenActions(
+  request: APIRequestContext,
+  roomCode: string,
+  players: readonly ApiPlayer[],
+  selectTarget: (action: PublicAction) => string | null = () => null,
+): Promise<void> {
+  for (const player of players) {
+    await submitOpenAction(request, roomCode, player, selectTarget);
+  }
+}
+
+export async function submitOpenAction(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+  selectTarget: (action: PublicAction) => string | null = () => null,
+): Promise<void> {
+  const summary = await readRoomSummary(request, roomCode, player);
+  const action = summary.self?.actions.find((candidate) => candidate.status === "open");
+  const revision = summary.game?.revision;
+
+  if (action === undefined || revision === undefined) {
+    throw new Error(`No open action was available for ${player.label}.`);
+  }
+
+  await apiFetch(request, `/api/rooms/${roomCode}/action`, {
+    body: {
+      actionKey: action.key,
+      phaseInstanceId: action.phaseInstanceId,
+      revision,
+      targetPlayerId: selectTarget(action),
+    },
+    method: "POST",
+    token: player.token,
+  });
 }
 
 export async function readJsonResponse<Body>(

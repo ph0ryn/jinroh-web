@@ -441,6 +441,7 @@ export const jaLocalization = {
   },
   live: {
     aria: {
+      actionTarget: (actionName: string) => `${actionName}の対象`,
       commonPhaseTiming: "ゲームの制限時間",
       currentPhase: "現在の場面",
       invite: "招待",
@@ -492,6 +493,10 @@ export const jaLocalization = {
       title: "公開ログ",
     },
     effects: {
+      action: {
+        announcement: (actionName: string) => `${actionName}を確定しました。`,
+        confirmed: "確定",
+      },
       death: {
         kicker: "死亡報告",
         message: (playerNames: readonly string[]) => {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/app/i18nProvider";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
+import { useLiveActionFeedback } from "@/app/live/effects/ui/useLiveActionFeedback";
 import { useLiveEffectQueue } from "@/app/live/effects/useLiveEffectQueue";
 import {
   apiFetch,
@@ -64,10 +65,6 @@ import type { ReactNode } from "react";
 
 type IdentityResponse = {
   token: string;
-};
-
-type RememberRoomOptions = {
-  readonly resetActionTargets?: boolean;
 };
 
 type RoomRequestContext = {
@@ -165,8 +162,8 @@ export default function LivePage() {
   const appliedRoomSnapshotRef = useRef<AppliedRoomSnapshot | null>(null);
   const isBusyRef = useRef(false);
   const liveShellRef = useRef<HTMLElement>(null);
-  const [targetByActionKey, setTargetByActionKey] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
+  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [setupPendingAction, setSetupPendingAction] = useState<SetupPendingAction>(null);
   const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
   const {
@@ -176,6 +173,8 @@ export default function LivePage() {
     completeActiveCue,
     replayRole,
   } = useLiveEffectQueue();
+  const { completeCue: completeActionFeedbackCue, cue: actionFeedbackCue } =
+    useLiveActionFeedback(roomSummary);
 
   const dismissToast = useCallback(() => {
     if (toastDismissTimerRef.current !== null) {
@@ -236,6 +235,7 @@ export default function LivePage() {
     appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = null;
+    setPendingActionKey(null);
   }, [clearEffects]);
 
   useEffect(() => {
@@ -334,7 +334,7 @@ export default function LivePage() {
         setRoomCodeInput("");
       }
 
-      setTargetByActionKey({});
+      setPendingActionKey(null);
       setIsNightConversationOpen(false);
       setIsPublicLogOpen(false);
       setNightConversationDraft("");
@@ -406,11 +406,7 @@ export default function LivePage() {
   }
 
   const rememberRoom = useCallback(
-    (
-      nextSummary: RoomSummary,
-      requestContext: RoomRequestContext,
-      options: RememberRoomOptions = {},
-    ) => {
+    (nextSummary: RoomSummary, requestContext: RoomRequestContext) => {
       if (!isRoomRequestContextCurrent(requestContext)) {
         return false;
       }
@@ -452,10 +448,6 @@ export default function LivePage() {
       setRoomSummary(nextSummary);
       setIsCurrentRoomReady(true);
 
-      if (options.resetActionTargets ?? true) {
-        setTargetByActionKey({});
-      }
-
       return true;
     },
     [acceptEffectSummary, displayName, isRoomRequestContextCurrent],
@@ -495,9 +487,7 @@ export default function LivePage() {
 
       ignoredRoomCodeRef.current = null;
       const requestContext = createRoomRequestContext(response.room.code, token);
-      const didRememberRoom = rememberRoom(response.room, requestContext, {
-        resetActionTargets: roomSummaryRef.current?.code !== response.room.code,
-      });
+      const didRememberRoom = rememberRoom(response.room, requestContext);
 
       return didRememberRoom ? response.room : roomSummaryRef.current;
     },
@@ -733,7 +723,7 @@ export default function LivePage() {
         });
 
         if (!isCancelled) {
-          rememberRoom(summary, requestContext, { resetActionTargets: false });
+          rememberRoom(summary, requestContext);
         }
       } catch (error) {
         if (
@@ -1180,30 +1170,37 @@ export default function LivePage() {
     });
   }
 
-  function handleSubmitAction(action: PublicAction): void {
+  function handleSubmitAction(action: PublicAction, targetPlayerId: string | null): void {
     void withBusy(async () => {
-      const token = await ensureIdentityToken();
-      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
-      const expectedRevision = roomSummary?.game?.revision;
-      const targetPlayerId = action.targetKind === "single_player" ? getActionTarget(action) : null;
+      setPendingActionKey(action.key);
 
-      if (expectedRevision === undefined) {
-        throw new Error(t.live.status.actionWindowClosed);
+      try {
+        const token = await ensureIdentityToken();
+        const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+        const expectedRevision = roomSummary?.game?.revision;
+
+        if (expectedRevision === undefined) {
+          throw new Error(t.live.status.actionWindowClosed);
+        }
+
+        const requestContext = createRoomRequestContext(roomCode, token);
+        const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
+          body: {
+            actionKey: action.key,
+            phaseInstanceId: action.phaseInstanceId,
+            revision: expectedRevision,
+            targetPlayerId,
+          },
+          method: "POST",
+          token,
+        });
+
+        rememberRoom(summary, requestContext);
+      } finally {
+        setPendingActionKey((currentActionKey) =>
+          currentActionKey === action.key ? null : currentActionKey,
+        );
       }
-
-      const requestContext = createRoomRequestContext(roomCode, token);
-      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
-        body: {
-          actionKey: action.key,
-          phaseInstanceId: action.phaseInstanceId,
-          revision: expectedRevision,
-          targetPlayerId,
-        },
-        method: "POST",
-        token,
-      });
-
-      rememberRoom(summary, requestContext);
     });
   }
 
@@ -1230,7 +1227,7 @@ export default function LivePage() {
       });
 
       setNightConversationDraft("");
-      rememberRoom(summary, requestContext, { resetActionTargets: false });
+      rememberRoom(summary, requestContext);
     });
   }
 
@@ -1283,10 +1280,6 @@ export default function LivePage() {
     }
 
     showToast(t.live.invite.shareFailed, "error", TOAST_IMPORTANT_DURATION_MS);
-  }
-
-  function getActionTarget(action: PublicAction): string {
-    return targetByActionKey[action.key] ?? action.eligibleTargetIds[0] ?? "";
   }
 
   const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
@@ -1348,15 +1341,17 @@ export default function LivePage() {
   } else if (roomSummary !== null && roomBoundSurfaceStatus === "playing") {
     roomBoundSurface = (
       <LivePlayingSurface
+        actionFeedbackCue={actionFeedbackCue}
         isBusy={isBusy}
         isNightConversationOpen={isNightConversationOpen}
         isPublicLogOpen={isPublicLogOpen}
         nightConversationDraft={nightConversationDraft}
+        pendingActionKey={pendingActionKey}
         selfActions={selfActions}
         summary={roomSummary}
-        targetByActionKey={targetByActionKey}
         locale={locale}
         t={t}
+        onActionFeedbackComplete={completeActionFeedbackCue}
         onCloseNightConversation={() => setIsNightConversationOpen(false)}
         onClosePublicLog={() => setIsPublicLogOpen(false)}
         onNightConversationDraftChange={setNightConversationDraft}
@@ -1365,9 +1360,6 @@ export default function LivePage() {
         onRevealRole={replayRole}
         onSendNightConversation={handleSendNightConversation}
         onSubmitAction={handleSubmitAction}
-        onTargetChange={(actionKey, playerId) =>
-          setTargetByActionKey((current) => ({ ...current, [actionKey]: playerId }))
-        }
       />
     );
   } else if (roomSummary !== null && roomBoundSurfaceStatus === "ended") {

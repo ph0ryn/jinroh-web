@@ -189,14 +189,14 @@ export function countJoinedPlayers(summary: RoomSummary): number {
 
 export function getActionButtonLabel(
   action: PublicAction,
-  isBusy: boolean,
+  isSubmitting: boolean,
   t: Localization,
 ): string {
   if (action.status === "submitted") {
     return t.game.actions.button.submitted;
   }
 
-  if (isBusy) {
+  if (isSubmitting) {
     return t.game.actions.button.submitting;
   }
 
