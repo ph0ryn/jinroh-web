@@ -392,7 +392,7 @@ describe("game engine", () => {
       "vote_resolved",
       "phase_changed",
     ]);
-    expect(voteEvent?.payload).toMatchObject({ executionCandidatePlayerId: "2" });
+    expect(voteEvent?.payload).toMatchObject({ dayNumber: 1, executionCandidatePlayerId: "2" });
     expect(voteEvent?.payload["acceptedVotes"]).toBeUndefined();
     expect(phaseEvent?.payload).toEqual({ phase: "execution" });
   });

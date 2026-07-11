@@ -10,7 +10,7 @@ import {
   submitOpenActions,
 } from "./support/api";
 
-test("role, phase, death, and victory effects play once in game order", async ({
+test("role, phase, vote, death, and victory effects play once in game order", async ({
   page,
   request,
 }) => {
@@ -52,8 +52,11 @@ test("role, phase, death, and victory effects play once in game order", async ({
   const werewolfIndex = playerSummaries.findIndex((summary) => summary.self?.roleId === "werewolf");
   const werewolf = players[werewolfIndex];
   const werewolfPlayerId = playerSummaries[werewolfIndex]?.self?.playerId;
+  const otherPlayerId = playerSummaries.find(
+    (summary) => summary.self?.playerId !== werewolfPlayerId,
+  )?.self?.playerId;
 
-  if (werewolf === undefined || werewolfPlayerId === undefined) {
+  if (werewolf === undefined || werewolfPlayerId === undefined || otherPlayerId === undefined) {
     throw new Error("Effect test could not identify the werewolf.");
   }
 
@@ -69,11 +72,34 @@ test("role, phase, death, and victory effects play once in game order", async ({
   });
   await expect(page.locator('[data-live-effect="phase"]')).toHaveCount(0, { timeout: 6_000 });
 
-  await submitOpenActions(request, roomCode, players, (action) =>
-    action.eligibleTargetIds.includes(werewolfPlayerId)
-      ? werewolfPlayerId
-      : (action.eligibleTargetIds[0] ?? null),
+  let voteSubmissionIndex = 0;
+
+  await submitOpenActions(request, roomCode, players, () => {
+    const targetId = voteSubmissionIndex < 2 ? werewolfPlayerId : otherPlayerId;
+
+    voteSubmissionIndex += 1;
+    return targetId;
+  });
+  const voteEffect = page.locator('[data-live-effect="vote"]');
+
+  await expect(voteEffect).toBeVisible({ timeout: 8_000 });
+  await expect(voteEffect).toHaveAttribute("data-vote-outcome", "candidate");
+  await expect(voteEffect.getByText("SEALED BALLOTS")).toHaveCount(2);
+  await expect(voteEffect.locator('[data-vote-row-result="candidate"]')).toContainText("2");
+  await page.waitForTimeout(1_100);
+  const meterScales = await voteEffect.locator("[data-effect-vote-meter]").evaluateAll((meters) =>
+    meters
+      .map((meter) => {
+        const trackWidth = meter.parentElement?.getBoundingClientRect().width ?? 0;
+
+        return trackWidth === 0 ? 0 : meter.getBoundingClientRect().width / trackWidth;
+      })
+      .toSorted((left, right) => left - right),
   );
+
+  expect(meterScales[0]).toBeCloseTo(0.5, 1);
+  expect(meterScales[1]).toBeCloseTo(1, 1);
+  await expect(voteEffect).toHaveCount(0, { timeout: 6_000 });
   await expect(page.locator('[data-live-effect="phase"][data-phase="execution"]')).toBeVisible({
     timeout: 8_000,
   });
@@ -207,4 +233,178 @@ test("reduced motion keeps the role reveal static and short", async ({ page, req
   await expect(roleEffect).toHaveCount(0, { timeout: 3_000 });
   await expect(page.locator("[data-live-effect-announcement]")).toBeEmpty();
   await expect(page.getByRole("button", { name: "Reveal role card" })).toBeVisible();
+});
+
+test("the vote ledger reveals voter targets, ties, and a mobile reduced-motion result", async ({
+  page,
+  request,
+}) => {
+  const { players, roomCode } = await createStartedRoom(
+    request,
+    ["Aster Longname", "Birch Longname", "Cedar Longname", "Dahlia Longname"],
+    { voteResultVisibility: "voter_to_target" },
+  );
+  const host = players[0];
+
+  if (host === undefined) {
+    throw new Error("Vote ledger test host was not created.");
+  }
+
+  await submitOpenActions(request, roomCode, players);
+  await submitOpenActions(request, roomCode, players);
+
+  const votingSummaries = await Promise.all(
+    players.map((player) => readRoomSummary(request, roomCode, player)),
+  );
+  const firstTargetId = votingSummaries[0]?.self?.playerId;
+  const secondTargetId = votingSummaries[1]?.self?.playerId;
+
+  if (firstTargetId === undefined || secondTargetId === undefined) {
+    throw new Error("Vote ledger test targets were not available.");
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ height: 812, width: 375 });
+  await page.addInitScript(
+    ({ identityToken }) => {
+      window.localStorage.setItem("jinrohWeb.identityToken", identityToken);
+      window.localStorage.setItem("jinrohWeb.locale", "en");
+    },
+    { identityToken: host.token },
+  );
+  await page.goto("/live");
+  await expect(page.locator('[data-live-effect="role"]')).toHaveCount(0, { timeout: 3_000 });
+
+  let voteIndex = 0;
+
+  await submitOpenActions(request, roomCode, players, () => {
+    const targetId = voteIndex % 2 === 0 ? firstTargetId : secondTargetId;
+
+    voteIndex += 1;
+    return targetId;
+  });
+
+  const voteEffect = page.locator('[data-live-effect="vote"]');
+
+  await expect(voteEffect).toBeVisible({ timeout: 8_000 });
+  await expect(voteEffect).toHaveAttribute("data-vote-outcome", "tie");
+  await expect(voteEffect.locator('[data-vote-row-result="tied"]')).toHaveCount(2);
+  const rowText = await voteEffect.locator("[data-effect-vote-row]").allTextContents();
+  const metersAreHidden = await voteEffect
+    .locator("[data-effect-vote-meter]")
+    .evaluateAll((meters) => meters.every((meter) => meter.getClientRects().length === 0));
+
+  expect(
+    rowText.some((text) => text.includes("Aster Longname") && text.includes("Cedar Longname")),
+  ).toBe(true);
+  expect(
+    rowText.some((text) => text.includes("Birch Longname") && text.includes("Dahlia Longname")),
+  ).toBe(true);
+  expect(metersAreHidden).toBe(true);
+
+  const panelLayout = await voteEffect.locator("[data-effect-vote-panel]").evaluate((panel) => {
+    const bounds = panel.getBoundingClientRect();
+
+    return {
+      bottom: bounds.bottom,
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.top,
+      transform: window.getComputedStyle(panel).transform,
+    };
+  });
+
+  expect(panelLayout.top).toBeGreaterThanOrEqual(0);
+  expect(panelLayout.left).toBeGreaterThanOrEqual(0);
+  expect(panelLayout.right).toBeLessThanOrEqual(375);
+  expect(panelLayout.bottom).toBeLessThanOrEqual(812);
+  expect(panelLayout.transform).toBe("none");
+  await expect(voteEffect).toHaveCount(0, { timeout: 3_000 });
+  await expect(page.locator('[data-live-effect="phase"][data-phase="night"]')).toBeVisible({
+    timeout: 3_000,
+  });
+});
+
+test("the vote ledger keeps a ten-target tally visible in compact landscape layout", async ({
+  page,
+  request,
+}) => {
+  const displayNames = Array.from({ length: 10 }, (_, index) => `Player ${index + 1}`);
+  const { players, roomCode } = await createStartedRoom(request, displayNames);
+  const host = players[0];
+
+  if (host === undefined) {
+    throw new Error("Ten-target vote ledger host was not created.");
+  }
+
+  await submitOpenActions(request, roomCode, players);
+  await submitOpenActions(request, roomCode, players);
+
+  const votingSummaries = await Promise.all(
+    players.map((player) => readRoomSummary(request, roomCode, player)),
+  );
+  const targetPlayerIds = votingSummaries.flatMap((summary) =>
+    summary.self?.playerId === undefined ? [] : [summary.self.playerId],
+  );
+
+  if (targetPlayerIds.length !== players.length) {
+    throw new Error("Ten-target vote ledger player IDs were not available.");
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ height: 390, width: 844 });
+  await page.addInitScript(
+    ({ identityToken }) => {
+      window.localStorage.setItem("jinrohWeb.identityToken", identityToken);
+      window.localStorage.setItem("jinrohWeb.locale", "en");
+    },
+    { identityToken: host.token },
+  );
+  await page.goto("/live");
+  await expect(page.locator('[data-live-effect="role"]')).toHaveCount(0, { timeout: 3_000 });
+
+  let voteIndex = 0;
+
+  await submitOpenActions(request, roomCode, players, () => {
+    const targetPlayerId = targetPlayerIds[voteIndex] ?? null;
+
+    voteIndex += 1;
+    return targetPlayerId;
+  });
+
+  const voteEffect = page.locator('[data-live-effect="vote"]');
+
+  await voteEffect.waitFor({ state: "visible", timeout: 8_000 });
+  const layout = await voteEffect.evaluate((root) => {
+    const panel = root.querySelector<HTMLElement>("[data-effect-vote-panel]");
+    const rows = root.querySelector<HTMLElement>("[data-effect-vote-rows]");
+    const footer = root.querySelector<HTMLElement>("[data-effect-vote-footer]");
+    const rowElements = [...root.querySelectorAll<HTMLElement>("[data-effect-vote-row]")];
+    const panelBounds = panel?.getBoundingClientRect();
+    const footerBounds = footer?.getBoundingClientRect();
+    const lastRowBottom = Math.max(
+      0,
+      ...rowElements.map((row) => row.getBoundingClientRect().bottom),
+    );
+
+    return {
+      compact: rows?.dataset["compact"] ?? null,
+      footerTop: footerBounds?.top ?? 0,
+      outcome: root.getAttribute("data-vote-outcome"),
+      panelBottom: panelBounds?.bottom ?? Number.POSITIVE_INFINITY,
+      panelTop: panelBounds?.top ?? Number.NEGATIVE_INFINITY,
+      rowCount: rowElements.length,
+      rowsClientHeight: rows?.clientHeight ?? 0,
+      rowsScrollHeight: rows?.scrollHeight ?? Number.POSITIVE_INFINITY,
+      lastRowBottom,
+    };
+  });
+
+  expect(layout.outcome).toBe("tie");
+  expect(layout.compact).toBe("true");
+  expect(layout.rowCount).toBe(10);
+  expect(layout.panelTop).toBeGreaterThanOrEqual(0);
+  expect(layout.panelBottom).toBeLessThanOrEqual(390);
+  expect(layout.rowsScrollHeight).toBeLessThanOrEqual(layout.rowsClientHeight);
+  expect(layout.lastRowBottom).toBeLessThanOrEqual(layout.footerTop);
 });

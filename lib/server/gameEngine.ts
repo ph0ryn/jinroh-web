@@ -967,6 +967,7 @@ function toVoteResolvedPayload(
   executionCandidatePlayerId?: string,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
+    dayNumber: input.dayNumber,
     voteCountsByTarget: Object.fromEntries(voteCounts),
   };
 

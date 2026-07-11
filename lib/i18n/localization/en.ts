@@ -542,6 +542,37 @@ export const enLocalization = {
         kicker: "Your role",
         reveal: "Reveal role card",
       },
+      vote: {
+        announcement: {
+          candidate: (playerName: string, voteCount: number) =>
+            `${playerName} received the most votes with ${voteCount}.`,
+          noVotes: "Voting ended without any valid votes.",
+          tie: (voteCount: number) =>
+            `Voting ended in a tie at ${voteCount} vote${voteCount === 1 ? "" : "s"}.`,
+        },
+        ballotDetails: {
+          noVotes: "NO VOTES",
+          sealed: "SEALED BALLOTS",
+        },
+        header: (dayNumber: number) => `OFFICIAL COUNT · DAY ${String(dayNumber).padStart(2, "0")}`,
+        outcome: {
+          candidateBody: (voteCount: number) =>
+            `${voteCount} vote${voteCount === 1 ? "" : "s"} · highest total`,
+          candidateKicker: "EXECUTION CANDIDATE",
+          noCandidate: "No execution candidate",
+          noVotesBody: "No valid ballots were recorded",
+          noVotesKicker: "NO VALID VOTES",
+          tieBody: (voteCount: number) =>
+            `Highest total tied at ${voteCount} vote${voteCount === 1 ? "" : "s"}`,
+          tieKicker: "TIED VOTE",
+        },
+        seal: {
+          candidate: "VERDICT",
+          noVotes: "VOID",
+          tie: "TIED",
+        },
+        title: "Vote results",
+      },
       victory: {
         announcement: (title: string, result: string | null) =>
           result === null ? title : `${title}. Your result: ${result}`,

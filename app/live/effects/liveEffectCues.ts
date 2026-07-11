@@ -25,6 +25,33 @@ export type LiveDeathEffectCue = LiveEffectCueBase & {
   readonly playerIds: readonly string[];
 };
 
+export type LiveVoteEffectRow = {
+  readonly count: number;
+  readonly playerId: string;
+  readonly voterPlayerIds: readonly string[] | null;
+};
+
+export type LiveVoteEffectCue = LiveEffectCueBase & {
+  readonly dayNumber: number;
+  readonly kind: "vote";
+  readonly outcome:
+    | {
+        readonly kind: "candidate";
+        readonly playerId: string;
+        readonly voteCount: number;
+      }
+    | {
+        readonly kind: "no_votes";
+      }
+    | {
+        readonly kind: "tie";
+        readonly playerIds: readonly string[];
+        readonly voteCount: number;
+      };
+  readonly rows: readonly LiveVoteEffectRow[];
+  readonly visibility: "count_only" | "voter_to_target";
+};
+
 export type LiveVictoryEffectCue = LiveEffectCueBase & {
   readonly kind: "victory";
   readonly playerResult: PlayerResult | null;
@@ -35,6 +62,7 @@ export type LiveEffectCue =
   | LiveRoleEffectCue
   | LivePhaseEffectCue
   | LiveDeathEffectCue
+  | LiveVoteEffectCue
   | LiveVictoryEffectCue;
 
 type PublicEvent = NonNullable<RoomSummary["game"]>["events"][number];
@@ -54,13 +82,203 @@ export function projectLiveEffectCues(
 
   const newEvents = getNewEvents(previous, next);
   const roleCue = projectRoleCue(previous, next, newEvents);
+  const voteCues = projectVoteCues(next, newEvents);
   const deathCue = projectDeathCue(next, newEvents);
   const phaseCue = projectPhaseCue(previous, next, newEvents);
   const victoryCue = projectVictoryCue(previous, next, newEvents);
 
-  return [roleCue, deathCue, phaseCue, victoryCue].filter(
+  return [roleCue, ...voteCues, deathCue, phaseCue, victoryCue].filter(
     (cue): cue is LiveEffectCue => cue !== null,
   );
+}
+
+function projectVoteCues(
+  next: RoomSummary,
+  newEvents: readonly PublicEvent[],
+): readonly LiveVoteEffectCue[] {
+  return newEvents
+    .filter((event) => event.kind === "vote_resolved")
+    .flatMap((event): LiveVoteEffectCue[] => {
+      const cue = makeVoteCue(next, event);
+
+      return cue === null ? [] : [cue];
+    });
+}
+
+function makeVoteCue(next: RoomSummary, voteResolvedEvent: PublicEvent): LiveVoteEffectCue | null {
+  const publicPlayerIds = new Set(next.players.map((player) => player.id));
+  const counts = parseVoteCounts(voteResolvedEvent.payload["voteCountsByTarget"], publicPlayerIds);
+
+  if (counts === null) {
+    return null;
+  }
+
+  const acceptedVotes = parseAcceptedVotes(
+    voteResolvedEvent.payload["acceptedVotes"],
+    publicPlayerIds,
+    counts,
+  );
+  const playerOrder = new Map(next.players.map((player, index) => [player.id, index]));
+
+  const sortedCounts = [...counts.entries()].toSorted(
+    ([leftPlayerId, leftCount], [rightPlayerId, rightCount]) =>
+      rightCount - leftCount ||
+      (playerOrder.get(leftPlayerId) ?? Number.MAX_SAFE_INTEGER) -
+        (playerOrder.get(rightPlayerId) ?? Number.MAX_SAFE_INTEGER),
+  );
+  const topVoteCount = sortedCounts[0]?.[1] ?? 0;
+  const topPlayerIds = sortedCounts
+    .filter(([, count]) => count === topVoteCount)
+    .map(([playerId]) => playerId);
+  const candidatePlayerId = voteResolvedEvent.payload["executionCandidatePlayerId"];
+  const outcome = getVoteOutcome(
+    "executionCandidatePlayerId" in voteResolvedEvent.payload,
+    candidatePlayerId,
+    counts,
+    publicPlayerIds,
+    sortedCounts.length,
+    topPlayerIds,
+    topVoteCount,
+  );
+
+  if (outcome === null) {
+    return null;
+  }
+
+  const rows = sortedCounts.map(([playerId, count]) => ({
+    count,
+    playerId,
+    voterPlayerIds:
+      acceptedVotes === null
+        ? null
+        : acceptedVotes
+            .filter((vote) => vote.targetPlayerId === playerId)
+            .map((vote) => vote.voterPlayerId),
+  }));
+
+  return {
+    dayNumber:
+      parsePositiveInteger(voteResolvedEvent.payload["dayNumber"]) ?? next.game?.dayNumber ?? 0,
+    eventIds: [voteResolvedEvent.id],
+    id: `${next.code}:vote:${voteResolvedEvent.id}`,
+    kind: "vote",
+    outcome,
+    roomCode: next.code,
+    rows,
+    visibility: acceptedVotes === null ? "count_only" : "voter_to_target",
+  };
+}
+
+function getVoteOutcome(
+  hasCandidatePlayerId: boolean,
+  candidatePlayerId: unknown,
+  counts: ReadonlyMap<string, number>,
+  publicPlayerIds: ReadonlySet<string>,
+  rowCount: number,
+  topPlayerIds: readonly string[],
+  topVoteCount: number,
+): LiveVoteEffectCue["outcome"] | null {
+  if (hasCandidatePlayerId) {
+    if (typeof candidatePlayerId !== "string" || !publicPlayerIds.has(candidatePlayerId)) {
+      return null;
+    }
+
+    const voteCount = counts.get(candidatePlayerId);
+
+    return voteCount !== undefined && voteCount === topVoteCount && topPlayerIds.length === 1
+      ? { kind: "candidate", playerId: candidatePlayerId, voteCount }
+      : null;
+  }
+
+  if (rowCount === 0) {
+    return { kind: "no_votes" };
+  }
+
+  return topPlayerIds.length > 1
+    ? { kind: "tie", playerIds: topPlayerIds, voteCount: topVoteCount }
+    : null;
+}
+
+function parseVoteCounts(
+  value: unknown,
+  publicPlayerIds: ReadonlySet<string>,
+): Map<string, number> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const counts = new Map<string, number>();
+
+  for (const [playerId, count] of Object.entries(value)) {
+    if (
+      !publicPlayerIds.has(playerId) ||
+      typeof count !== "number" ||
+      !Number.isSafeInteger(count) ||
+      count <= 0
+    ) {
+      return null;
+    }
+
+    counts.set(playerId, count);
+  }
+
+  return counts;
+}
+
+function parseAcceptedVotes(
+  value: unknown,
+  publicPlayerIds: ReadonlySet<string>,
+  counts: ReadonlyMap<string, number>,
+): readonly { readonly targetPlayerId: string; readonly voterPlayerId: string }[] | null {
+  if (value === undefined || !Array.isArray(value)) {
+    return null;
+  }
+
+  const votes = value.flatMap((vote) => {
+    if (!isRecord(vote)) {
+      return [];
+    }
+
+    const targetPlayerId = vote["targetPlayerId"];
+    const voterPlayerId = vote["voterPlayerId"];
+
+    return typeof targetPlayerId === "string" &&
+      typeof voterPlayerId === "string" &&
+      publicPlayerIds.has(targetPlayerId) &&
+      publicPlayerIds.has(voterPlayerId)
+      ? [{ targetPlayerId, voterPlayerId }]
+      : [];
+  });
+
+  if (votes.length !== value.length) {
+    return null;
+  }
+
+  const seenVoterPlayerIds = new Set<string>();
+  const acceptedCounts = new Map<string, number>();
+
+  for (const vote of votes) {
+    if (seenVoterPlayerIds.has(vote.voterPlayerId)) {
+      return null;
+    }
+
+    seenVoterPlayerIds.add(vote.voterPlayerId);
+    acceptedCounts.set(vote.targetPlayerId, (acceptedCounts.get(vote.targetPlayerId) ?? 0) + 1);
+  }
+
+  const matchesCounts =
+    acceptedCounts.size === counts.size &&
+    [...counts].every(([playerId, count]) => acceptedCounts.get(playerId) === count);
+
+  return matchesCounts ? votes : null;
+}
+
+function parsePositiveInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function isSameEffectSession(

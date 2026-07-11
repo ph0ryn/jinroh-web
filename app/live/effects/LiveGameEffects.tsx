@@ -9,6 +9,7 @@ import { DeathSoulAshEffect } from "./DeathSoulAshEffect";
 import { PhaseChapterEffect } from "./PhaseChapterEffect";
 import { RoleTarotFlipEffect } from "./RoleTarotFlipEffect";
 import { VictoryCrestAscendEffect } from "./VictoryCrestAscendEffect";
+import { VoteVerdictLedgerEffect } from "./VoteVerdictLedgerEffect";
 
 import type { LiveEffectCue } from "./liveEffectCues";
 import type { Localization } from "@/lib/i18n/localization";
@@ -80,6 +81,18 @@ export function LiveGameEffects({
         );
         break;
       }
+      case "vote": {
+        effect = (
+          <VoteVerdictLedgerEffect
+            cue={activeCue}
+            key={activeCue.id}
+            onComplete={handleComplete}
+            players={summary.players}
+            t={t}
+          />
+        );
+        break;
+      }
       case "victory": {
         const winner = formatWinner(activeCue.winnerTeam, t);
 
@@ -122,12 +135,37 @@ function getEffectAnnouncement(cue: LiveEffectCue, summary: RoomSummary, t: Loca
       return getPhaseEffectTitle(cue.phase, t);
     case "death":
       return getDeathMessage(cue.playerIds, summary, t);
+    case "vote":
+      return getVoteAnnouncement(cue, summary, t);
     case "victory": {
       const title = t.live.effects.victory.title(formatWinner(cue.winnerTeam, t));
       const playerResult = getPlayerResult(cue.playerResult, t);
 
       return t.live.effects.victory.announcement(title, playerResult);
     }
+  }
+}
+
+function getVoteAnnouncement(
+  cue: Extract<LiveEffectCue, { readonly kind: "vote" }>,
+  summary: RoomSummary,
+  t: Localization,
+): string {
+  const outcome = cue.outcome;
+
+  switch (outcome.kind) {
+    case "candidate": {
+      const player = summary.players.find((candidate) => candidate.id === outcome.playerId);
+
+      return t.live.effects.vote.announcement.candidate(
+        player?.displayName ?? t.game.seatStatus.player,
+        outcome.voteCount,
+      );
+    }
+    case "no_votes":
+      return t.live.effects.vote.announcement.noVotes;
+    case "tie":
+      return t.live.effects.vote.announcement.tie(outcome.voteCount);
   }
 }
 

@@ -528,6 +528,34 @@ export const jaLocalization = {
         kicker: "あなたの役職",
         reveal: "役職カードを確認",
       },
+      vote: {
+        announcement: {
+          candidate: (playerName: string, voteCount: number) =>
+            `${playerName}が${voteCount}票で最多票となりました。`,
+          noVotes: "有効な投票がないため、処刑候補は決まりませんでした。",
+          tie: (voteCount: number) => `${voteCount}票で同票となり、処刑候補は決まりませんでした。`,
+        },
+        ballotDetails: {
+          noVotes: "得票なし",
+          sealed: "投票先は非公開",
+        },
+        header: (dayNumber: number) => `公式集計 · DAY ${String(dayNumber).padStart(2, "0")}`,
+        outcome: {
+          candidateBody: (voteCount: number) => `${voteCount}票で最多票`,
+          candidateKicker: "処刑候補",
+          noCandidate: "処刑候補なし",
+          noVotesBody: "有効な投票がありません",
+          noVotesKicker: "有効票なし",
+          tieBody: (voteCount: number) => `最多票が${voteCount}票で並びました`,
+          tieKicker: "同票",
+        },
+        seal: {
+          candidate: "判決",
+          noVotes: "無効",
+          tie: "同票",
+        },
+        title: "投票結果",
+      },
       victory: {
         announcement: (title: string, result: string | null) =>
           result === null ? title : `${title}。あなたの結果：${result}`,

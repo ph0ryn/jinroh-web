@@ -45,7 +45,12 @@ export function reconcileLiveEffectQueueForSummary(
   pendingCues: readonly LiveEffectCue[],
   summary: RoomSummary,
   hasIncomingAutomaticCue: boolean,
+  isDocumentVisible = true,
 ): ReconciledLiveEffectQueue {
+  if (!isDocumentVisible) {
+    return { activeCue: null, pendingCues: [] };
+  }
+
   let retainedPendingCues = pendingCues.filter(
     (pendingCue) => pendingCue.kind !== "phase" || doesPhaseCueMatchSummary(pendingCue, summary),
   );
@@ -111,6 +116,24 @@ export function useLiveEffectQueue(): LiveEffectQueue {
       }
 
       const previous = changedEffectSession ? null : acceptedSummary;
+
+      if (document.visibilityState !== "visible") {
+        const settledQueue = reconcileLiveEffectQueueForSummary(
+          activeCueRef.current,
+          queuedCuesRef.current,
+          summary,
+          false,
+          false,
+        );
+
+        acceptedSummaryRef.current = summary;
+        activeCueRef.current = settledQueue.activeCue;
+        queuedCuesRef.current = [...settledQueue.pendingCues];
+        summary.game?.events.forEach((event) => seenEventIdsRef.current.add(event.id));
+        setActiveCue(settledQueue.activeCue);
+        return;
+      }
+
       const projectedCues = projectLiveEffectCues(previous, summary);
       const incomingAutomaticCues: LiveEffectCue[] = [];
 

@@ -194,6 +194,193 @@ describe("projectLiveEffectCues", () => {
     ]);
   });
 
+  it("projects a count-only verdict before the execution phase", () => {
+    const previous = createSummary({
+      dayNumber: 1,
+      phase: "voting",
+      roleId: "villager",
+      status: "playing",
+    });
+    const next = createSummary({
+      dayNumber: 1,
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-vote", "vote_resolved", {
+          executionCandidatePlayerId: BOB.id,
+          voteCountsByTarget: { [ALICE.id]: 1, [BOB.id]: 2 },
+        }),
+        createEvent("event-execution", "phase_changed", { phase: "execution" }),
+      ],
+      phase: "execution",
+      phaseInstanceId: "phase-execution-1",
+      roleId: "villager",
+      snapshotRevision: 2,
+      status: "playing",
+    });
+    const cues = projectLiveEffectCues(previous, next);
+
+    expect(cues.map((cue) => cue.kind)).toEqual(["vote", "phase"]);
+    expect(cues[0]).toEqual({
+      dayNumber: 1,
+      eventIds: ["event-vote"],
+      id: "123456:vote:event-vote",
+      kind: "vote",
+      outcome: { kind: "candidate", playerId: BOB.id, voteCount: 2 },
+      roomCode: "123456",
+      rows: [
+        { count: 2, playerId: BOB.id, voterPlayerIds: null },
+        { count: 1, playerId: ALICE.id, voterPlayerIds: null },
+      ],
+      visibility: "count_only",
+    });
+  });
+
+  it("freezes voter-to-target details and a tied outcome from the public event", () => {
+    const previous = createSummary({
+      dayNumber: 1,
+      phase: "voting",
+      roleId: "villager",
+      status: "playing",
+    });
+    const next = createSummary({
+      dayNumber: 1,
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-vote", "vote_resolved", {
+          acceptedVotes: [
+            { targetPlayerId: BOB.id, voterPlayerId: ALICE.id },
+            { targetPlayerId: ALICE.id, voterPlayerId: BOB.id },
+          ],
+          voteCountsByTarget: { [ALICE.id]: 1, [BOB.id]: 1 },
+        }),
+        createEvent("event-night", "phase_changed", { phase: "night" }),
+      ],
+      nightNumber: 2,
+      phase: "night",
+      phaseInstanceId: "phase-night-2",
+      roleId: "villager",
+      snapshotRevision: 2,
+      status: "playing",
+    });
+    const cues = projectLiveEffectCues(previous, next);
+
+    expect(cues.map((cue) => cue.kind)).toEqual(["vote", "phase"]);
+    expect(cues[0]).toMatchObject({
+      outcome: { kind: "tie", playerIds: [ALICE.id, BOB.id], voteCount: 1 },
+      rows: [
+        { count: 1, playerId: ALICE.id, voterPlayerIds: [BOB.id] },
+        { count: 1, playerId: BOB.id, voterPlayerIds: [ALICE.id] },
+      ],
+      visibility: "voter_to_target",
+    });
+  });
+
+  it("falls back to count-only when voter details do not match the official counts", () => {
+    const previous = createSummary({ phase: "voting", roleId: "villager", status: "playing" });
+    const next = createSummary({
+      dayNumber: 2,
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-vote", "vote_resolved", {
+          acceptedVotes: [],
+          dayNumber: 1,
+          executionCandidatePlayerId: BOB.id,
+          voteCountsByTarget: { [BOB.id]: 2 },
+        }),
+      ],
+      phase: "execution",
+      roleId: "villager",
+      snapshotRevision: 2,
+      status: "playing",
+    });
+    const voteCue = projectLiveEffectCues(previous, next).find((cue) => cue.kind === "vote");
+
+    expect(voteCue).toMatchObject({
+      dayNumber: 1,
+      rows: [{ count: 2, playerId: BOB.id, voterPlayerIds: null }],
+      visibility: "count_only",
+    });
+  });
+
+  it("preserves every newly accepted verdict event instead of coalescing results", () => {
+    const previous = createSummary({ phase: "voting", roleId: "villager", status: "playing" });
+    const next = createSummary({
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-vote-one", "vote_resolved", {
+          dayNumber: 1,
+          executionCandidatePlayerId: BOB.id,
+          voteCountsByTarget: { [BOB.id]: 2 },
+        }),
+        createEvent("event-vote-two", "vote_resolved", {
+          dayNumber: 2,
+          voteCountsByTarget: { [ALICE.id]: 1, [BOB.id]: 1 },
+        }),
+      ],
+      phase: "night",
+      roleId: "villager",
+      snapshotRevision: 3,
+      status: "playing",
+    });
+    const voteCues = projectLiveEffectCues(previous, next).filter((cue) => cue.kind === "vote");
+
+    expect(voteCues.map((cue) => ({ dayNumber: cue.dayNumber, id: cue.id }))).toEqual([
+      { dayNumber: 1, id: "123456:vote:event-vote-one" },
+      { dayNumber: 2, id: "123456:vote:event-vote-two" },
+    ]);
+  });
+
+  it("projects an empty verdict and rejects malformed vote payloads", () => {
+    const previous = createSummary({ phase: "voting", roleId: "villager", status: "playing" });
+    const empty = createSummary({
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-empty", "vote_resolved", { voteCountsByTarget: {} }),
+      ],
+      phase: "night",
+      roleId: "villager",
+      snapshotRevision: 2,
+      status: "playing",
+    });
+    const malformed = createSummary({
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-bad", "vote_resolved", {
+          executionCandidatePlayerId: BOB.id,
+          voteCountsByTarget: { [BOB.id]: "2" },
+        }),
+      ],
+      phase: "execution",
+      roleId: "villager",
+      snapshotRevision: 3,
+      status: "playing",
+    });
+    const unknownCandidate = createSummary({
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-unknown-candidate", "vote_resolved", {
+          executionCandidatePlayerId: "unknown-player",
+          voteCountsByTarget: { [ALICE.id]: 1, [BOB.id]: 1 },
+        }),
+      ],
+      phase: "execution",
+      roleId: "villager",
+      snapshotRevision: 4,
+      status: "playing",
+    });
+
+    expect(projectLiveEffectCues(previous, empty)).toEqual([
+      expect.objectContaining({ kind: "vote", outcome: { kind: "no_votes" }, rows: [] }),
+      expect.objectContaining({ kind: "phase", phase: "night" }),
+    ]);
+    expect(projectLiveEffectCues(previous, malformed)).toEqual([
+      expect.objectContaining({ kind: "phase", phase: "execution" }),
+    ]);
+    expect(projectLiveEffectCues(previous, unknownCandidate)).toEqual([
+      expect.objectContaining({ kind: "phase", phase: "execution" }),
+    ]);
+  });
+
   it("groups deaths from one snapshot and orders them before the phase", () => {
     const previous = createSummary({
       events: createInitialEvents(),
@@ -252,6 +439,39 @@ describe("projectLiveEffectCues", () => {
       playerResult: "win",
       winnerTeam: "villagers",
     });
+  });
+
+  it("keeps a resolved verdict ahead of death and victory in a batched ended snapshot", () => {
+    const previous = createSummary({
+      dayNumber: 1,
+      phase: "voting",
+      roleId: "villager",
+      status: "playing",
+    });
+    const next = createSummary({
+      dayNumber: 1,
+      events: [
+        ...createInitialEvents(),
+        createEvent("event-vote", "vote_resolved", {
+          executionCandidatePlayerId: BOB.id,
+          voteCountsByTarget: { [BOB.id]: 3 },
+        }),
+        createEvent("event-death", "player_executed", { targetPlayerId: BOB.id }),
+        createEvent("event-end", "game_ended", { winnerTeam: "villagers" }),
+      ],
+      phase: null,
+      playerResult: "win",
+      roleId: "villager",
+      snapshotRevision: 2,
+      status: "ended",
+      winnerTeam: "villagers",
+    });
+
+    expect(projectLiveEffectCues(previous, next).map((cue) => cue.kind)).toEqual([
+      "vote",
+      "death",
+      "victory",
+    ]);
   });
 
   it("does not project the same event or cue again after accepting the next snapshot", () => {
@@ -367,6 +587,27 @@ describe("appendPendingLiveEffectCue", () => {
 });
 
 describe("reconcileLiveEffectQueueForSummary", () => {
+  it("settles active and pending cinematics when a hidden snapshot becomes the baseline", () => {
+    const activeVoteCue = createCue("vote-active", "vote");
+    const pendingPhaseCue = createPhaseCue("phase-pending", "execution");
+    const currentSummary = createSummary({
+      dayNumber: 1,
+      phase: "execution",
+      roleId: "villager",
+      status: "playing",
+    });
+
+    expect(
+      reconcileLiveEffectQueueForSummary(
+        activeVoteCue,
+        [pendingPhaseCue],
+        currentSummary,
+        false,
+        false,
+      ),
+    ).toEqual({ activeCue: null, pendingCues: [] });
+  });
+
   it("keeps only a pending phase that exactly matches the current snapshot", () => {
     const deathCue = createCue("death", "death");
     const dayCue = createPhaseCue("phase-day", "day");
@@ -578,6 +819,15 @@ function createCue(id: string, kind: LiveEffectCue["kind"]): LiveEffectCue {
         playerId: ALICE.id,
         roleId: "villager",
         source: "automatic",
+      };
+    case "vote":
+      return {
+        ...baseCue,
+        dayNumber: 1,
+        kind,
+        outcome: { kind: "candidate", playerId: BOB.id, voteCount: 2 },
+        rows: [{ count: 2, playerId: BOB.id, voterPlayerIds: null }],
+        visibility: "count_only",
       };
     case "victory":
       return {

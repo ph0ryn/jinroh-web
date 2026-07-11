@@ -1,3 +1,5 @@
+import { DEFAULT_RULE_SET_OPTIONS } from "@/lib/shared/game";
+
 import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 import type { APIRequestContext } from "playwright/test";
 
@@ -46,6 +48,7 @@ export async function createApiPlayer(
 export async function createStartedRoom(
   request: APIRequestContext,
   displayNames: readonly string[],
+  options: { readonly voteResultVisibility?: "count_only" | "voter_to_target" } = {},
 ): Promise<{ readonly players: readonly ApiPlayer[]; readonly roomCode: string }> {
   const players = await Promise.all(
     displayNames.map((displayName, index) =>
@@ -72,8 +75,18 @@ export async function createStartedRoom(
     });
   }
 
+  const waitingSummary = await readRoomSummary(request, room.code, host);
+  const ruleSet =
+    options.voteResultVisibility === undefined
+      ? undefined
+      : {
+          ...DEFAULT_RULE_SET_OPTIONS,
+          roleCounts: waitingSummary.defaultRoleCounts,
+          voteResultVisibility: options.voteResultVisibility,
+        };
+
   await apiFetch(request, `/api/rooms/${room.code}/start`, {
-    body: {},
+    body: ruleSet === undefined ? {} : { ruleSet },
     method: "POST",
     token: host.token,
   });
