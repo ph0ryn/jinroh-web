@@ -22,6 +22,7 @@ import {
 
 import { LiveLobbyProgress } from "./effects/ui/LiveLobbyProgress";
 import { LiveModalFrame } from "./effects/ui/LiveModalFrame";
+import { useLiveEventLogMotion } from "./effects/ui/useLiveEventLogMotion";
 import { LiveActionList } from "./liveActionList";
 import {
   formatDateTime,
@@ -66,6 +67,7 @@ type LivePlayingSurfaceProps = {
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
+  readonly isPublicLogObscured: boolean;
   readonly locale: Locale;
   readonly nightConversationDraft: string;
   readonly pendingActionKey: string | null;
@@ -86,6 +88,7 @@ type LivePlayingSurfaceProps = {
 type LiveEndedSurfaceProps = {
   readonly isBusy: boolean;
   readonly isPublicLogOpen: boolean;
+  readonly isPublicLogObscured: boolean;
   readonly locale: Locale;
   readonly summary: RoomSummary;
   readonly t: Localization;
@@ -682,6 +685,7 @@ export function LivePlayingSurface({
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
+  isPublicLogObscured,
   locale,
   nightConversationDraft,
   pendingActionKey,
@@ -834,6 +838,7 @@ export function LivePlayingSurface({
 
       <PublicLogDialog
         isOpen={isPublicLogOpen}
+        isObscured={isPublicLogObscured}
         locale={locale}
         summary={summary}
         t={t}
@@ -846,6 +851,7 @@ export function LivePlayingSurface({
 export function LiveEndedSurface({
   isBusy,
   isPublicLogOpen,
+  isPublicLogObscured,
   locale,
   summary,
   t,
@@ -897,6 +903,7 @@ export function LiveEndedSurface({
 
       <PublicLogDialog
         isOpen={isPublicLogOpen}
+        isObscured={isPublicLogObscured}
         locale={locale}
         summary={summary}
         t={t}
@@ -908,12 +915,14 @@ export function LiveEndedSurface({
 
 function PublicLogDialog({
   isOpen,
+  isObscured,
   locale,
   summary,
   t,
   onClose,
 }: {
   readonly isOpen: boolean;
+  readonly isObscured: boolean;
   readonly locale: Locale;
   readonly summary: RoomSummary;
   readonly t: Localization;
@@ -928,7 +937,7 @@ function PublicLogDialog({
       title={t.live.eventLog.title}
       onClose={onClose}
     >
-      <EventLog locale={locale} summary={summary} t={t} />
+      <EventLog isObscured={isObscured} isOpen={isOpen} locale={locale} summary={summary} t={t} />
     </LivePopupDialog>
   );
 }
@@ -1032,17 +1041,28 @@ function NightConversationPanel({
 }
 
 function EventLog({
+  isObscured,
+  isOpen,
   locale,
   summary,
   t,
 }: {
+  readonly isObscured: boolean;
+  readonly isOpen: boolean;
   readonly locale: Locale;
-  readonly summary: RoomSummary | null;
+  readonly summary: RoomSummary;
   readonly t: Localization;
 }) {
-  const events = summary?.game?.events ?? [];
+  const events = summary.game?.events ?? [];
   const lastEventId = events.at(-1)?.id ?? null;
   const { containerRef, handleScroll } = useFollowScrollEnd(lastEventId);
+  useLiveEventLogMotion(containerRef, {
+    eventIds: events.map((event) => event.id),
+    isObscured,
+    isOpen,
+    roomCode: summary.code,
+    viewerPlayerId: summary.currentPlayerId,
+  });
 
   if (events.length === 0) {
     return (
@@ -1056,10 +1076,10 @@ function EventLog({
   return (
     <ol className="liveEventList" ref={containerRef} onScroll={handleScroll}>
       {events.map((event) => {
-        const display = formatPublicEvent(event, summary?.players ?? [], t);
+        const display = formatPublicEvent(event, summary.players, t);
 
         return (
-          <li key={event.id}>
+          <li data-live-event-id={event.id} key={event.id}>
             <time dateTime={event.createdAt}>{formatDateTime(event.createdAt, locale, t)}</time>
             <strong>{display.kindLabel}</strong>
             <p>{display.message}</p>

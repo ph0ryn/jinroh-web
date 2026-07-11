@@ -1394,6 +1394,7 @@ export default function LivePage() {
         isBusy={isBusy}
         isNightConversationOpen={isNightConversationOpen}
         isPublicLogOpen={isPublicLogOpen}
+        isPublicLogObscured={activeCue !== null}
         nightConversationDraft={nightConversationDraft}
         pendingActionKey={pendingActionKey}
         selfActions={selfActions}
@@ -1416,6 +1417,7 @@ export default function LivePage() {
       <LiveEndedSurface
         isBusy={isBusy}
         isPublicLogOpen={isPublicLogOpen}
+        isPublicLogObscured={activeCue !== null}
         locale={locale}
         summary={roomSummary}
         t={t}
