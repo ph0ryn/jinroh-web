@@ -544,6 +544,9 @@ Room を開いている Browser は定期的に heartbeat を送る。
 単なる heartbeat 更新だけでは Realtime 通知しない。
 Player status が変わった場合だけ Realtime 通知する。
 
+Realtime grant と heartbeat は Room、Player の順で lock を取得する。初回 grant と
+heartbeat が同時に実行されても lock 順序を逆転させない。
+
 ### Waiting Room Expiration
 
 Waiting Room expiration は正しさの一部。

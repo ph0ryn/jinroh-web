@@ -12,10 +12,7 @@ test("lobby progress choreographs accepted seating changes once", async ({ page,
 
   page.on("pageerror", (error) => unexpectedErrors.push(error.message));
   page.on("response", (response) => {
-    if (
-      response.status() >= 400 &&
-      !(response.status() === 409 && response.url().endsWith(`/api/rooms/${roomCode}/heartbeat`))
-    ) {
+    if (response.status() >= 400) {
       unexpectedErrors.push(
         `${String(response.status())} ${response.request().method()} ${response.url()}`,
       );

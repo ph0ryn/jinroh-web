@@ -17,10 +17,7 @@ test("round table choreographs accepted membership changes once", async ({ page,
   });
 
   page.on("response", (response) => {
-    if (
-      response.status() >= 400 &&
-      !(response.status() === 409 && response.url().endsWith(`/api/rooms/${room.code}/heartbeat`))
-    ) {
+    if (response.status() >= 400) {
       unexpectedErrors.push(
         `${response.status()} ${response.request().method()} ${response.url()}`,
       );
