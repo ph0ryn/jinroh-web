@@ -90,16 +90,23 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
 
   for (const viewport of VIEWPORT_CASES) {
     await page.setViewportSize({ height: viewport.height, width: viewport.width });
+    const usesInviteModal = viewport.mode !== "tablet-landscape-desktop";
 
     await expect(page.locator("[data-live-room-layout]")).toBeVisible();
     await expect(page.locator("[data-live-controls]")).toBeVisible();
     await expect(page.locator("[data-live-controls-status]")).toBeVisible();
     await expect(page.locator("[data-live-primary-actions]")).toBeVisible();
     await expect(page.locator("[data-live-table-surface]")).toBeVisible();
-    if (viewport.mode.startsWith("phone")) {
+    if (usesInviteModal) {
       await expect(page.locator("[data-live-scroll-region]")).toBeHidden();
+      await expect(
+        page.locator("[data-live-scroll-region] [data-live-invite-content]"),
+      ).toBeHidden();
     } else {
       await expect(page.locator("[data-live-scroll-region]")).toBeVisible();
+      await expect(
+        page.locator("[data-live-scroll-region] [data-live-invite-content]"),
+      ).toBeVisible();
     }
     await expectFixedDocument(page);
 
@@ -115,17 +122,45 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
     expect(geometry.seatsOutsideViewport).toEqual([]);
     expect(geometry.overlappingSeatPairs).toEqual([]);
 
-    if (viewport.mode.startsWith("phone")) {
+    const settingsButton = page.getByRole("button", { exact: true, name: "Settings" });
+    const settingsBox = await settingsButton.boundingBox();
+
+    await expect(settingsButton).toBeVisible();
+    expect(settingsBox?.width).toBeGreaterThanOrEqual(44);
+    expect(settingsBox?.height).toBeGreaterThanOrEqual(44);
+    expect(
+      await settingsButton.evaluate(
+        (button) =>
+          button.closest("[data-live-primary-actions]") !== null &&
+          button.closest("[data-live-controls-utilities]") === null,
+      ),
+    ).toBe(true);
+
+    if (usesInviteModal) {
       const inviteDisclosure = page.getByRole("button", { exact: true, name: "Show invite" });
       const inviteBox = await inviteDisclosure.boundingBox();
       const primaryBox = await page.locator("[data-live-primary-actions]").boundingBox();
+      const statusBox = await page.locator("[data-live-controls-status]").boundingBox();
+      const languageBox = await page
+        .getByRole("button", { exact: true, name: "Language" })
+        .boundingBox();
 
       await expect(inviteDisclosure).toBeVisible();
       expect(inviteBox).not.toBeNull();
       expect(primaryBox).not.toBeNull();
-      expect((primaryBox?.y ?? 0) + (primaryBox?.height ?? 0)).toBeLessThanOrEqual(
-        (inviteBox?.y ?? 0) + 1,
-      );
+      expect(statusBox).not.toBeNull();
+      expect(languageBox).not.toBeNull();
+      if (viewport.mode.endsWith("portrait")) {
+        expect(Math.abs((statusBox?.width ?? 0) - (inviteBox?.width ?? 0))).toBeLessThanOrEqual(2);
+        expect(Math.abs((statusBox?.y ?? 0) - (inviteBox?.y ?? 0))).toBeLessThanOrEqual(1);
+        expect((inviteBox?.y ?? 0) + (inviteBox?.height ?? 0)).toBeLessThanOrEqual(
+          (primaryBox?.y ?? 0) + 1,
+        );
+      } else {
+        expect((primaryBox?.y ?? 0) + (primaryBox?.height ?? 0)).toBeLessThanOrEqual(
+          (inviteBox?.y ?? 0) + 1,
+        );
+      }
       expect(
         await inviteDisclosure.evaluate((button) => {
           const rect = button.getBoundingClientRect();
@@ -137,6 +172,18 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
           return hitTarget === button || (hitTarget !== null && button.contains(hitTarget));
         }),
       ).toBe(true);
+      expect(rectanglesOverlap(inviteBox, statusBox)).toBe(false);
+      expect(rectanglesOverlap(inviteBox, primaryBox)).toBe(false);
+      expect(rectanglesOverlap(inviteBox, settingsBox)).toBe(false);
+      expect(rectanglesOverlap(inviteBox, languageBox)).toBe(false);
+      expect(rectanglesOverlap(settingsBox, languageBox)).toBe(false);
+      for (const actionBox of await page
+        .locator(".liveWaitingActions button")
+        .evaluateAll((buttons) =>
+          buttons.map((button) => button.getBoundingClientRect().toJSON()),
+        )) {
+        expect(rectanglesOverlap(actionBox, languageBox)).toBe(false);
+      }
     }
 
     if (viewport.mode.endsWith("portrait")) {
@@ -147,30 +194,41 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
   }
 });
 
-test("phone invite details expand without moving the page", async ({ page, request }) => {
+test("portrait invite details open in a fixed modal", async ({ page, request }) => {
   const { host, roomCode } = await createWaitingRoom(request);
 
   await page.setViewportSize({ height: 844, width: 390 });
   await openRoomAsPlayer(page, host.token);
 
-  const disclosure = page.getByRole("button", { exact: true, name: "Show invite" });
-  const inviteTools = page.locator("[data-live-invite-expanded]");
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 1024, width: 768 },
+  ] as const) {
+    await page.setViewportSize(viewport);
+    const disclosure = page.getByRole("button", { exact: true, name: "Show invite" });
+    const inviteTools = page.locator("[data-live-invite-expanded]");
 
-  await expect(page.locator("[data-live-controls] .liveInviteCode")).toBeHidden();
-  await expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  await expect(inviteTools).toHaveAttribute("data-live-invite-expanded", "false");
-  await disclosure.click();
-  const inviteDialog = page.getByRole("dialog", { name: "Room invite tools" });
+    await expect(page.locator("[data-live-controls] .liveInviteCode")).toBeHidden();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await expect(inviteTools).toHaveAttribute("data-live-invite-expanded", "false");
+    await disclosure.click();
+    const inviteDialog = page.getByRole("dialog", { name: "Room invite tools" });
 
-  await expect(inviteTools).toHaveAttribute("data-live-invite-expanded", "true");
-  await expect(inviteDialog).toBeVisible();
-  await expect(inviteDialog.locator(".liveInviteCode strong")).toHaveText(roomCode);
-  await expect(inviteDialog.locator(".liveInviteQrCode")).toBeVisible();
-  await expect(inviteDialog.getByRole("button", { exact: true, name: "Copy code" })).toBeVisible();
-  await expect(
-    inviteDialog.getByRole("button", { exact: true, name: "Share invite" }),
-  ).toBeVisible();
-  await expectFixedDocument(page);
+    await expect(inviteTools).toHaveAttribute("data-live-invite-expanded", "true");
+    await expect(inviteDialog).toBeVisible();
+    await expect(inviteDialog.locator(".liveInviteCode strong")).toHaveText(roomCode);
+    await expect(inviteDialog.locator(".liveInviteQrCode")).toBeVisible();
+    await expect(
+      inviteDialog.getByRole("button", { exact: true, name: "Copy code" }),
+    ).toBeVisible();
+    await expect(
+      inviteDialog.getByRole("button", { exact: true, name: "Share invite" }),
+    ).toBeVisible();
+    await expectFixedDocument(page);
+    await page.keyboard.press("Escape");
+    await expect(inviteDialog).toHaveCount(0);
+    await expect(disclosure).toBeFocused();
+  }
 });
 
 test("playing keeps phase, primary action, and utilities visible on phone layouts", async ({
@@ -359,6 +417,32 @@ async function expectFixedDocument(page: Page): Promise<void> {
   expect(geometry.scrollY).toBe(0);
   expect(geometry.overflowX).toBeLessThanOrEqual(1);
   expect(geometry.overflowY).toBeLessThanOrEqual(1);
+}
+
+function rectanglesOverlap(
+  first: {
+    readonly height: number;
+    readonly width: number;
+    readonly x: number;
+    readonly y: number;
+  } | null,
+  second: {
+    readonly height: number;
+    readonly width: number;
+    readonly x: number;
+    readonly y: number;
+  } | null,
+): boolean {
+  if (first === null || second === null) {
+    return false;
+  }
+
+  return !(
+    first.x + first.width <= second.x ||
+    second.x + second.width <= first.x ||
+    first.y + first.height <= second.y ||
+    second.y + second.height <= first.y
+  );
 }
 
 async function readVerticalOrder(page: Page): Promise<readonly string[]> {

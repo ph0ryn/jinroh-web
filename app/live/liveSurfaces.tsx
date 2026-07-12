@@ -667,7 +667,22 @@ export function LiveWaitingSurface({
               <span>
                 {summary.isHost ? t.live.waiting.hostControls : t.live.waiting.playerControls}
               </span>
-              <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
+              <div className="liveWaitingHeadingActions">
+                <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
+                {summary.isHost ? (
+                  <button
+                    aria-controls="start-settings-dialog"
+                    aria-label={t.live.buttons.settings}
+                    aria-expanded={isSettingsOpen}
+                    aria-haspopup="dialog"
+                    className="secondaryButton liveSettingsUtilityButton"
+                    type="button"
+                    onClick={onOpenSettings}
+                  >
+                    <span aria-hidden="true">⚙</span>
+                  </button>
+                ) : null}
+              </div>
             </div>
             <div className="liveWaitingPanel">
               <strong>
@@ -729,32 +744,17 @@ export function LiveWaitingSurface({
         surface="waiting"
         transitionItem="waiting"
         utilities={
-          <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
-            <button
-              aria-controls="room-invite-dialog"
-              aria-expanded={isInviteExpanded}
-              aria-haspopup="dialog"
-              className="secondaryButton liveInviteDisclosure"
-              data-live-invite-expanded={isInviteExpanded}
-              type="button"
-              onClick={() => setIsInviteExpanded(true)}
-            >
-              {t.live.buttons.showInviteDetails}
-            </button>
-            {summary.isHost ? (
-              <button
-                aria-controls="start-settings-dialog"
-                aria-label={t.live.buttons.settings}
-                aria-expanded={isSettingsOpen}
-                aria-haspopup="dialog"
-                className="secondaryButton liveSettingsUtilityButton"
-                type="button"
-                onClick={onOpenSettings}
-              >
-                <span aria-hidden="true">⚙</span>
-              </button>
-            ) : null}
-          </div>
+          <button
+            aria-controls="room-invite-dialog"
+            aria-expanded={isInviteExpanded}
+            aria-haspopup="dialog"
+            className="secondaryButton liveInviteDisclosure"
+            data-live-invite-expanded={isInviteExpanded}
+            type="button"
+            onClick={() => setIsInviteExpanded(true)}
+          >
+            {t.live.buttons.showInviteDetails}
+          </button>
         }
       />
       <LivePopupDialog

@@ -70,8 +70,7 @@ function animateLobbyProgress(
   const sheen = root.querySelector<HTMLElement>("[data-live-lobby-progress-sheen]");
   const glow = root.querySelector<HTMLElement>("[data-live-lobby-progress-glow]");
   const completion = root.querySelector<HTMLElement>("[data-live-lobby-progress-completion]");
-  const changedSeats = getChangedSeats(root, change, nextSnapshot);
-  const animatedElements = [fill, count, message, sheen, glow, completion, ...changedSeats].filter(
+  const animatedElements = [fill, count, message, sheen, glow, completion].filter(
     (element): element is HTMLElement => element !== null,
   );
   const previousRatio = getLiveLobbyProgressRatio(previousSnapshot);
@@ -118,25 +117,6 @@ function animateLobbyProgress(
     );
   }
 
-  if (changedSeats.length > 0) {
-    timeline.fromTo(
-      changedSeats,
-      {
-        autoAlpha: change.direction === "increase" ? 0.32 : 0.5,
-        scale: change.direction === "increase" ? 0.48 : 1.32,
-        willChange: "transform, opacity",
-      },
-      {
-        autoAlpha: 1,
-        duration: 0.38,
-        ease: "back.out(1.7)",
-        scale: 1,
-        stagger: 0.055,
-      },
-      0.12,
-    );
-  }
-
   if (change.direction === "increase" && sheen !== null) {
     timeline
       .fromTo(
@@ -174,27 +154,6 @@ function animateLobbyProgress(
     timeline.kill();
     delete root.dataset["liveLobbyProgressMotionKind"];
   };
-}
-
-function getChangedSeats(
-  root: HTMLElement,
-  change: LiveLobbyProgressChange,
-  nextSnapshot: LiveLobbyProgressSnapshot,
-): HTMLElement[] {
-  const firstChangedSeat =
-    Math.min(change.previousJoinedPlayerCount, nextSnapshot.joinedPlayerCount) + 1;
-  const lastChangedSeat = Math.min(
-    Math.max(change.previousJoinedPlayerCount, nextSnapshot.joinedPlayerCount),
-    nextSnapshot.targetPlayerCount,
-  );
-
-  return [...root.querySelectorAll<HTMLElement>("[data-live-lobby-progress-seat]")].filter(
-    (seat) => {
-      const seatNumber = Number(seat.dataset["liveLobbyProgressSeatNumber"]);
-
-      return seatNumber >= firstChangedSeat && seatNumber <= lastChangedSeat;
-    },
-  );
 }
 
 function clearLobbyProgressProperties(elements: readonly HTMLElement[]): void {

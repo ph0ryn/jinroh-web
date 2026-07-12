@@ -45,7 +45,7 @@ test("lobby progress choreographs accepted seating changes once", async ({ page,
     };
   });
 
-  expect(initialLayout.height).toBeGreaterThanOrEqual(100);
+  expect(initialLayout.height).toBeGreaterThanOrEqual(80);
   expect(initialLayout.isBeforeInvite).toBe(true);
   await installLobbyProgressRecorder(page);
 
@@ -277,7 +277,6 @@ async function expectLobbyProgressStylesToBeClear(
           root.querySelector<HTMLElement>("[data-live-lobby-progress-sheen]"),
           root.querySelector<HTMLElement>("[data-live-lobby-progress-glow]"),
           root.querySelector<HTMLElement>("[data-live-lobby-progress-completion]"),
-          ...root.querySelectorAll<HTMLElement>("[data-live-lobby-progress-seat]"),
         ]
           .filter((element): element is HTMLElement => element !== null)
           .every(

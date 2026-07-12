@@ -177,6 +177,13 @@
   gap: var(--live-controls-gap);
 }
 
+.controls :global(.liveWaitingHeadingActions) {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
 .controlsScroll :global(.liveInviteDetailsPanel) {
   border-color: rgba(var(--live-accent-rgb), 0.52);
   box-shadow:
@@ -258,13 +265,56 @@
     padding: 6px;
   }
 
-  .controls [data-live-lobby-progress] > :last-child,
   .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
     display: none;
   }
 
   .controlsPrimary :global(.liveWaitingActions) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .controls[data-live-controls-surface="waiting"] {
+    grid-template-areas:
+      "status utilities"
+      "primary primary";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsPrimary {
+    align-self: end;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsPrimary :global(.liveWaitingActions) {
+    padding-inline-end: 52px;
+  }
+
+  .controls[data-live-controls-surface="waiting"]
+    :global(.liveWaitingHeadingActions:has(.liveSettingsUtilityButton)) {
+    padding-inline-end: 52px;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsUtilities {
+    height: 100%;
+  }
+
+  .controls[data-live-controls-surface="waiting"] :global(.liveInviteDisclosure) {
+    align-self: stretch;
+  }
+
+  .controls :global(.liveInviteInlineContent) {
+    display: none;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+    display: none;
+  }
+
+  .controls :global(.liveInviteDisclosure) {
+    background: rgba(var(--live-accent-rgb), 0.14);
+    border-color: rgba(var(--live-accent-rgb), 0.54);
+    display: inline-flex !important;
+    width: 100%;
   }
 }
 
@@ -343,35 +393,6 @@
     min-height: 52px;
   }
 
-  .controls :global(.liveInviteTools) {
-    gap: 4px;
-    grid-template-columns: minmax(0, 1fr);
-    padding: 6px;
-  }
-
-  .controls :global(.liveInviteInlineContent) {
-    display: none;
-  }
-
-  .controls[data-live-controls-surface="waiting"] .controlsScroll {
-    display: none;
-  }
-
-  .controls :global(.liveInviteDisclosure) {
-    background: rgba(var(--live-accent-rgb), 0.14);
-    border-color: rgba(var(--live-accent-rgb), 0.54);
-    display: inline-flex !important;
-    width: 100%;
-  }
-
-  .controls[data-live-controls-surface="waiting"] .controlsUtilities :global(.livePopupActions) {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .controlsUtilities {
-    padding-inline-end: 52px;
-  }
-
   .controlsPrimary :global(.liveActionRow) {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -406,18 +427,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .controls[data-live-controls-surface="waiting"] .controlsUtilities :global(.livePopupActions) {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
   .controlsUtilities {
-    padding-inline-end: 52px;
-  }
-
-  .controls :global(.liveInviteTools) {
-    gap: 4px;
-    grid-template-columns: minmax(0, 1fr);
-    padding: 6px;
+    padding-inline-end: 56px;
   }
 
   .controls :global(.liveInviteInlineContent) {
@@ -434,7 +445,6 @@
     padding: 6px;
   }
 
-  .controls [data-live-lobby-progress] > :last-child,
   .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
     display: none;
   }
@@ -454,6 +464,10 @@
 @media (orientation: portrait) and (max-width: 599px) and (max-height: 650px) {
   .roomLayout {
     --live-controls-min-block: 250px;
+  }
+
+  .roomLayout:has(.controls[data-live-controls-surface="waiting"]) {
+    --live-controls-min-block: 270px;
   }
 
   .entryGrid :global(.liveSetupProfilePanel .liveSetupProfileCard),
@@ -487,7 +501,6 @@
     padding: 6px;
   }
 
-  .controls [data-live-lobby-progress] > :last-child,
   .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
     display: none;
   }
