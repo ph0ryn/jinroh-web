@@ -2036,10 +2036,6 @@ a {
   gap: 8px;
 }
 
-.liveInviteDisclosure {
-  display: none !important;
-}
-
 .liveSettingsUtilityButton {
   font-size: 1.4rem !important;
   justify-self: start !important;
@@ -2232,6 +2228,10 @@ a {
   height: auto;
   max-height: min(86dvh, 520px);
   width: min(100%, 440px);
+}
+
+.liveConfirmationModal {
+  height: auto;
 }
 
 .liveInviteModal .liveModalBody {

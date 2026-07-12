@@ -184,10 +184,14 @@
   gap: 10px;
 }
 
-.shell :global(.livePortraitInviteSummary),
-.shell :global(.liveInviteQrModalContent),
-.shell :global(.livePortraitInviteActionIcon) {
+.shell :global(.liveCompactInviteSummary),
+.shell :global(.liveCompactInviteActionIcon) {
   display: none;
+}
+
+.shell :global(.liveInviteQrModalContent) {
+  display: grid;
+  place-items: center;
 }
 
 @media (orientation: portrait) {
@@ -289,51 +293,42 @@
     display: none;
   }
 
-  .controls :global(.livePortraitInviteSummary) {
+  .controls :global(.liveCompactInviteSummary) {
     align-self: stretch;
     display: grid;
     gap: 8px;
   }
 
-  .controls :global(.livePortraitInviteHeader) {
+  .controls :global(.liveCompactInviteHeader) {
     align-items: center;
     display: grid;
     gap: 6px;
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .controls :global(.livePortraitInviteSummary .liveInviteCode strong) {
+  .controls :global(.liveCompactInviteSummary .liveInviteCode strong) {
     font-size: clamp(1.15rem, 3.4vw, 1.55rem);
     letter-spacing: 0.06em;
     margin: 2px 0 0;
   }
 
-  .controls :global(.livePortraitInviteSummary .liveInviteCode span) {
+  .controls :global(.liveCompactInviteSummary .liveInviteCode span) {
     font-size: 0.66rem;
   }
 
-  .controls :global(.livePortraitInviteSummary .liveInviteActions) {
+  .controls :global(.liveCompactInviteSummary .liveInviteActions) {
     gap: 6px;
   }
 
-  .controls :global(.livePortraitInviteSummary .liveInviteActions button) {
+  .controls :global(.liveCompactInviteSummary .liveInviteActions button) {
     font-size: 0.72rem;
     padding-inline: 6px;
   }
 
-  .controls :global(.livePortraitInviteQrButton) {
+  .controls :global(.liveCompactInviteQrButton) {
     min-width: 44px;
     padding: 0;
     width: 44px;
-  }
-
-  .shell :global(.liveInviteFullModalContent) {
-    display: none;
-  }
-
-  .shell :global(.liveInviteQrModalContent) {
-    display: grid;
-    place-items: center;
   }
 }
 
@@ -475,6 +470,15 @@
     display: none;
   }
 
+  .controls[data-live-controls-surface="waiting"] {
+    align-content: start;
+    grid-template-areas:
+      "status"
+      "primary"
+      "utilities";
+    grid-template-rows: auto auto auto;
+  }
+
   .controls [data-live-lobby-progress] {
     gap: 4px;
     min-height: 0;
@@ -489,11 +493,49 @@
     min-height: 52px;
   }
 
-  .controls :global(.liveInviteDisclosure) {
-    background: rgba(var(--live-accent-rgb), 0.14);
-    border-color: rgba(var(--live-accent-rgb), 0.54);
-    display: inline-flex !important;
-    width: 100%;
+  .controls :global(.liveCompactInviteSummary) {
+    align-items: center;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .controls :global(.liveCompactInviteHeader) {
+    align-items: center;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .controls :global(.liveCompactInviteSummary .liveInviteCode strong) {
+    font-size: 1.12rem;
+    letter-spacing: 0.05em;
+    margin: 1px 0 0;
+  }
+
+  .controls :global(.liveCompactInviteSummary .liveInviteCode span) {
+    font-size: 0.62rem;
+  }
+
+  .controls :global(.liveCompactInviteSummary .liveInviteActions) {
+    gap: 6px;
+    grid-template-columns: repeat(2, 44px);
+  }
+
+  .controls :global(.liveCompactInviteSummary .liveInviteActions button),
+  .controls :global(.liveCompactInviteQrButton) {
+    min-width: 44px;
+    padding: 0;
+    width: 44px;
+  }
+
+  .controls :global(.liveCompactInviteActionLabel) {
+    display: none;
+  }
+
+  .controls :global(.liveCompactInviteActionIcon) {
+    display: inline;
+    font-size: 1.1rem;
   }
 }
 
@@ -517,11 +559,11 @@
 }
 
 @media (orientation: portrait) and (max-width: 359px) {
-  .controls :global(.livePortraitInviteActionLabel) {
+  .controls :global(.liveCompactInviteActionLabel) {
     display: none;
   }
 
-  .controls :global(.livePortraitInviteActionIcon) {
+  .controls :global(.liveCompactInviteActionIcon) {
     display: inline;
     font-size: 1.1rem;
   }

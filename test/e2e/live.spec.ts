@@ -25,7 +25,7 @@ test("players can create, join, start, and finish first night through the UI", a
   try {
     await host.page.getByLabel("Players").selectOption("3");
     await host.page.getByRole("button", { name: "Create room" }).click();
-    const inviteCode = host.page.locator('[aria-label="Room invite tools"] strong');
+    const inviteCode = host.page.locator("[data-live-room-code]:visible strong");
     const roundTable = host.page.locator("[data-live-round-table]");
 
     await expect(inviteCode).toHaveText(/^\d{6}$/u);
@@ -41,7 +41,7 @@ test("players can create, join, start, and finish first night through the UI", a
     for (const player of [player2, player3]) {
       await fillRoomCode(player.page, roomCode);
       await player.page.getByRole("button", { name: "Join room" }).click();
-      await expect(player.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+      await expect(player.page.locator("[data-live-room-code]:visible strong")).toHaveText(
         roomCode,
       );
     }
@@ -150,7 +150,7 @@ test("leaving while waiting requires confirmation and transfers host controls", 
     await leaveDialog.getByRole("button", { name: "Cancel" }).click();
 
     await expect(leaveDialog).toHaveCount(0);
-    await expect(host.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(roomCode);
+    await expect(host.page.locator("[data-live-room-code]:visible strong")).toHaveText(roomCode);
     await expect(leaveButton).toBeFocused();
 
     await leaveButton.click();
@@ -228,9 +228,7 @@ test("creating with Enter exposes a scoped busy state", async ({ browser }) => {
 
     releaseCreateRequest();
 
-    await expect(host.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
-      /^\d{6}$/u,
-    );
+    await expect(host.page.locator("[data-live-room-code]:visible strong")).toHaveText(/^\d{6}$/u);
     expect(consoleErrors).toEqual([]);
   } finally {
     releaseCreateRequest();
@@ -279,9 +277,7 @@ test("joining with Enter exposes a scoped busy state", async ({ browser, request
 
     releaseJoinRequest();
 
-    await expect(joiner.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
-      room.code,
-    );
+    await expect(joiner.page.locator("[data-live-room-code]:visible strong")).toHaveText(room.code);
     expect(consoleErrors).toEqual([]);
   } finally {
     releaseJoinRequest();
@@ -524,7 +520,7 @@ async function createAndJoinWaitingRoom(host: Page, guests: readonly Page[]): Pr
   await host.getByLabel("Players").selectOption(String(guests.length + 1));
   await host.getByRole("button", { name: "Create room" }).click();
 
-  const inviteCode = host.locator('[aria-label="Room invite tools"] strong');
+  const inviteCode = host.locator("[data-live-room-code]:visible strong");
 
   await expect(inviteCode).toHaveText(/^\d{6}$/u);
 
@@ -537,7 +533,7 @@ async function createAndJoinWaitingRoom(host: Page, guests: readonly Page[]): Pr
   for (const guest of guests) {
     await fillRoomCode(guest, roomCode);
     await guest.getByRole("button", { name: "Join room" }).click();
-    await expect(guest.locator('[aria-label="Room invite tools"] strong')).toHaveText(roomCode);
+    await expect(guest.locator("[data-live-room-code]:visible strong")).toHaveText(roomCode);
   }
 
   return roomCode;

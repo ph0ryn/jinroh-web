@@ -54,7 +54,7 @@ test("a restored waiting room is a settled baseline", async ({ page, request }) 
   const shell = page.locator(".liveShell");
   const waitingTargets = page.locator('[data-live-setup-transition-item="waiting"]');
 
-  await expect(page.getByText(room.code, { exact: true })).toBeVisible();
+  await expect(page.locator("[data-live-room-code]:visible strong")).toHaveText(room.code);
   await expect(waitingTargets).toHaveCount(2);
   await expect(shell).not.toHaveAttribute("data-live-setup-motion-kind", /.+/u);
   const transientStyles = await waitingTargets.evaluateAll((targets) =>

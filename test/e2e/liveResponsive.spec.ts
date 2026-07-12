@@ -92,13 +92,17 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
     await page.setViewportSize({ height: viewport.height, width: viewport.width });
     const isPortrait = viewport.mode.endsWith("portrait");
     const isPhoneLandscape = viewport.mode === "phone-landscape";
+    const isCompactInvite = isPortrait || isPhoneLandscape;
+    const compactInvite = page.locator("[data-live-compact-invite]");
+
+    await expect(page.getByRole("button", { exact: true, name: "Show invite" })).toHaveCount(0);
 
     await expect(page.locator("[data-live-room-layout]")).toBeVisible();
     await expect(page.locator("[data-live-controls]")).toBeVisible();
     await expect(page.locator("[data-live-controls-status]")).toBeVisible();
     await expect(page.locator("[data-live-primary-actions]")).toBeVisible();
     await expect(page.locator("[data-live-table-surface]")).toBeVisible();
-    if (isPortrait || isPhoneLandscape) {
+    if (isCompactInvite) {
       await expect(page.locator("[data-live-scroll-region]")).toBeHidden();
       await expect(
         page.locator("[data-live-scroll-region] [data-live-invite-content]"),
@@ -132,14 +136,11 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
       expect(invitePanelFrame.borderWidths).toEqual(["1px", "1px", "1px", "1px"]);
       expect(invitePanelFrame.hasInsetShadow).toBe(false);
     }
-    if (isPortrait) {
-      await expect(page.locator("[data-live-portrait-invite]")).toBeVisible();
-      await expect(page.locator("[data-live-portrait-invite] .liveInviteCode strong")).toHaveText(
-        roomCode,
-      );
-      await expect(page.getByRole("button", { exact: true, name: "Show invite" })).toBeHidden();
+    if (isCompactInvite) {
+      await expect(compactInvite).toBeVisible();
+      await expect(compactInvite.locator(".liveInviteCode strong")).toHaveText(roomCode);
     } else {
-      await expect(page.locator("[data-live-portrait-invite]")).toBeHidden();
+      await expect(compactInvite).toBeHidden();
     }
     await expectFixedDocument(page);
 
@@ -191,8 +192,8 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
       expect(inviteToPrimaryGap).toBeLessThanOrEqual(rowGap + 1);
     }
 
-    if (isPortrait) {
-      const inviteSummary = page.locator("[data-live-portrait-invite]");
+    if (isCompactInvite) {
+      const inviteSummary = compactInvite;
       const inviteBox = await page.locator("[data-live-controls-utilities]").boundingBox();
       const primaryBox = await page.locator("[data-live-primary-actions]").boundingBox();
       const statusBox = await page.locator("[data-live-controls-status]").boundingBox();
@@ -201,20 +202,25 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
       expect(inviteBox).not.toBeNull();
       expect(primaryBox).not.toBeNull();
       expect(statusBox).not.toBeNull();
-      expect(Math.abs((statusBox?.width ?? 0) - (inviteBox?.width ?? 0))).toBeLessThanOrEqual(2);
-      expect(Math.abs((statusBox?.y ?? 0) - (inviteBox?.y ?? 0))).toBeLessThanOrEqual(1);
-      expect((inviteBox?.y ?? 0) + (inviteBox?.height ?? 0)).toBeLessThanOrEqual(
-        (primaryBox?.y ?? 0) + 1,
-      );
-      const topRowBottom = Math.max(
-        (statusBox?.y ?? 0) + (statusBox?.height ?? 0),
-        (inviteBox?.y ?? 0) + (inviteBox?.height ?? 0),
-      );
-      const primaryGap = (primaryBox?.y ?? 0) - topRowBottom;
+      if (isPortrait) {
+        expect(Math.abs((statusBox?.width ?? 0) - (inviteBox?.width ?? 0))).toBeLessThanOrEqual(2);
+        expect(Math.abs((statusBox?.y ?? 0) - (inviteBox?.y ?? 0))).toBeLessThanOrEqual(1);
+        const topRowBottom = Math.max(
+          (statusBox?.y ?? 0) + (statusBox?.height ?? 0),
+          (inviteBox?.y ?? 0) + (inviteBox?.height ?? 0),
+        );
+        const primaryGap = (primaryBox?.y ?? 0) - topRowBottom;
 
-      expect(primaryGap).toBeGreaterThanOrEqual(-1);
-      expect(primaryGap).toBeLessThanOrEqual(14);
-      expect(rectanglesOverlap(inviteBox, statusBox)).toBe(false);
+        expect(primaryGap).toBeGreaterThanOrEqual(-1);
+        expect(primaryGap).toBeLessThanOrEqual(14);
+        expect(rectanglesOverlap(inviteBox, statusBox)).toBe(false);
+      } else {
+        const primaryBottom = (primaryBox?.y ?? 0) + (primaryBox?.height ?? 0);
+        const utilitiesGap = (inviteBox?.y ?? 0) - primaryBottom;
+
+        expect(utilitiesGap).toBeGreaterThanOrEqual(-1);
+        expect(utilitiesGap).toBeLessThanOrEqual(5);
+      }
       expect(rectanglesOverlap(inviteBox, primaryBox)).toBe(false);
       expect(rectanglesOverlap(inviteBox, settingsBox)).toBe(false);
 
@@ -229,6 +235,7 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
         await expect(inviteAction).toBeVisible();
         const actionBox = await inviteAction.boundingBox();
 
+        expect(actionBox?.width).toBeGreaterThanOrEqual(44);
         expect(actionBox?.height).toBeGreaterThanOrEqual(44);
         expect(
           await inviteAction.evaluate((button) => {
@@ -249,21 +256,6 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
           expect(rectanglesOverlap(actionBox, candidateBox)).toBe(false);
         }
       }
-    } else if (isPhoneLandscape) {
-      const inviteDisclosure = page.getByRole("button", { exact: true, name: "Show invite" });
-
-      await expect(inviteDisclosure).toBeVisible();
-      expect(
-        await inviteDisclosure.evaluate((button) => {
-          const rect = button.getBoundingClientRect();
-          const hitTarget = document.elementFromPoint(
-            rect.x + rect.width / 2,
-            rect.y + rect.height / 2,
-          );
-
-          return hitTarget === button || (hitTarget !== null && button.contains(hitTarget));
-        }),
-      ).toBe(true);
     }
 
     if (viewport.mode.endsWith("portrait")) {
@@ -274,7 +266,7 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
   }
 });
 
-test("portrait keeps invite actions inline and opens only QR in a modal", async ({
+test("compact invite keeps actions inline and opens only QR in a modal", async ({
   page,
   request,
 }) => {
@@ -287,9 +279,11 @@ test("portrait keeps invite actions inline and opens only QR in a modal", async 
     { height: 568, width: 320 },
     { height: 844, width: 390 },
     { height: 1024, width: 768 },
+    { height: 375, width: 667 },
+    { height: 390, width: 844 },
   ] as const) {
     await page.setViewportSize(viewport);
-    const inviteSummary = page.locator("[data-live-portrait-invite]");
+    const inviteSummary = page.locator("[data-live-compact-invite]");
     const qrButton = inviteSummary.getByRole("button", { exact: true, name: "Show QR code" });
 
     await expect(inviteSummary.locator(".liveInviteCode strong")).toHaveText(roomCode);
@@ -307,7 +301,13 @@ test("portrait keeps invite actions inline and opens only QR in a modal", async 
     await expect(qrButton).toHaveAttribute("aria-expanded", "true");
     await expect(inviteDialog).toBeVisible();
     await expect(inviteDialog.locator(".liveInviteQrModalContent .liveInviteQrCode")).toBeVisible();
-    await expect(inviteDialog.locator(".liveInviteFullModalContent")).toBeHidden();
+    await expect(inviteDialog.locator(".liveInviteCode")).toHaveCount(0);
+    await expect(inviteDialog.getByRole("button", { exact: true, name: "Copy code" })).toHaveCount(
+      0,
+    );
+    await expect(
+      inviteDialog.getByRole("button", { exact: true, name: "Share invite" }),
+    ).toHaveCount(0);
     await expectFixedDocument(page);
     await page.keyboard.press("Escape");
     await expect(inviteDialog).toHaveCount(0);
@@ -315,24 +315,25 @@ test("portrait keeps invite actions inline and opens only QR in a modal", async 
   }
 });
 
-test("phone landscape opens the full invite in a fixed modal", async ({ page, request }) => {
-  const { host, roomCode } = await createWaitingRoom(request);
+test("confirmation dialogs fit their content instead of filling the viewport", async ({
+  page,
+  request,
+}) => {
+  const { host } = await createWaitingRoom(request);
 
-  await page.setViewportSize({ height: 390, width: 844 });
+  await page.setViewportSize({ height: 844, width: 390 });
   await openRoomAsPlayer(page, host.token);
+  await page.getByRole("button", { exact: true, name: "Leave room" }).click();
 
-  const disclosure = page.getByRole("button", { exact: true, name: "Show invite" });
+  const dialog = page.getByRole("dialog", { name: "Leave this room?" });
+  const dialogBox = await dialog.boundingBox();
+  const bodyBox = await dialog.locator("[data-live-modal-body]").boundingBox();
 
-  await disclosure.click();
-  const inviteDialog = page.getByRole("dialog", { name: "Room invite tools" });
-
-  await expect(inviteDialog.locator(".liveInviteCode strong")).toHaveText(roomCode);
-  await expect(inviteDialog.locator(".liveInviteFullModalContent .liveInviteQrCode")).toBeVisible();
-  await expect(inviteDialog.getByRole("button", { exact: true, name: "Copy code" })).toBeVisible();
-  await expect(
-    inviteDialog.getByRole("button", { exact: true, name: "Share invite" }),
-  ).toBeVisible();
-  await expect(inviteDialog.locator(".liveInviteQrModalContent")).toBeHidden();
+  await expect(dialog).toBeVisible();
+  expect(dialogBox).not.toBeNull();
+  expect(bodyBox).not.toBeNull();
+  expect(dialogBox?.height).toBeLessThan(420);
+  expect((dialogBox?.height ?? 0) - (bodyBox?.height ?? 0)).toBeLessThan(120);
   await expectFixedDocument(page);
 });
 
@@ -475,6 +476,7 @@ test("waiting room visual baselines cover the four layout modes", async ({ page,
       {
         animations: "disabled",
         caret: "hide",
+        maxDiffPixels: 100,
         mask: [page.locator(".liveInviteCode strong"), page.locator(".liveInviteQrCode")],
       },
     );

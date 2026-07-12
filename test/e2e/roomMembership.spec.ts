@@ -285,14 +285,14 @@ test("same-account tabs converge after restore, switch, and leave", async ({
     await firstPage.getByLabel("Players").selectOption("3");
     await firstPage.getByRole("button", { name: "Create room" }).click();
 
-    const firstPageRoomCode = firstPage.locator('[aria-label="Room invite tools"] strong');
+    const firstPageRoomCode = firstPage.locator("[data-live-room-code]:visible strong");
 
     await expect(firstPageRoomCode).toHaveText(/^\d{6}$/u);
     const sourceRoomCode = await firstPageRoomCode.innerText();
     const secondPage = await context.newPage();
 
     await secondPage.goto("/live");
-    await expect(secondPage.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+    await expect(secondPage.locator("[data-live-room-code]:visible strong")).toHaveText(
       sourceRoomCode,
     );
 
@@ -337,7 +337,7 @@ test("same-account tabs converge after restore, switch, and leave", async ({
 
     await secondPage.keyboard.press("Escape");
     await expect(switchDialog).toHaveCount(0);
-    await expect(secondPage.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+    await expect(secondPage.locator("[data-live-room-code]:visible strong")).toHaveText(
       sourceRoomCode,
     );
 
@@ -345,10 +345,10 @@ test("same-account tabs converge after restore, switch, and leave", async ({
     await expect(switchDialog).toBeVisible();
     await switchDialog.getByRole("button", { name: "Leave and switch" }).click();
 
-    await expect(secondPage.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+    await expect(secondPage.locator("[data-live-room-code]:visible strong")).toHaveText(
       targetRoom.code,
     );
-    await expect(firstPage.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+    await expect(firstPage.locator("[data-live-room-code]:visible strong")).toHaveText(
       targetRoom.code,
       { timeout: 15_000 },
     );
