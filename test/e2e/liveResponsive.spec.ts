@@ -108,6 +108,29 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
       await expect(
         page.locator("[data-live-scroll-region] [data-live-invite-content]"),
       ).toBeVisible();
+      const invitePanelFrame = await page.locator(".liveInviteDetailsPanel").evaluate((panel) => {
+        const style = getComputedStyle(panel);
+
+        return {
+          borderColors: [
+            style.borderTopColor,
+            style.borderRightColor,
+            style.borderBottomColor,
+            style.borderLeftColor,
+          ],
+          borderWidths: [
+            style.borderTopWidth,
+            style.borderRightWidth,
+            style.borderBottomWidth,
+            style.borderLeftWidth,
+          ],
+          hasInsetShadow: style.boxShadow.includes("inset"),
+        };
+      });
+
+      expect(new Set(invitePanelFrame.borderColors).size).toBe(1);
+      expect(invitePanelFrame.borderWidths).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(invitePanelFrame.hasInsetShadow).toBe(false);
     }
     if (isPortrait) {
       await expect(page.locator("[data-live-portrait-invite]")).toBeVisible();
@@ -145,6 +168,28 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
           button.closest("[data-live-controls-utilities]") === null,
       ),
     ).toBe(true);
+
+    if (viewport.mode === "tablet-landscape-desktop" && viewport.height >= 600) {
+      const invitePanelBox = await page.locator(".liveInviteDetailsPanel").boundingBox();
+      const primaryBox = await page.locator("[data-live-primary-actions]").boundingBox();
+      const scrollBox = await page.locator("[data-live-scroll-region]").boundingBox();
+      const scrollState = await page.locator("[data-live-scroll-region]").evaluate((region) => ({
+        clientHeight: region.clientHeight,
+        scrollHeight: region.scrollHeight,
+      }));
+      const rowGap = await page
+        .locator("[data-live-controls]")
+        .evaluate((controls) => Number.parseFloat(getComputedStyle(controls).rowGap));
+      const precedingBottom =
+        scrollState.scrollHeight > scrollState.clientHeight + 1
+          ? (scrollBox?.y ?? 0) + (scrollBox?.height ?? 0)
+          : (invitePanelBox?.y ?? 0) + (invitePanelBox?.height ?? 0);
+      const inviteToPrimaryGap = (primaryBox?.y ?? 0) - precedingBottom;
+
+      expect(scrollState.clientHeight).toBeGreaterThan(0);
+      expect(inviteToPrimaryGap).toBeGreaterThanOrEqual(-1);
+      expect(inviteToPrimaryGap).toBeLessThanOrEqual(rowGap + 1);
+    }
 
     if (isPortrait) {
       const inviteSummary = page.locator("[data-live-portrait-invite]");

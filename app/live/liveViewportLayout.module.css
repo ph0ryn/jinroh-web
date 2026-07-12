@@ -190,13 +190,6 @@
   display: none;
 }
 
-.controlsScroll :global(.liveInviteDetailsPanel) {
-  border-color: rgba(var(--live-accent-rgb), 0.52);
-  box-shadow:
-    inset 3px 0 0 rgba(var(--live-accent-rgb), 0.44),
-    var(--shadow-tight);
-}
-
 @media (orientation: portrait) {
   .entryModeSwitcher {
     background: rgba(7, 11, 10, 0.32);
@@ -421,6 +414,27 @@
 
   .controlsPrimary :global(.liveActionRow) {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (orientation: landscape) and (min-height: 600px) {
+  .controls[data-live-controls-surface="waiting"] {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsStatus,
+  .controls[data-live-controls-surface="waiting"] .controlsPrimary {
+    flex: 0 0 auto;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+    flex: 0 1 auto;
+  }
+
+  .controls[data-live-controls-surface="waiting"] .controlsUtilities {
+    display: none;
   }
 }
 
