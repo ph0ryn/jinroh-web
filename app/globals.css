@@ -2041,10 +2041,15 @@ a {
 }
 
 .liveSettingsUtilityButton {
-  font-size: 1rem !important;
+  font-size: 1.4rem !important;
   justify-self: start !important;
   padding: 0 !important;
   width: 44px;
+}
+
+.liveSettingsUtilityButton > span {
+  font-size: 1.4rem !important;
+  line-height: 1;
 }
 
 .liveInviteActions {

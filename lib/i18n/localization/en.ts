@@ -493,6 +493,7 @@ export const enLocalization = {
       settings: "Settings",
       shareInvite: "Share invite",
       showInviteDetails: "Show invite",
+      showQrCode: "Show QR code",
       startGame: "Start game",
       switchingRoom: "Switching rooms...",
     },

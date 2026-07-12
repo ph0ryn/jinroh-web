@@ -486,6 +486,7 @@ export const jaLocalization = {
       settings: "設定",
       shareInvite: "招待を共有",
       showInviteDetails: "招待を表示",
+      showQrCode: "QRコードを表示",
       startGame: "ゲーム開始",
       switchingRoom: "部屋を切り替え中...",
     },

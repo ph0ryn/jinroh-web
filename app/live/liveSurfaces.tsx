@@ -602,40 +602,139 @@ function RoomInviteContent({
 }) {
   return (
     <div className="liveInviteContent" data-live-invite-content>
-      <div className="liveInviteCode">
-        <span>{t.live.invite.codeLabel}</span>
-        <strong>{summary.code}</strong>
-      </div>
+      <RoomInviteCode summary={summary} t={t} />
       <div className="liveInviteDetails">
-        {roomUrl === null ? null : (
-          <div className="liveInviteQrCode" aria-hidden="true">
-            <QRCodeSVG
-              bgColor="#ffffff"
-              fgColor="#000000"
-              level="M"
-              marginSize={4}
-              size={136}
-              value={roomUrl}
-            />
-          </div>
-        )}
-        <div className="liveInviteActions">
-          <button
-            className={didCopyCurrentRoom ? "secondaryButton liveCopiedButton" : "secondaryButton"}
-            type="button"
-            onClick={() => onCopyRoomCode(summary.code)}
-          >
-            {didCopyCurrentRoom ? t.live.buttons.copied : t.live.buttons.copyCode}
-          </button>
-          <button
-            className="secondaryButton"
-            type="button"
-            onClick={() => onShareRoom(summary.code)}
-          >
-            {t.live.buttons.shareInvite}
-          </button>
-        </div>
+        <RoomInviteQr roomUrl={roomUrl} />
+        <RoomInviteActions
+          didCopyCurrentRoom={didCopyCurrentRoom}
+          summary={summary}
+          t={t}
+          onCopyRoomCode={onCopyRoomCode}
+          onShareRoom={onShareRoom}
+        />
       </div>
+    </div>
+  );
+}
+
+function RoomInviteCode({
+  summary,
+  t,
+}: {
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+}) {
+  return (
+    <div className="liveInviteCode">
+      <span>{t.live.invite.codeLabel}</span>
+      <strong>{summary.code}</strong>
+    </div>
+  );
+}
+
+function RoomInviteQr({ roomUrl }: { readonly roomUrl: string | null }) {
+  return roomUrl === null ? null : (
+    <div className="liveInviteQrCode" aria-hidden="true">
+      <QRCodeSVG
+        bgColor="#ffffff"
+        fgColor="#000000"
+        level="M"
+        marginSize={4}
+        size={136}
+        value={roomUrl}
+      />
+    </div>
+  );
+}
+
+function RoomInviteActions({
+  didCopyCurrentRoom,
+  summary,
+  t,
+  onCopyRoomCode,
+  onShareRoom,
+}: {
+  readonly didCopyCurrentRoom: boolean;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onShareRoom: (roomCode: string) => void;
+}) {
+  return (
+    <div className="liveInviteActions">
+      <button
+        aria-label={didCopyCurrentRoom ? t.live.buttons.copied : t.live.buttons.copyCode}
+        className={didCopyCurrentRoom ? "secondaryButton liveCopiedButton" : "secondaryButton"}
+        type="button"
+        onClick={() => onCopyRoomCode(summary.code)}
+      >
+        <span aria-hidden="true" className="livePortraitInviteActionIcon">
+          ⧉
+        </span>
+        <span className="livePortraitInviteActionLabel">
+          {didCopyCurrentRoom ? t.live.buttons.copied : t.live.buttons.copyCode}
+        </span>
+      </button>
+      <button
+        aria-label={t.live.buttons.shareInvite}
+        className="secondaryButton"
+        type="button"
+        onClick={() => onShareRoom(summary.code)}
+      >
+        <span aria-hidden="true" className="livePortraitInviteActionIcon">
+          ↗
+        </span>
+        <span className="livePortraitInviteActionLabel">{t.live.buttons.shareInvite}</span>
+      </button>
+    </div>
+  );
+}
+
+function PortraitRoomInviteSummary({
+  copiedRoomCode,
+  isQrOpen,
+  summary,
+  t,
+  onCopyRoomCode,
+  onOpenQr,
+  onShareRoom,
+}: {
+  readonly copiedRoomCode: string | null;
+  readonly isQrOpen: boolean;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onOpenQr: () => void;
+  readonly onShareRoom: (roomCode: string) => void;
+}) {
+  return (
+    <div
+      aria-label={t.live.aria.roomInviteTools}
+      className="livePanel livePortraitInviteSummary"
+      data-live-portrait-invite
+    >
+      <div className="livePortraitInviteHeader">
+        <RoomInviteCode summary={summary} t={t} />
+        <button
+          aria-controls="room-invite-dialog"
+          aria-expanded={isQrOpen}
+          aria-haspopup="dialog"
+          aria-label={t.live.buttons.showQrCode}
+          className="secondaryButton livePortraitInviteQrButton"
+          data-live-invite-expanded={isQrOpen}
+          type="button"
+          onClick={onOpenQr}
+        >
+          QR
+        </button>
+      </div>
+      <RoomInviteActions
+        didCopyCurrentRoom={copiedRoomCode === summary.code}
+        summary={summary}
+        t={t}
+        onCopyRoomCode={onCopyRoomCode}
+        onShareRoom={onShareRoom}
+      />
     </div>
   );
 }
@@ -656,7 +755,7 @@ export function LiveWaitingSurface({
 }: LiveWaitingSurfaceProps) {
   const canStartGame = !isBusy && canStartRoom(summary);
   const controlHint = getControlHint(summary, isBusy, t);
-  const [isInviteExpanded, setIsInviteExpanded] = useState(false);
+  const [inviteDialogMode, setInviteDialogMode] = useState<"full" | "qr" | null>(null);
 
   return (
     <>
@@ -744,36 +843,52 @@ export function LiveWaitingSurface({
         surface="waiting"
         transitionItem="waiting"
         utilities={
-          <button
-            aria-controls="room-invite-dialog"
-            aria-expanded={isInviteExpanded}
-            aria-haspopup="dialog"
-            className="secondaryButton liveInviteDisclosure"
-            data-live-invite-expanded={isInviteExpanded}
-            type="button"
-            onClick={() => setIsInviteExpanded(true)}
-          >
-            {t.live.buttons.showInviteDetails}
-          </button>
+          <>
+            <PortraitRoomInviteSummary
+              copiedRoomCode={copiedRoomCode}
+              isQrOpen={inviteDialogMode === "qr"}
+              summary={summary}
+              t={t}
+              onCopyRoomCode={onCopyRoomCode}
+              onOpenQr={() => setInviteDialogMode("qr")}
+              onShareRoom={onShareRoom}
+            />
+            <button
+              aria-controls="room-invite-dialog"
+              aria-expanded={inviteDialogMode === "full"}
+              aria-haspopup="dialog"
+              className="secondaryButton liveInviteDisclosure"
+              data-live-invite-expanded={inviteDialogMode === "full"}
+              type="button"
+              onClick={() => setInviteDialogMode("full")}
+            >
+              {t.live.buttons.showInviteDetails}
+            </button>
+          </>
         }
       />
       <LivePopupDialog
         dialogClassName="liveInviteModal"
         id="room-invite-dialog"
-        isOpen={isInviteExpanded}
+        isOpen={inviteDialogMode !== null}
         meta={t.live.invite.codeLabel}
         t={t}
         title={t.live.aria.roomInviteTools}
-        onClose={() => setIsInviteExpanded(false)}
+        onClose={() => setInviteDialogMode(null)}
       >
-        <RoomInviteContent
-          didCopyCurrentRoom={copiedRoomCode === summary.code}
-          roomUrl={roomUrl}
-          summary={summary}
-          t={t}
-          onCopyRoomCode={onCopyRoomCode}
-          onShareRoom={onShareRoom}
-        />
+        <div className="liveInviteFullModalContent">
+          <RoomInviteContent
+            didCopyCurrentRoom={copiedRoomCode === summary.code}
+            roomUrl={roomUrl}
+            summary={summary}
+            t={t}
+            onCopyRoomCode={onCopyRoomCode}
+            onShareRoom={onShareRoom}
+          />
+        </div>
+        <div className="liveInviteQrModalContent">
+          <RoomInviteQr roomUrl={roomUrl} />
+        </div>
       </LivePopupDialog>
     </>
   );

@@ -184,6 +184,12 @@
   gap: 10px;
 }
 
+.shell :global(.livePortraitInviteSummary),
+.shell :global(.liveInviteQrModalContent),
+.shell :global(.livePortraitInviteActionIcon) {
+  display: none;
+}
+
 .controlsScroll :global(.liveInviteDetailsPanel) {
   border-color: rgba(var(--live-accent-rgb), 0.52);
   box-shadow:
@@ -274,32 +280,12 @@
   }
 
   .controls[data-live-controls-surface="waiting"] {
+    align-content: start;
     grid-template-areas:
       "status utilities"
       "primary primary";
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .controls[data-live-controls-surface="waiting"] .controlsPrimary {
-    align-self: end;
-  }
-
-  .controls[data-live-controls-surface="waiting"] .controlsPrimary :global(.liveWaitingActions) {
-    padding-inline-end: 52px;
-  }
-
-  .controls[data-live-controls-surface="waiting"]
-    :global(.liveWaitingHeadingActions:has(.liveSettingsUtilityButton)) {
-    padding-inline-end: 52px;
-  }
-
-  .controls[data-live-controls-surface="waiting"] .controlsUtilities {
-    height: 100%;
-  }
-
-  .controls[data-live-controls-surface="waiting"] :global(.liveInviteDisclosure) {
-    align-self: stretch;
+    grid-template-rows: auto auto;
   }
 
   .controls :global(.liveInviteInlineContent) {
@@ -310,11 +296,51 @@
     display: none;
   }
 
-  .controls :global(.liveInviteDisclosure) {
-    background: rgba(var(--live-accent-rgb), 0.14);
-    border-color: rgba(var(--live-accent-rgb), 0.54);
-    display: inline-flex !important;
-    width: 100%;
+  .controls :global(.livePortraitInviteSummary) {
+    align-self: stretch;
+    display: grid;
+    gap: 8px;
+  }
+
+  .controls :global(.livePortraitInviteHeader) {
+    align-items: center;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .controls :global(.livePortraitInviteSummary .liveInviteCode strong) {
+    font-size: clamp(1.15rem, 3.4vw, 1.55rem);
+    letter-spacing: 0.06em;
+    margin: 2px 0 0;
+  }
+
+  .controls :global(.livePortraitInviteSummary .liveInviteCode span) {
+    font-size: 0.66rem;
+  }
+
+  .controls :global(.livePortraitInviteSummary .liveInviteActions) {
+    gap: 6px;
+  }
+
+  .controls :global(.livePortraitInviteSummary .liveInviteActions button) {
+    font-size: 0.72rem;
+    padding-inline: 6px;
+  }
+
+  .controls :global(.livePortraitInviteQrButton) {
+    min-width: 44px;
+    padding: 0;
+    width: 44px;
+  }
+
+  .shell :global(.liveInviteFullModalContent) {
+    display: none;
+  }
+
+  .shell :global(.liveInviteQrModalContent) {
+    display: grid;
+    place-items: center;
   }
 }
 
@@ -427,10 +453,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .controlsUtilities {
-    padding-inline-end: 56px;
-  }
-
   .controls :global(.liveInviteInlineContent) {
     display: none;
   }
@@ -477,6 +499,17 @@
 
   .entryGrid :global(.liveSetupButtonRow) {
     padding-inline-end: 50px;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 359px) {
+  .controls :global(.livePortraitInviteActionLabel) {
+    display: none;
+  }
+
+  .controls :global(.livePortraitInviteActionIcon) {
+    display: inline;
+    font-size: 1.1rem;
   }
 }
 
