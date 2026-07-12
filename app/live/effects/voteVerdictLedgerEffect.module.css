@@ -20,7 +20,7 @@
     inset 0 0 0 1px rgba(255, 255, 255, 0.025);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  max-height: calc(100svh - 48px);
+  max-height: calc(100dvh - 48px);
   max-width: calc(100vw - 36px);
   padding: 30px;
   position: relative;
@@ -261,7 +261,7 @@
 
 @media (max-height: 500px) {
   .panel {
-    max-height: calc(100svh - 24px);
+    max-height: calc(100dvh - 24px);
     padding-block: 16px;
   }
 

@@ -45,7 +45,7 @@ test("lobby progress choreographs accepted seating changes once", async ({ page,
     };
   });
 
-  expect(initialLayout.height).toBeGreaterThanOrEqual(100);
+  expect(initialLayout.height).toBeGreaterThanOrEqual(80);
   expect(initialLayout.isBeforeInvite).toBe(true);
   await installLobbyProgressRecorder(page);
 
@@ -90,13 +90,11 @@ test("lobby progress choreographs accepted seating changes once", async ({ page,
   expect(await readLobbyProgressEvents(page)).toEqual(["increase", "ready", "decrease"]);
 
   await resetLobbyProgressRecorder(page);
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === "GET" && response.url().endsWith("/api/rooms/current"),
-    ),
-    page.getByRole("button", { exact: true, name: "Refresh" }).click(),
-  ]);
+  await page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" && response.url().endsWith("/api/rooms/current"),
+    { timeout: 6_000 },
+  );
   await page.waitForTimeout(800);
 
   expect(await readLobbyProgressEvents(page)).toEqual([]);
@@ -279,7 +277,6 @@ async function expectLobbyProgressStylesToBeClear(
           root.querySelector<HTMLElement>("[data-live-lobby-progress-sheen]"),
           root.querySelector<HTMLElement>("[data-live-lobby-progress-glow]"),
           root.querySelector<HTMLElement>("[data-live-lobby-progress-completion]"),
-          ...root.querySelectorAll<HTMLElement>("[data-live-lobby-progress-seat]"),
         ]
           .filter((element): element is HTMLElement => element !== null)
           .every(

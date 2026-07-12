@@ -34,12 +34,7 @@ import {
   writeClipboardText,
   writeStorage,
 } from "@/app/live/liveClient";
-import {
-  formatRoomStatus,
-  getLiveGridClassName,
-  getLiveMood,
-  getLivePageTitle,
-} from "@/app/live/livePresentation";
+import { formatRoomStatus, getLiveMood, getLivePageTitle } from "@/app/live/livePresentation";
 import { LiveRoundTable } from "@/app/live/liveRoundTable";
 import {
   buildStartRuleSetInput,
@@ -56,6 +51,7 @@ import {
   SwitchRoomDialog,
   type SetupPendingAction,
 } from "@/app/live/liveSurfaces";
+import { LiveRoomLayout, liveViewportStyles } from "@/app/live/liveViewportLayout";
 import { getSupabaseRealtimeClient } from "@/lib/client/supabaseRealtime";
 import {
   DEFAULT_TARGET_PLAYER_COUNT,
@@ -1099,13 +1095,6 @@ export default function LivePage() {
     }, "join");
   }
 
-  function handleRefreshRoom(): void {
-    void withBusy(async () => {
-      const token = await ensureIdentityToken();
-      await syncCurrentRoom(token);
-    });
-  }
-
   function handleStartGame(): void {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
@@ -1322,7 +1311,6 @@ export default function LivePage() {
     roomBoundSurfaceStatus = roomSummary.status;
   }
 
-  const isGameSurface = roomBoundSurfaceStatus === "playing" || roomBoundSurfaceStatus === "ended";
   const liveMood = getLiveMood(roomSummary);
   const liveBackgroundSnapshot = useMemo(
     () =>
@@ -1354,12 +1342,13 @@ export default function LivePage() {
     }),
     [liveSetupRoomCode, liveSetupSurfaceKind, liveSetupViewerPlayerId],
   );
-  const liveGridClassName = getLiveGridClassName(roomSummary);
   const liveShellClassName = [
     "liveShell",
+    liveViewportStyles["shell"],
     `liveMood-${liveMood}`,
-    isGameSurface ? "liveShellGame" : "",
-    roomSummary?.status === "waiting" ? "liveShellTable" : "",
+    roomBoundSurfaceStatus === null
+      ? liveViewportStyles["entryShell"]
+      : liveViewportStyles["roomShell"],
   ]
     .filter(Boolean)
     .join(" ");
@@ -1381,7 +1370,6 @@ export default function LivePage() {
         t={t}
         onCopyRoomCode={handleCopyRoomCode}
         onOpenSettings={() => setIsStartSettingsOpen(true)}
-        onRefreshRoom={handleRefreshRoom}
         onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
         onShareRoom={handleShareRoom}
         onStartGame={handleStartGame}
@@ -1435,35 +1423,37 @@ export default function LivePage() {
         rootRef={liveShellRef}
         snapshot={liveSetupTransitionSnapshot}
       />
-      <section className={isGameSurface ? "liveHero liveHeroUtility" : "liveHero"}>
-        <div className="liveHeroTitle">
-          <h1 className={isGameSurface ? "srOnly" : undefined}>
-            {getLivePageTitle(roomSummary, t)}
-          </h1>
-          {isGameSurface ? null : <p>{roomStatusLabel}</p>}
-        </div>
-        <LanguageSwitcher />
-      </section>
-
-      {isRoomEntryAvailable ? (
-        <LiveEntrySurface
-          displayName={displayName}
-          isBusy={isBusy}
-          pendingAction={setupPendingAction}
-          roomCodeInput={roomCodeInput}
-          t={t}
-          targetPlayerCount={targetPlayerCount}
-          onCreateRoom={handleCreateRoom}
-          onDisplayNameChange={handleDisplayNameChange}
-          onJoinRoom={handleJoinRoom}
-          onRoomCodeChange={handleRoomCodeChange}
-          onTargetPlayerCountChange={handleTargetPlayerCountChange}
+      {roomSummary !== null && roomBoundSurfaceStatus !== null ? (
+        <LiveRoomLayout
+          controls={roomBoundSurface}
+          table={<LiveRoundTable summary={roomSummary} t={t} />}
+          tableLabel={t.live.aria.roundTable}
+          title={getLivePageTitle(roomSummary, t)}
+          transitionItem={roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined}
         />
-      ) : null}
-
-      {isRoomEntryAvailable ? null : (
-        <div className={liveGridClassName}>
-          {roomSummary === null ? (
+      ) : (
+        <>
+          <section className={`liveHero ${liveViewportStyles["entryHeader"]}`}>
+            <div className="liveHeroTitle">
+              <h1>{getLivePageTitle(roomSummary, t)}</h1>
+              <p>{roomStatusLabel}</p>
+            </div>
+          </section>
+          {isRoomEntryAvailable ? (
+            <LiveEntrySurface
+              displayName={displayName}
+              isBusy={isBusy}
+              pendingAction={setupPendingAction}
+              roomCodeInput={roomCodeInput}
+              t={t}
+              targetPlayerCount={targetPlayerCount}
+              onCreateRoom={handleCreateRoom}
+              onDisplayNameChange={handleDisplayNameChange}
+              onJoinRoom={handleJoinRoom}
+              onRoomCodeChange={handleRoomCodeChange}
+              onTargetPlayerCountChange={handleTargetPlayerCountChange}
+            />
+          ) : (
             <section className="livePanel liveRoomPanel" aria-label={t.live.aria.roomState}>
               <div className="livePanelHeading">
                 <span>{t.live.page.roomSetup}</span>
@@ -1473,27 +1463,11 @@ export default function LivePage() {
                 <strong>{t.live.room.checkingCurrent}</strong>
               </div>
             </section>
-          ) : null}
-
-          {roomSummary !== null && roomBoundSurfaceStatus !== null ? (
-            <section
-              className={
-                roomBoundSurfaceStatus === "waiting"
-                  ? "livePlayTablePanel liveWaitingTablePanel"
-                  : "livePlayTablePanel"
-              }
-              aria-label={t.live.aria.roundTable}
-              data-live-setup-transition-item={
-                roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined
-              }
-            >
-              <LiveRoundTable summary={roomSummary} t={t} />
-            </section>
-          ) : null}
-
-          {roomBoundSurface}
-        </div>
+          )}
+        </>
       )}
+
+      <LanguageSwitcher />
 
       {canConfigureStartSettings ? (
         <StartSettingsDialog

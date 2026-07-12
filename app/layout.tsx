@@ -1,6 +1,6 @@
 import { I18nProvider } from "./i18nProvider";
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
@@ -34,6 +34,10 @@ export const metadata: Metadata = {
     images: ["/images/jinroh-og.jpg"],
     title: siteTitle,
   },
+};
+
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 type RootLayoutProps = {

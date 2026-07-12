@@ -39,12 +39,14 @@ import {
   getPlayerInitial,
   getPlayPhaseGuidance,
 } from "./livePresentation";
+import { LiveRoomControls, liveViewportStyles } from "./liveViewportLayout";
 import { useFollowScrollEnd } from "./useFollowScrollEnd";
 
 import type { LiveActionFeedbackCue } from "./effects/ui/liveActionFeedbackModel";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export type SetupPendingAction = "create" | "join" | null;
+export type LiveEntryMode = "create" | "join";
 
 type LiveWaitingSurfaceProps = {
   readonly copiedRoomCode: string | null;
@@ -56,7 +58,6 @@ type LiveWaitingSurfaceProps = {
   readonly t: Localization;
   readonly onCopyRoomCode: (roomCode: string) => void;
   readonly onOpenSettings: () => void;
-  readonly onRefreshRoom: () => void;
   readonly onRequestLeaveRoom: () => void;
   readonly onShareRoom: (roomCode: string) => void;
   readonly onStartGame: () => void;
@@ -122,6 +123,7 @@ const PLAYER_COUNT_OPTIONS = Array.from(
 
 function LivePopupDialog({
   children,
+  dialogClassName = "",
   id,
   isOpen,
   meta,
@@ -132,6 +134,7 @@ function LivePopupDialog({
   onExitComplete,
 }: {
   readonly children: ReactNode;
+  readonly dialogClassName?: string;
   readonly id: string;
   readonly isOpen: boolean;
   readonly meta: string;
@@ -146,7 +149,7 @@ function LivePopupDialog({
   return (
     <LiveModalFrame
       ariaLabelledBy={titleId}
-      dialogClassName="livePopupModal"
+      dialogClassName={`livePopupModal ${dialogClassName}`.trim()}
       id={id}
       isDismissible={isDismissible}
       isOpen={isOpen}
@@ -170,7 +173,9 @@ function LivePopupDialog({
           <span aria-hidden="true">X</span>
         </button>
       </div>
-      {children}
+      <div className="liveModalBody" data-live-modal-body>
+        {children}
+      </div>
     </LiveModalFrame>
   );
 }
@@ -188,6 +193,7 @@ export function LiveEntrySurface({
   onRoomCodeChange,
   onTargetPlayerCountChange,
 }: LiveEntrySurfaceProps) {
+  const [entryMode, setEntryMode] = useState<LiveEntryMode>("create");
   const roomCodeInputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const roomCodeDigits = Array.from({ length: 6 }, (unusedValue, index) => {
     void unusedValue;
@@ -283,11 +289,15 @@ export function LiveEntrySurface({
 
   return (
     <section
-      className="liveEntrySurface"
+      className={`liveEntrySurface ${liveViewportStyles["entrySurface"]}`}
       aria-label={t.live.aria.roomSetup}
       data-live-setup-transition-item="entry"
+      data-live-entry-mode={entryMode}
     >
-      <section className="liveSetupActionGrid" aria-label={t.live.aria.roomActions}>
+      <section
+        className={`liveSetupActionGrid ${liveViewportStyles["entryGrid"]}`}
+        aria-label={t.live.aria.roomActions}
+      >
         <article className="liveSetupPanel liveSetupProfilePanel">
           <div className="liveSetupPanelHeader">
             <div>
@@ -319,113 +329,138 @@ export function LiveEntrySurface({
           </div>
         </article>
 
-        <article className="liveSetupPanel">
-          <div className="liveSetupPanelHeader">
-            <div>
-              <p className="liveSetupPanelKicker">{t.live.setup.host}</p>
-              <h3>{t.live.setup.createTitle}</h3>
-            </div>
-            <div className="liveSetupPanelIcon" aria-hidden="true">
-              +
-            </div>
-          </div>
-          <form
-            className="liveSetupPanelBody"
-            aria-busy={pendingAction === "create"}
-            onSubmit={handleCreateSubmit}
+        <div className={liveViewportStyles["entryModePanel"]}>
+          <div
+            aria-label={t.live.aria.entryMode}
+            className={liveViewportStyles["entryModeSwitcher"]}
+            role="group"
           >
-            <label className="liveSetupField">
-              {t.live.setup.players}
-              <select
-                disabled={isBusy}
-                value={targetPlayerCount}
-                onChange={(event) => onTargetPlayerCountChange(Number(event.target.value))}
-                onKeyDown={handleCreateFieldKeyDown}
-              >
-                {PLAYER_COUNT_OPTIONS.map((playerCount) => (
-                  <option key={playerCount} value={playerCount}>
-                    {playerCount}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="liveSetupHint">{t.live.setup.createHint}</p>
-            <div className="liveSetupButtonRow">
-              <button
-                className="liveSetupButton liveSetupButtonPrimary"
-                type="submit"
-                disabled={isBusy}
-              >
-                {pendingAction === "create"
-                  ? t.live.buttons.creatingRoom
-                  : t.live.buttons.createRoom}
-              </button>
-            </div>
-          </form>
-        </article>
+            <button
+              aria-pressed={entryMode === "create"}
+              className={entryMode === "create" ? liveViewportStyles["entryModeActive"] : undefined}
+              type="button"
+              onClick={() => setEntryMode("create")}
+            >
+              {t.live.setup.createTitle}
+            </button>
+            <button
+              aria-pressed={entryMode === "join"}
+              className={entryMode === "join" ? liveViewportStyles["entryModeActive"] : undefined}
+              type="button"
+              onClick={() => setEntryMode("join")}
+            >
+              {t.live.setup.joinTitle}
+            </button>
+          </div>
 
-        <article className="liveSetupPanel">
-          <div className="liveSetupPanelHeader">
-            <div>
-              <p className="liveSetupPanelKicker">{t.live.setup.guest}</p>
-              <h3>{t.live.setup.joinTitle}</h3>
-            </div>
-            <div className="liveSetupPanelIcon" aria-hidden="true">
-              -&gt;
-            </div>
-          </div>
-          <form
-            className="liveSetupPanelBody"
-            aria-busy={pendingAction === "join"}
-            onSubmit={handleJoinSubmit}
-          >
-            <div className="liveSetupField">
-              <span id="live-room-code-label">{t.live.setup.roomCode}</span>
-              <div className="liveSetupCodeGrid" aria-labelledby="live-room-code-label">
-                {roomCodeDigits.map((digit, index) => (
-                  <input
-                    aria-label={t.live.setup.roomCodeDigit(index + 1)}
-                    autoComplete={index === 0 ? "one-time-code" : "off"}
-                    className="liveSetupCodeCell"
-                    disabled={isBusy}
-                    inputMode="numeric"
-                    key={index}
-                    maxLength={1}
-                    pattern="[0-9]*"
-                    ref={(element) => {
-                      roomCodeInputsRef.current[index] = element;
-                    }}
-                    value={digit}
-                    onChange={(event) => handleRoomCodeDigitChange(index, event.target.value)}
-                    onKeyDown={(event) => handleRoomCodeDigitKeyDown(index, event.key)}
-                    onPaste={(event) => {
-                      event.preventDefault();
-                      handleRoomCodePaste(index, event.clipboardData.getData("text"));
-                    }}
-                  />
-                ))}
+          <article className="liveSetupPanel" data-live-entry-panel="create">
+            <div className="liveSetupPanelHeader">
+              <div>
+                <p className="liveSetupPanelKicker">{t.live.setup.host}</p>
+                <h3>{t.live.setup.createPanelTitle}</h3>
+              </div>
+              <div className="liveSetupPanelIcon" aria-hidden="true">
+                +
               </div>
             </div>
-            <p className="liveSetupHint">{t.live.setup.joinHint}</p>
-            <div className="liveSetupButtonRow">
-              <button
-                className="liveSetupButton liveSetupButtonSecondary"
-                type="button"
-                onClick={() => onRoomCodeChange("")}
-                disabled={isBusy || roomCodeInput.length === 0}
-              >
-                {t.live.buttons.clear}
-              </button>
-              <button
-                className="liveSetupButton liveSetupButtonPrimary"
-                type="submit"
-                disabled={isJoinDisabled}
-              >
-                {pendingAction === "join" ? t.live.buttons.joiningRoom : t.live.buttons.joinRoom}
-              </button>
+            <form
+              className="liveSetupPanelBody"
+              aria-busy={pendingAction === "create"}
+              onSubmit={handleCreateSubmit}
+            >
+              <label className="liveSetupField">
+                {t.live.setup.players}
+                <select
+                  disabled={isBusy}
+                  value={targetPlayerCount}
+                  onChange={(event) => onTargetPlayerCountChange(Number(event.target.value))}
+                  onKeyDown={handleCreateFieldKeyDown}
+                >
+                  {PLAYER_COUNT_OPTIONS.map((playerCount) => (
+                    <option key={playerCount} value={playerCount}>
+                      {playerCount}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="liveSetupHint">{t.live.setup.createHint}</p>
+              <div className="liveSetupButtonRow">
+                <button
+                  className="liveSetupButton liveSetupButtonPrimary"
+                  type="submit"
+                  disabled={isBusy}
+                >
+                  {pendingAction === "create"
+                    ? t.live.buttons.creatingRoom
+                    : t.live.buttons.createRoom}
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <article className="liveSetupPanel" data-live-entry-panel="join">
+            <div className="liveSetupPanelHeader">
+              <div>
+                <p className="liveSetupPanelKicker">{t.live.setup.guest}</p>
+                <h3>{t.live.setup.joinPanelTitle}</h3>
+              </div>
+              <div className="liveSetupPanelIcon" aria-hidden="true">
+                -&gt;
+              </div>
             </div>
-          </form>
-        </article>
+            <form
+              className="liveSetupPanelBody"
+              aria-busy={pendingAction === "join"}
+              onSubmit={handleJoinSubmit}
+            >
+              <div className="liveSetupField">
+                <span id="live-room-code-label">{t.live.setup.roomCode}</span>
+                <div className="liveSetupCodeGrid" aria-labelledby="live-room-code-label">
+                  {roomCodeDigits.map((digit, index) => (
+                    <input
+                      aria-label={t.live.setup.roomCodeDigit(index + 1)}
+                      autoComplete={index === 0 ? "one-time-code" : "off"}
+                      className="liveSetupCodeCell"
+                      disabled={isBusy}
+                      inputMode="numeric"
+                      key={index}
+                      maxLength={1}
+                      pattern="[0-9]*"
+                      ref={(element) => {
+                        roomCodeInputsRef.current[index] = element;
+                      }}
+                      value={digit}
+                      onChange={(event) => handleRoomCodeDigitChange(index, event.target.value)}
+                      onKeyDown={(event) => handleRoomCodeDigitKeyDown(index, event.key)}
+                      onPaste={(event) => {
+                        event.preventDefault();
+                        handleRoomCodePaste(index, event.clipboardData.getData("text"));
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="liveSetupHint">{t.live.setup.joinHint}</p>
+              <div className="liveSetupButtonRow">
+                <button
+                  className="liveSetupButton liveSetupButtonSecondary"
+                  type="button"
+                  onClick={() => onRoomCodeChange("")}
+                  disabled={isBusy || roomCodeInput.length === 0}
+                >
+                  {t.live.buttons.clear}
+                </button>
+                <button
+                  className="liveSetupButton liveSetupButtonPrimary"
+                  type="submit"
+                  disabled={isJoinDisabled}
+                >
+                  {pendingAction === "join" ? t.live.buttons.joiningRoom : t.live.buttons.joinRoom}
+                </button>
+              </div>
+            </form>
+          </article>
+        </div>
       </section>
     </section>
   );
@@ -446,6 +481,7 @@ export function LeaveRoomDialog({
 }) {
   return (
     <LivePopupDialog
+      dialogClassName="liveConfirmationModal"
       id="leave-room-dialog"
       isDismissible={!isBusy}
       isOpen={isOpen}
@@ -493,6 +529,7 @@ export function SwitchRoomDialog({
 
   return (
     <LivePopupDialog
+      dialogClassName="liveConfirmationModal"
       id="switch-room-dialog"
       isDismissible={!isBusy}
       isOpen={isOpen}
@@ -536,34 +573,170 @@ export function RoomInviteTools({
 
   return (
     <div className="liveInviteTools" aria-label={t.live.aria.roomInviteTools}>
-      <div>
-        <span>{t.live.invite.codeLabel}</span>
-        <strong>{summary.code}</strong>
-        {roomUrl === null ? null : (
-          <div className="liveInviteQrCode" aria-hidden="true">
-            <QRCodeSVG
-              bgColor="#ffffff"
-              fgColor="#000000"
-              level="M"
-              marginSize={4}
-              size={136}
-              value={roomUrl}
-            />
-          </div>
-        )}
+      <div className="liveInviteInlineContent">
+        <RoomInviteContent
+          didCopyCurrentRoom={didCopyCurrentRoom}
+          roomUrl={roomUrl}
+          summary={summary}
+          t={t}
+          onCopyRoomCode={onCopyRoomCode}
+          onShareRoom={onShareRoom}
+        />
       </div>
-      <div>
-        <button
-          className={didCopyCurrentRoom ? "secondaryButton liveCopiedButton" : "secondaryButton"}
-          type="button"
-          onClick={() => onCopyRoomCode(summary.code)}
-        >
+    </div>
+  );
+}
+
+function RoomInviteContent({
+  didCopyCurrentRoom,
+  roomUrl,
+  summary,
+  t,
+  onCopyRoomCode,
+  onShareRoom,
+}: {
+  readonly didCopyCurrentRoom: boolean;
+  readonly roomUrl: string | null;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onShareRoom: (roomCode: string) => void;
+}) {
+  return (
+    <div className="liveInviteContent" data-live-invite-content>
+      <RoomInviteCode summary={summary} t={t} />
+      <div className="liveInviteDetails">
+        <RoomInviteQr roomUrl={roomUrl} />
+        <RoomInviteActions
+          didCopyCurrentRoom={didCopyCurrentRoom}
+          summary={summary}
+          t={t}
+          onCopyRoomCode={onCopyRoomCode}
+          onShareRoom={onShareRoom}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RoomInviteCode({
+  summary,
+  t,
+}: {
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+}) {
+  return (
+    <div className="liveInviteCode" data-live-room-code>
+      <span>{t.live.invite.codeLabel}</span>
+      <strong>{summary.code}</strong>
+    </div>
+  );
+}
+
+function RoomInviteQr({ roomUrl }: { readonly roomUrl: string | null }) {
+  return roomUrl === null ? null : (
+    <div className="liveInviteQrCode" aria-hidden="true">
+      <QRCodeSVG
+        bgColor="#ffffff"
+        fgColor="#000000"
+        level="M"
+        marginSize={4}
+        size={136}
+        value={roomUrl}
+      />
+    </div>
+  );
+}
+
+function RoomInviteActions({
+  didCopyCurrentRoom,
+  summary,
+  t,
+  onCopyRoomCode,
+  onShareRoom,
+}: {
+  readonly didCopyCurrentRoom: boolean;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onShareRoom: (roomCode: string) => void;
+}) {
+  return (
+    <div className="liveInviteActions">
+      <button
+        aria-label={didCopyCurrentRoom ? t.live.buttons.copied : t.live.buttons.copyCode}
+        className={didCopyCurrentRoom ? "secondaryButton liveCopiedButton" : "secondaryButton"}
+        type="button"
+        onClick={() => onCopyRoomCode(summary.code)}
+      >
+        <span aria-hidden="true" className="liveCompactInviteActionIcon">
+          ⧉
+        </span>
+        <span className="liveCompactInviteActionLabel">
           {didCopyCurrentRoom ? t.live.buttons.copied : t.live.buttons.copyCode}
-        </button>
-        <button className="secondaryButton" type="button" onClick={() => onShareRoom(summary.code)}>
-          {t.live.buttons.shareInvite}
+        </span>
+      </button>
+      <button
+        aria-label={t.live.buttons.shareInvite}
+        className="secondaryButton"
+        type="button"
+        onClick={() => onShareRoom(summary.code)}
+      >
+        <span aria-hidden="true" className="liveCompactInviteActionIcon">
+          ↗
+        </span>
+        <span className="liveCompactInviteActionLabel">{t.live.buttons.shareInvite}</span>
+      </button>
+    </div>
+  );
+}
+
+function CompactRoomInviteSummary({
+  copiedRoomCode,
+  isQrOpen,
+  summary,
+  t,
+  onCopyRoomCode,
+  onOpenQr,
+  onShareRoom,
+}: {
+  readonly copiedRoomCode: string | null;
+  readonly isQrOpen: boolean;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onOpenQr: () => void;
+  readonly onShareRoom: (roomCode: string) => void;
+}) {
+  return (
+    <div
+      aria-label={t.live.aria.roomInviteTools}
+      className="livePanel liveCompactInviteSummary"
+      data-live-compact-invite
+    >
+      <div className="liveCompactInviteHeader">
+        <RoomInviteCode summary={summary} t={t} />
+        <button
+          aria-controls="room-invite-dialog"
+          aria-expanded={isQrOpen}
+          aria-haspopup="dialog"
+          aria-label={t.live.buttons.showQrCode}
+          className="secondaryButton liveCompactInviteQrButton"
+          data-live-invite-expanded={isQrOpen}
+          type="button"
+          onClick={onOpenQr}
+        >
+          QR
         </button>
       </div>
+      <RoomInviteActions
+        didCopyCurrentRoom={copiedRoomCode === summary.code}
+        summary={summary}
+        t={t}
+        onCopyRoomCode={onCopyRoomCode}
+        onShareRoom={onShareRoom}
+      />
     </div>
   );
 }
@@ -578,105 +751,125 @@ export function LiveWaitingSurface({
   t,
   onCopyRoomCode,
   onOpenSettings,
-  onRefreshRoom,
   onRequestLeaveRoom,
   onShareRoom,
   onStartGame,
 }: LiveWaitingSurfaceProps) {
   const canStartGame = !isBusy && canStartRoom(summary);
   const controlHint = getControlHint(summary, isBusy, t);
+  const [isInviteQrOpen, setIsInviteQrOpen] = useState(false);
 
   return (
-    <div
-      className="livePlaySideStack liveWaitingSideStack"
-      data-live-setup-transition-item="waiting"
-    >
-      <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
-        <div className="livePanelHeading">
-          <span>{t.live.aria.invite}</span>
-          <div className="livePanelHeadingActions">
-            <strong>{roomStatusLabel}</strong>
-            <button
-              className="secondaryButton liveCompactButton"
-              type="button"
-              onClick={onRefreshRoom}
-              disabled={isBusy}
-            >
-              {t.live.buttons.refresh}
-            </button>
-          </div>
-        </div>
-
-        <LiveLobbyProgress summary={summary} t={t} />
-        <RoomInviteTools
-          copiedRoomCode={copiedRoomCode}
-          roomUrl={roomUrl}
-          summary={summary}
-          t={t}
-          onCopyRoomCode={onCopyRoomCode}
-          onShareRoom={onShareRoom}
-        />
-      </section>
-
-      <section className="livePanel liveControlPanel" aria-label={t.live.aria.waitingControls}>
-        <div className="livePanelHeading">
-          <span>
-            {summary.isHost ? t.live.waiting.hostControls : t.live.waiting.playerControls}
-          </span>
-          <div className="livePanelHeadingActions">
-            <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
-            {summary.isHost ? (
+    <>
+      <LiveRoomControls
+        primary={
+          <section className="livePanel liveControlPanel" aria-label={t.live.aria.waitingControls}>
+            <div className="livePanelHeading">
+              <span>
+                {summary.isHost ? t.live.waiting.hostControls : t.live.waiting.playerControls}
+              </span>
+              <div className="liveWaitingHeadingActions">
+                <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
+                {summary.isHost ? (
+                  <button
+                    aria-controls="start-settings-dialog"
+                    aria-label={t.live.buttons.settings}
+                    aria-expanded={isSettingsOpen}
+                    aria-haspopup="dialog"
+                    className="secondaryButton liveSettingsUtilityButton"
+                    type="button"
+                    onClick={onOpenSettings}
+                  >
+                    <span aria-hidden="true">⚙</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div className="liveWaitingPanel">
+              <strong>
+                {summary.isHost
+                  ? t.live.waiting.startWhenEveryoneSeated
+                  : t.live.waiting.waitingForHost}
+              </strong>
+              {canStartGame ? null : <p>{controlHint}</p>}
+            </div>
+            <div className="liveWaitingActions">
+              {summary.isHost ? (
+                <button
+                  className="primaryLiveButton"
+                  aria-describedby={canStartGame ? undefined : "control-hint"}
+                  type="button"
+                  onClick={onStartGame}
+                  disabled={!canStartGame}
+                >
+                  {t.live.buttons.startGame}
+                </button>
+              ) : null}
               <button
-                className="secondaryButton liveCompactButton"
-                aria-controls="start-settings-dialog"
-                aria-expanded={isSettingsOpen}
-                aria-haspopup="dialog"
+                className="dangerButton"
                 type="button"
-                onClick={onOpenSettings}
+                onClick={onRequestLeaveRoom}
+                disabled={isBusy}
               >
-                {t.live.buttons.settings}
+                {t.live.buttons.leaveRoom}
               </button>
-            ) : null}
-          </div>
+            </div>
+            {canStartGame ? null : (
+              <p className="srOnly" id="control-hint">
+                {controlHint}
+              </p>
+            )}
+          </section>
+        }
+        scroll={
+          <section className="livePanel liveInviteDetailsPanel" aria-label={t.live.aria.invite}>
+            <RoomInviteTools
+              copiedRoomCode={copiedRoomCode}
+              roomUrl={roomUrl}
+              summary={summary}
+              t={t}
+              onCopyRoomCode={onCopyRoomCode}
+              onShareRoom={onShareRoom}
+            />
+          </section>
+        }
+        status={
+          <section className="livePanel liveInvitePanel" aria-label={t.live.aria.invite}>
+            <div className="livePanelHeading">
+              <span>{t.live.aria.invite}</span>
+              <strong>{roomStatusLabel}</strong>
+            </div>
+            <LiveLobbyProgress summary={summary} t={t} />
+          </section>
+        }
+        surface="waiting"
+        transitionItem="waiting"
+        utilities={
+          <CompactRoomInviteSummary
+            copiedRoomCode={copiedRoomCode}
+            isQrOpen={isInviteQrOpen}
+            summary={summary}
+            t={t}
+            onCopyRoomCode={onCopyRoomCode}
+            onOpenQr={() => setIsInviteQrOpen(true)}
+            onShareRoom={onShareRoom}
+          />
+        }
+      />
+      <LivePopupDialog
+        dialogClassName="liveInviteModal"
+        id="room-invite-dialog"
+        isOpen={isInviteQrOpen}
+        meta={t.live.invite.codeLabel}
+        t={t}
+        title={t.live.aria.roomInviteTools}
+        onClose={() => setIsInviteQrOpen(false)}
+      >
+        <div className="liveInviteQrModalContent">
+          <RoomInviteQr roomUrl={roomUrl} />
         </div>
-
-        <div className="liveWaitingPanel">
-          <strong>
-            {summary.isHost
-              ? t.live.waiting.startWhenEveryoneSeated
-              : t.live.waiting.waitingForHost}
-          </strong>
-          {canStartGame ? null : <p>{controlHint}</p>}
-        </div>
-
-        <div className="liveWaitingActions">
-          {summary.isHost ? (
-            <button
-              className="primaryLiveButton"
-              aria-describedby={canStartGame ? undefined : "control-hint"}
-              type="button"
-              onClick={onStartGame}
-              disabled={!canStartGame}
-            >
-              {t.live.buttons.startGame}
-            </button>
-          ) : null}
-          <button
-            className="dangerButton"
-            type="button"
-            onClick={onRequestLeaveRoom}
-            disabled={isBusy}
-          >
-            {t.live.buttons.leaveRoom}
-          </button>
-        </div>
-        {canStartGame ? null : (
-          <p className="srOnly" id="control-hint">
-            {controlHint}
-          </p>
-        )}
-      </section>
-    </div>
+      </LivePopupDialog>
+    </>
   );
 }
 
@@ -718,102 +911,110 @@ export function LivePlayingSurface({
 
   return (
     <>
-      <div className="livePlaySideStack">
-        <section className="livePanel livePlayPhasePanel" aria-label={t.live.aria.currentPhase}>
-          <div className="livePanelHeading">
-            <span>{t.live.aria.currentPhase}</span>
-          </div>
-
-          <div className="livePlayPhaseCard">
-            <div role="status" aria-atomic="true" aria-live="polite">
-              <span className="srOnly">{phaseGuidance.label}</span>
-              <strong>{phaseGuidance.message}</strong>
-              {actionProgress === null ? null : (
-                <em>
-                  {getLocalizedActionProgressLabel(t, actionProgress.kind)}:{" "}
-                  {formatActionProgress(actionProgress, t)}
-                </em>
-              )}
-            </div>
-            {phaseEndsAt === null ? null : (
-              <time dateTime={phaseEndsAt}>
-                <PhaseCountdown key={phaseEndsAt} phaseEndsAt={phaseEndsAt} t={t} />
-              </time>
+      <LiveRoomControls
+        primary={
+          !hasCurrentPlayer || selfActions.length === 0 ? null : (
+            <section
+              className="livePanel liveNightActionPanel"
+              aria-label={getActionPanelTitle(summary, t)}
+            >
+              <div className="livePanelHeading">
+                <span>{getActionPanelTitle(summary, t)}</span>
+              </div>
+              <div className="liveNightActionStack">
+                <LiveActionList
+                  actions={selfActions}
+                  feedbackCue={actionFeedbackCue}
+                  isBusy={isBusy}
+                  pendingActionKey={pendingActionKey}
+                  players={summary.players}
+                  t={t}
+                  onFeedbackComplete={onActionFeedbackComplete}
+                  onSubmitAction={onSubmitAction}
+                />
+              </div>
+            </section>
+          )
+        }
+        scroll={
+          <div className="liveControlScrollStack">
+            {!hasCurrentPlayer || selfRole === null ? null : (
+              <section
+                className="livePanel liveSelfRolePanel"
+                aria-label={t.live.effects.role.reveal}
+              >
+                <button
+                  aria-describedby="live-self-role-identity"
+                  className="secondaryButton liveRoleRevealButton"
+                  type="button"
+                  onClick={onRevealRole}
+                >
+                  <span aria-hidden="true">◇</span>
+                  <strong>{t.live.effects.role.reveal}</strong>
+                </button>
+                <p className="srOnly" id="live-self-role-identity">
+                  {t.live.effects.role.identity(selfRole.name)}
+                </p>
+              </section>
+            )}
+            {privateEvents.length === 0 ? null : (
+              <section
+                className="livePanel livePrivateEventPanel"
+                aria-label={t.live.privateEventLog.title}
+              >
+                <div className="livePanelHeading">
+                  <span>{t.live.privateEventLog.title}</span>
+                  <strong>{t.live.privateEventLog.meta(privateEvents.length)}</strong>
+                </div>
+                <PrivateEventList
+                  events={privateEvents}
+                  locale={locale}
+                  players={summary.players}
+                  t={t}
+                />
+              </section>
             )}
           </div>
-        </section>
-
-        {!hasCurrentPlayer || selfRole === null ? null : (
-          <section className="livePanel liveSelfRolePanel" aria-label={t.live.effects.role.reveal}>
-            <button
-              aria-describedby="live-self-role-identity"
-              className="secondaryButton liveRoleRevealButton"
-              type="button"
-              onClick={onRevealRole}
-            >
-              <span aria-hidden="true">◇</span>
-              <strong>{t.live.effects.role.reveal}</strong>
-            </button>
-            <p className="srOnly" id="live-self-role-identity">
-              {t.live.effects.role.identity(selfRole.name)}
-            </p>
-          </section>
-        )}
-
-        {privateEvents.length === 0 ? null : (
-          <section
-            className="livePanel livePrivateEventPanel"
-            aria-label={t.live.privateEventLog.title}
-          >
+        }
+        status={
+          <section className="livePanel livePlayPhasePanel" aria-label={t.live.aria.currentPhase}>
             <div className="livePanelHeading">
-              <span>{t.live.privateEventLog.title}</span>
-              <strong>{t.live.privateEventLog.meta(privateEvents.length)}</strong>
+              <span>{t.live.aria.currentPhase}</span>
             </div>
-            <PrivateEventList
-              events={privateEvents}
-              locale={locale}
-              players={summary.players}
-              t={t}
-            />
-          </section>
-        )}
-
-        {!hasCurrentPlayer || selfActions.length === 0 ? null : (
-          <section
-            className="livePanel liveNightActionPanel"
-            aria-label={getActionPanelTitle(summary, t)}
-          >
-            <div className="livePanelHeading">
-              <span>{getActionPanelTitle(summary, t)}</span>
-            </div>
-
-            <div className="liveNightActionStack">
-              <LiveActionList
-                actions={selfActions}
-                feedbackCue={actionFeedbackCue}
-                isBusy={isBusy}
-                pendingActionKey={pendingActionKey}
-                players={summary.players}
-                t={t}
-                onFeedbackComplete={onActionFeedbackComplete}
-                onSubmitAction={onSubmitAction}
-              />
+            <div className="livePlayPhaseCard">
+              <div role="status" aria-atomic="true" aria-live="polite">
+                <span className="srOnly">{phaseGuidance.label}</span>
+                <strong>{phaseGuidance.message}</strong>
+                {actionProgress === null ? null : (
+                  <em>
+                    {getLocalizedActionProgressLabel(t, actionProgress.kind)}:{" "}
+                    {formatActionProgress(actionProgress, t)}
+                  </em>
+                )}
+              </div>
+              {phaseEndsAt === null ? null : (
+                <time dateTime={phaseEndsAt}>
+                  <PhaseCountdown key={phaseEndsAt} phaseEndsAt={phaseEndsAt} t={t} />
+                </time>
+              )}
             </div>
           </section>
-        )}
-
-        <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
-          {nightConversation === null ? null : (
-            <button className="secondaryButton" type="button" onClick={onOpenNightConversation}>
-              {t.live.buttons.nightChat}
+        }
+        surface="playing"
+        utilities={
+          <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
+            {nightConversation === null ? null : (
+              <button className="secondaryButton" type="button" onClick={onOpenNightConversation}>
+                {t.live.buttons.nightChat}
+              </button>
+            )}
+            <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
+              {t.live.buttons.publicLog}
+              <em>{publicEventCount}</em>
             </button>
-          )}
-          <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
-            {t.live.buttons.publicLog}
-            <em>{publicEventCount}</em>
-          </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {nightConversation !== null ? (
         <LivePopupDialog
@@ -869,41 +1070,45 @@ export function LiveEndedSurface({
 
   return (
     <>
-      <div className="livePlaySideStack">
-        <section className="livePanel" aria-label={t.live.page.result}>
-          <div className="livePanelHeading">
-            <span>{t.live.page.result}</span>
-            <strong>{t.live.effects.victory.title(winner)}</strong>
-          </div>
-
-          {selfResult === null ? null : (
-            <div className="livePlayPhaseCard" aria-label={t.live.effects.victory.resultLabel}>
-              <div>
-                <span>{t.live.effects.victory.resultLabel}</span>
-                <strong>{t.game.playerResult[selfResult]}</strong>
-              </div>
+      <LiveRoomControls
+        primary={
+          <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
+            <button
+              className="dangerButton"
+              type="button"
+              onClick={onRequestLeaveRoom}
+              disabled={isBusy}
+            >
+              {t.live.buttons.leaveRoom}
+            </button>
+          </section>
+        }
+        status={
+          <section className="livePanel" aria-label={t.live.page.result}>
+            <div className="livePanelHeading">
+              <span>{t.live.page.result}</span>
+              <strong>{t.live.effects.victory.title(winner)}</strong>
             </div>
-          )}
-        </section>
-
-        <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
-          <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
-            {t.live.buttons.publicLog}
-            <em>{publicEventCount}</em>
-          </button>
-        </div>
-
-        <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
-          <button
-            className="dangerButton"
-            type="button"
-            onClick={onRequestLeaveRoom}
-            disabled={isBusy}
-          >
-            {t.live.buttons.leaveRoom}
-          </button>
-        </section>
-      </div>
+            {selfResult === null ? null : (
+              <div className="livePlayPhaseCard" aria-label={t.live.effects.victory.resultLabel}>
+                <div>
+                  <span>{t.live.effects.victory.resultLabel}</span>
+                  <strong>{t.game.playerResult[selfResult]}</strong>
+                </div>
+              </div>
+            )}
+          </section>
+        }
+        surface="ended"
+        utilities={
+          <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
+            <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
+              {t.live.buttons.publicLog}
+              <em>{publicEventCount}</em>
+            </button>
+          </div>
+        }
+      />
 
       <PublicLogDialog
         isOpen={isPublicLogOpen}

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { formatPhaseTitle, formatWinner } from "@/app/live/liveEventPresentation";
 import { getLocalizedRole } from "@/lib/i18n/localization";
 
 import { DeathSoulAshEffect } from "./DeathSoulAshEffect";
+import { observeMeaningfulLiveElementResize } from "./liveResizeSettlement";
 import { PhaseChapterEffect } from "./PhaseChapterEffect";
 import { RoleTarotFlipEffect } from "./RoleTarotFlipEffect";
 import { VictoryCrestAscendEffect } from "./VictoryCrestAscendEffect";
@@ -37,6 +38,16 @@ export function LiveGameEffects({
       onComplete(activeCueId);
     }
   }, [activeCueId, onComplete]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+
+    if (activeCueId === null || shell === null) {
+      return;
+    }
+
+    return observeMeaningfulLiveElementResize([shell], handleComplete);
+  }, [activeCueId, handleComplete, shellRef]);
 
   const announcement =
     activeCue === null || summary === null ? "" : getEffectAnnouncement(activeCue, summary, t);

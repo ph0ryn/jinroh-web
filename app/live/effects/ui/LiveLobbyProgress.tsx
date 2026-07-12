@@ -76,25 +76,8 @@ export function LiveLobbyProgress({ summary, t }: LiveLobbyProgressProps) {
         </span>
       </div>
 
-      <div className={styles["footer"]}>
-        <div aria-hidden="true" className={styles["seats"]}>
-          {Array.from({ length: snapshot.targetPlayerCount }, (unusedValue, index) => {
-            void unusedValue;
-            const seatNumber = index + 1;
-
-            return (
-              <span
-                className={styles["seat"]}
-                data-filled={seatNumber <= snapshot.joinedPlayerCount}
-                data-live-lobby-progress-seat
-                data-live-lobby-progress-seat-number={seatNumber}
-                key={seatNumber}
-              />
-            );
-          })}
-        </div>
-
-        {progressState === "ready" ? (
+      {progressState === "ready" ? (
+        <div className={styles["footer"]}>
           <span
             aria-hidden="true"
             className={styles["completion"]}
@@ -103,8 +86,8 @@ export function LiveLobbyProgress({ summary, t }: LiveLobbyProgressProps) {
             <span>✓</span>
             {t.live.invite.ready}
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

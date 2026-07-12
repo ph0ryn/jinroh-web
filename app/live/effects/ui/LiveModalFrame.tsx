@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+
 import { useModalDialog } from "../../useModalDialog";
 import styles from "./liveModalPresence.module.css";
 import { useLiveModalPresence, type LiveModalVariant } from "./useLiveModalPresence";
@@ -46,7 +48,7 @@ export function LiveModalFrame({
     return null;
   }
 
-  return (
+  const frame = (
     <div
       className={`${styles["root"]} liveModalBackdrop ${backdropClassName}`.trim()}
       data-live-modal-phase={phase}
@@ -78,4 +80,12 @@ export function LiveModalFrame({
       </section>
     </div>
   );
+
+  if (typeof document === "undefined") {
+    return frame;
+  }
+
+  const liveShell = document.querySelector<HTMLElement>(".liveShell");
+
+  return liveShell === null ? frame : createPortal(frame, liveShell);
 }

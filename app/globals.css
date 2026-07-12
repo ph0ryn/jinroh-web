@@ -1381,7 +1381,6 @@ a {
   --live-accent: var(--brass-300);
   --live-accent-rgb: 217, 173, 95;
   --live-avatar-border: rgba(119, 189, 117, 0.86);
-  --live-content-width: 1320px;
   --live-danger-bg: rgba(116, 48, 45, 0.42);
   --live-danger-border: rgba(167, 71, 61, 0.62);
   --live-input-bg: rgba(241, 230, 202, 0.08);
@@ -1393,26 +1392,8 @@ a {
   --live-secondary-bg: rgba(241, 230, 202, 0.06);
   --live-soft-surface: rgba(241, 230, 202, 0.05);
   background: var(--ink-950);
-  display: grid;
-  gap: 12px;
-  grid-template-rows: auto auto minmax(0, 1fr);
   isolation: isolate;
-  min-height: 100svh;
-  overflow-x: clip;
-  padding: clamp(12px, 1.35vw, 18px);
   position: relative;
-}
-
-.liveShell > * {
-  margin-inline: auto;
-  position: relative;
-  width: min(100%, var(--live-content-width));
-  z-index: 1;
-}
-
-.liveShellGame,
-.liveShellTable {
-  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .liveMood-setup,
@@ -1532,10 +1513,6 @@ a {
   text-align: right;
 }
 
-.liveHeroUtility {
-  min-height: 0;
-}
-
 .liveKicker {
   color: var(--live-accent);
   font-size: 0.8rem;
@@ -1543,7 +1520,6 @@ a {
   text-transform: uppercase;
 }
 
-.liveEntryPanel,
 .livePanel {
   backdrop-filter: blur(18px);
   background: var(--live-panel-bg);
@@ -1768,26 +1744,6 @@ a {
   text-align: center;
 }
 
-.liveEntryPanel {
-  align-items: end;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(220px, 320px) minmax(140px, 170px) minmax(96px, 118px) auto;
-  justify-self: center;
-  padding: 10px 12px;
-  width: min(100%, 940px);
-}
-
-.liveEntryPanel label {
-  color: var(--live-muted);
-  display: grid;
-  font-size: 0.84rem;
-  font-weight: 780;
-  gap: 7px;
-}
-
-.liveEntryPanel input,
-.liveEntryPanel select,
 .liveActionRow select,
 .liveNightChatComposer input,
 .liveRuleSetField input,
@@ -1798,17 +1754,6 @@ a {
   color: var(--paper-100);
   min-height: 40px;
   padding: 0 12px;
-}
-
-.liveEntryActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.liveEntryActions button {
-  min-height: 40px;
 }
 
 .liveShell button {
@@ -1861,354 +1806,12 @@ a {
   color: #e9f6dd;
 }
 
-.liveGrid {
-  align-items: stretch;
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(300px, 360px) minmax(420px, 1fr) minmax(300px, 340px);
-  min-height: 0;
-}
-
-.liveGridSetup {
-  align-items: start;
-  justify-content: center;
-  grid-template-columns: minmax(280px, 520px);
-  width: min(100%, 520px);
-}
-
-.liveGridWaiting {
-  align-items: stretch;
-  grid-template-columns: minmax(520px, 1fr) minmax(320px, 400px);
-  height: 100%;
-  min-height: 0;
-  justify-content: center;
-  width: min(100%, 1320px);
-}
-
-.livePlayGrid {
-  align-items: stretch;
-  grid-template-columns: minmax(520px, 1fr) minmax(320px, 400px);
-  height: 100%;
-  min-height: 0;
-  width: min(100%, 1320px);
-}
-
-.livePlayTablePanel {
-  align-content: stretch;
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  overflow: visible;
-  padding: 0;
-}
-
-.livePlaySideStack {
-  align-content: start;
-  display: grid;
-  gap: 14px;
-  min-height: 0;
-}
-
 .liveEndedActions {
   padding: 12px;
 }
 
 .liveEndedActions button {
   width: 100%;
-}
-
-.livePlayTablePanel .liveTableBoard {
-  height: 100%;
-  min-height: 0;
-  padding: clamp(8px, 1.5vw, 18px);
-}
-
-.liveTableSurface {
-  background:
-    radial-gradient(circle at 50% 43%, rgba(var(--live-accent-rgb), 0.2), transparent 18%),
-    repeating-conic-gradient(
-      from 8deg,
-      rgba(124, 76, 38, 0.24) 0deg 3deg,
-      rgba(63, 38, 24, 0.16) 3deg 9deg
-    ),
-    radial-gradient(circle, #765031 0%, #50301f 54%, #241711 78%, #100d0b 100%);
-  border: 1px solid rgba(var(--live-accent-rgb), 0.66);
-  box-shadow:
-    inset 0 0 0 8px rgba(25, 16, 12, 0.88),
-    inset 0 0 0 10px rgba(var(--live-accent-rgb), 0.24),
-    inset 0 0 58px rgba(0, 0, 0, 0.68),
-    0 32px 64px rgba(0, 0, 0, 0.46),
-    0 0 52px rgba(var(--live-accent-rgb), 0.09);
-  height: auto;
-  isolation: isolate;
-  max-width: 100%;
-  width: min(680px, 100%, calc(100svh - 142px));
-}
-
-.liveTableSurface::before {
-  background:
-    repeating-radial-gradient(
-      ellipse at 48% 46%,
-      rgba(255, 255, 255, 0.032) 0 1px,
-      transparent 1px 12px
-    ),
-    radial-gradient(circle, transparent 57%, rgba(0, 0, 0, 0.46) 86%);
-  border: 1px solid rgba(var(--live-accent-rgb), 0.2);
-  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.46);
-  inset: 11px;
-  z-index: 0;
-}
-
-.liveTableSurface::after {
-  border: 1px solid rgba(var(--live-accent-rgb), 0.28);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.48),
-    inset 0 0 24px rgba(var(--live-accent-rgb), 0.08);
-  content: "";
-  inset: 20%;
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-
-.liveTableInnerRing {
-  border: 1px dashed rgba(var(--live-accent-rgb), 0.2);
-  border-radius: 50%;
-  inset: 26%;
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-
-.liveTableCenter {
-  background:
-    radial-gradient(circle, rgba(18, 24, 20, 0.9), rgba(7, 11, 10, 0.76)),
-    linear-gradient(145deg, rgba(var(--live-accent-rgb), 0.12), transparent);
-  border: 1px solid rgba(var(--live-accent-rgb), 0.36);
-  border-radius: 50%;
-  box-shadow:
-    inset 0 0 22px rgba(0, 0, 0, 0.42),
-    0 10px 28px rgba(0, 0, 0, 0.28);
-  gap: 5px;
-  inset: 32%;
-  padding: 12px;
-}
-
-.liveTableCenter strong {
-  font-size: clamp(1rem, 2vw, 1.3rem);
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-
-.liveTableCenter .liveTableCenterKicker {
-  color: var(--live-accent);
-  font-size: 0.7rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-  max-width: 18ch;
-  text-transform: uppercase;
-}
-
-.liveTablePhaseIcon {
-  color: var(--live-accent);
-  display: inline-block;
-  height: 36px;
-  position: relative;
-  width: 36px;
-}
-
-.liveTablePhaseIcon::before,
-.liveTablePhaseIcon::after {
-  content: "";
-  left: 50%;
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.liveTablePhaseIcon::before {
-  border: 2px solid currentColor;
-  border-radius: 50%;
-  height: 26px;
-  width: 26px;
-}
-
-.liveTablePhaseIcon.night::before {
-  background: transparent;
-  border: 0;
-  box-shadow: -9px 5px 0 0 currentColor;
-  height: 26px;
-  transform: translate(-28%, -60%) rotate(-18deg);
-  width: 26px;
-}
-
-.liveTablePhaseIcon.day::before {
-  background: currentColor;
-  box-shadow:
-    0 -17px 0 -11px currentColor,
-    0 17px 0 -11px currentColor,
-    -17px 0 0 -11px currentColor,
-    17px 0 0 -11px currentColor;
-  height: 22px;
-  width: 22px;
-}
-
-.liveTablePhaseIcon.voting::before {
-  border-radius: 4px;
-  height: 26px;
-  transform: translate(-50%, -50%) rotate(-7deg);
-  width: 30px;
-}
-
-.liveTablePhaseIcon.voting::after {
-  background: currentColor;
-  border-radius: 999px;
-  height: 3px;
-  transform: translate(-50%, -50%) rotate(-7deg);
-  width: 16px;
-}
-
-.liveTablePhaseIcon.execution::before {
-  border: 0;
-  border-left: 3px solid currentColor;
-  border-radius: 0;
-  height: 31px;
-  width: 3px;
-}
-
-.liveTablePhaseIcon.execution::after {
-  background: currentColor;
-  clip-path: polygon(0 0, 100% 18%, 100% 78%, 0 60%);
-  height: 18px;
-  transform: translate(-10%, -86%);
-  width: 22px;
-}
-
-.liveTablePhaseIcon.result::before {
-  border-radius: 50%;
-}
-
-.liveTablePhaseIcon.result::after {
-  border-bottom: 3px solid currentColor;
-  border-left: 3px solid currentColor;
-  height: 8px;
-  transform: translate(-50%, -55%) rotate(-45deg);
-  width: 16px;
-}
-
-.liveTableSeat {
-  backdrop-filter: blur(14px);
-  background:
-    linear-gradient(180deg, rgba(20, 25, 21, 0.96), rgba(6, 9, 8, 0.94)),
-    linear-gradient(135deg, rgba(var(--live-accent-rgb), 0.12), transparent);
-  border-color: rgba(var(--live-accent-rgb), 0.38);
-  border-radius: 13px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 24px rgba(0, 0, 0, 0.42);
-  min-height: 92px;
-  width: 98px;
-}
-
-.liveTableSeat.selected {
-  background:
-    linear-gradient(180deg, rgba(31, 38, 30, 0.98), rgba(8, 12, 10, 0.96)),
-    linear-gradient(135deg, rgba(var(--live-accent-rgb), 0.18), transparent);
-  box-shadow:
-    0 0 0 3px rgba(var(--live-accent-rgb), 0.12),
-    0 16px 30px rgba(0, 0, 0, 0.48),
-    0 0 28px rgba(var(--live-accent-rgb), 0.1);
-}
-
-.liveTableSeat .seatNumber {
-  background: rgba(7, 11, 10, 0.96);
-  border-color: rgba(var(--live-accent-rgb), 0.42);
-  color: var(--live-accent);
-  font-weight: 850;
-}
-
-.liveTableSeat .avatar {
-  background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.08), transparent 34%),
-    linear-gradient(135deg, rgba(33, 87, 61, 0.96), rgba(7, 17, 13, 0.98));
-  border-color: var(--live-avatar-border);
-  box-shadow: inset 0 0 0 2px rgba(7, 11, 10, 0.52);
-}
-
-.liveTableRoleReveal {
-  color: var(--live-accent) !important;
-  font-weight: 850;
-  letter-spacing: 0.01em;
-}
-
-.liveTableSeatState {
-  background: rgba(7, 11, 10, 0.94);
-  border: 1px solid rgba(var(--live-accent-rgb), 0.34);
-  border-radius: 999px;
-  color: var(--paper-200);
-  font-size: 0.58rem;
-  font-weight: 850;
-  line-height: 1;
-  max-width: 54px;
-  overflow: hidden;
-  padding: 4px 6px;
-  position: absolute;
-  right: 5px;
-  text-overflow: ellipsis;
-  top: 5px;
-  white-space: nowrap;
-}
-
-.liveTableEmptySeat {
-  background: rgba(7, 11, 10, 0.34);
-  border-color: rgba(var(--live-accent-rgb), 0.24);
-  border-style: dashed;
-  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.2);
-  color: rgba(241, 230, 202, 0.56);
-}
-
-.liveTableEmptySeat .avatar {
-  background: rgba(7, 11, 10, 0.28);
-  border-color: rgba(var(--live-accent-rgb), 0.28);
-  border-style: dashed;
-  box-shadow: none;
-  color: rgba(var(--live-accent-rgb), 0.72);
-  font-size: 1rem;
-  font-weight: 500;
-}
-
-.liveTableEmptySeat .seatLabel strong {
-  color: rgba(241, 230, 202, 0.68);
-}
-
-.liveTableEmptySeat .seatLabel small {
-  color: var(--live-muted);
-}
-
-.liveTableSeat.disconnected .seatLabel small,
-.liveTableSeat.left .seatLabel small {
-  color: var(--live-muted);
-}
-
-.liveTableSeat.disconnected .avatar,
-.liveTableSeat.left .avatar {
-  filter: grayscale(0.7);
-  opacity: 0.68;
-}
-
-.liveTableSeat.eliminated .avatar {
-  filter: grayscale(0.55) brightness(0.72);
-  opacity: 0.68;
-  transform: scale(0.9);
-}
-
-.liveTableSeat.execution .avatar,
-.liveTableSeat.speaking .avatar {
-  border-color: var(--live-accent);
-  box-shadow: 0 0 0 3px rgba(var(--live-accent-rgb), 0.14);
 }
 
 .livePlayPhaseCard {
@@ -2339,14 +1942,6 @@ a {
   justify-content: space-between;
 }
 
-.livePanelHeadingActions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 .livePanelHeading span {
   color: var(--live-muted);
   font-size: 0.8rem;
@@ -2357,12 +1952,6 @@ a {
 .livePanelHeading strong {
   color: var(--live-accent);
   text-transform: capitalize;
-}
-
-.liveShell .liveCompactButton {
-  font-size: 0.78rem;
-  min-height: 32px;
-  padding: 0 10px;
 }
 
 .liveMetrics {
@@ -2418,34 +2007,51 @@ a {
 }
 
 .liveInviteTools {
-  align-items: start;
   background: linear-gradient(180deg, rgba(var(--live-accent-rgb), 0.13), rgba(7, 11, 10, 0.34));
   border: 1px solid rgba(var(--live-accent-rgb), 0.52);
   border-radius: var(--radius-small);
   display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
   padding: 14px;
 }
 
-.liveInviteTools > div {
+.liveInviteContent {
+  display: grid;
+  gap: 10px;
   min-width: 0;
 }
 
-.liveInviteTools > div:first-child {
+.liveInviteCode,
+.liveInviteDetails {
+  min-width: 0;
+}
+
+.liveInviteCode {
   display: grid;
   justify-items: start;
 }
 
-.liveInviteTools > div:last-child {
-  display: flex;
-  flex-wrap: wrap;
+.liveInviteDetails {
+  display: grid;
   gap: 8px;
-  justify-content: stretch;
 }
 
-.liveInviteTools button {
-  flex: 1 1 126px;
+.liveSettingsUtilityButton {
+  font-size: 1.4rem !important;
+  justify-self: start !important;
+  padding: 0 !important;
+  width: 44px;
+}
+
+.liveSettingsUtilityButton > span {
+  font-size: 1.4rem !important;
+  line-height: 1;
+}
+
+.liveInviteActions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .liveInviteTools span {
@@ -2458,7 +2064,7 @@ a {
 .liveInviteTools strong {
   color: var(--paper-100);
   display: block;
-  font-size: clamp(2.2rem, 4.6vw, 4.3rem);
+  font-size: clamp(1.9rem, 4.6vw, 3.6rem);
   font-variant-numeric: tabular-nums;
   line-height: 0.98;
   margin: 8px 0 6px;
@@ -2587,7 +2193,10 @@ a {
   display: grid;
   inset: 0;
   justify-items: center;
-  padding: clamp(16px, 4vw, 36px);
+  padding: max(clamp(12px, 4vw, 36px), var(--live-safe-top))
+    max(clamp(12px, 4vw, 36px), var(--live-safe-right))
+    max(clamp(12px, 4vw, 36px), var(--live-safe-bottom))
+    max(clamp(12px, 4vw, 36px), var(--live-safe-left));
   position: fixed;
   z-index: 30;
 }
@@ -2601,8 +2210,9 @@ a {
     0 0 0 1px rgba(241, 230, 202, 0.04) inset;
   display: grid;
   gap: 14px;
-  max-height: min(86svh, 780px);
-  overflow: auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(86dvh, 780px);
+  overflow: hidden;
   padding: 16px;
   scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
   scrollbar-width: thin;
@@ -2610,7 +2220,28 @@ a {
 }
 
 .livePopupModal {
+  height: min(100%, 780px);
   width: min(100%, 680px);
+}
+
+.liveInviteModal {
+  height: auto;
+  max-height: min(86dvh, 520px);
+  width: min(100%, 440px);
+}
+
+.liveConfirmationModal {
+  height: auto;
+}
+
+.liveInviteModal .liveModalBody {
+  overflow: visible;
+}
+
+.liveModalBody {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .liveSettingsBackdrop {
@@ -2635,7 +2266,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0;
-  height: min(720px, calc(100svh - 48px));
+  height: min(720px, calc(100dvh - 48px));
   max-height: none;
   overflow: hidden;
   padding: 0;
@@ -3200,7 +2831,8 @@ a {
 
 .livePopupModal .liveEventList,
 .livePopupModal .liveNightChatMessages {
-  max-height: min(58svh, 480px);
+  max-height: none;
+  min-height: 0;
 }
 
 .livePopupModal .liveEventList {
@@ -3534,6 +3166,8 @@ a {
   color: var(--paper-200);
   display: grid;
   gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
   margin-top: 6px;
   min-width: 0;
   padding-top: 8px;
@@ -3562,7 +3196,8 @@ a {
   gap: 8px;
   list-style: none;
   margin: 0;
-  max-height: min(34svh, 320px);
+  max-height: none;
+  min-height: 0;
   overflow: auto;
   padding: 0;
   scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
@@ -3794,64 +3429,9 @@ a {
   max-width: none;
 }
 
-@media (min-width: 1121px) {
-  .liveShell {
-    height: 100svh;
-    overflow: hidden;
-  }
-
-  .liveGrid {
-    overflow: hidden;
-  }
-
-  .livePanel {
-    max-height: 100%;
-    overflow: auto;
-    scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
-    scrollbar-width: thin;
-  }
-}
-
 @media (max-width: 1120px) {
-  .liveGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .livePlayGrid {
-    height: auto;
-    min-height: 0;
-    width: min(100%, 900px);
-  }
-
-  .livePlaySideStack {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto;
-  }
-
-  .livePlayTablePanel .liveTableBoard {
-    height: auto;
-    min-height: clamp(430px, 76vw, 720px);
-  }
-
-  .livePlayTablePanel .liveTableSurface {
-    height: auto;
-    width: min(100%, 680px);
-  }
-
-  .liveEntryPanel {
-    grid-template-columns: minmax(0, 1fr) minmax(160px, 0.6fr);
-  }
-
-  .liveSetupActionGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .liveSetupProfilePanel {
-    grid-column: 1 / -1;
-  }
-
   .liveSettingsModal {
-    height: min(900px, calc(100svh - 32px));
+    height: min(900px, calc(100dvh - 32px));
   }
 
   .liveSettingsGridTwo,
@@ -3866,22 +3446,9 @@ a {
   .liveRoleGrid {
     grid-template-columns: 1fr;
   }
-
-  .liveEntryActions {
-    grid-column: 1 / -1;
-    justify-content: stretch;
-  }
-
-  .liveEntryActions button {
-    flex: 1 1 140px;
-  }
 }
 
 @media (max-width: 720px) {
-  .liveShell {
-    padding: 14px;
-  }
-
   .liveHero {
     align-items: stretch;
     grid-template-columns: 1fr;
@@ -3892,32 +3459,18 @@ a {
     text-align: left;
   }
 
-  .liveEntryPanel,
   .liveActionRow,
   .liveConfirmationActions,
   .liveInviteTools,
   .liveWaitingActions,
   .liveNightChatComposer,
-  .livePlaySideStack,
   .liveRuleSetGrid,
   .liveControlStack {
     grid-template-columns: 1fr;
   }
 
-  .liveEntrySurface {
-    gap: 14px;
-  }
-
   .liveSetupPanel {
     background: linear-gradient(180deg, #131510, #0c0f0c);
-  }
-
-  .liveSetupActionGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .liveSetupProfilePanel {
-    grid-column: auto;
   }
 
   .liveSetupCodeGrid {
@@ -3935,12 +3488,13 @@ a {
 
   .liveSettingsBackdrop {
     align-items: start;
-    padding: 12px;
+    padding: max(12px, var(--live-safe-top)) max(12px, var(--live-safe-right))
+      max(12px, var(--live-safe-bottom)) max(12px, var(--live-safe-left));
   }
 
   .liveSettingsModal {
     border-radius: 18px;
-    height: calc(100svh - 24px);
+    height: 100%;
   }
 
   .liveSettingsHeader {
@@ -4040,78 +3594,6 @@ a {
 
   .liveRoleDescription {
     white-space: normal;
-  }
-
-  .livePlayTablePanel .liveTableBoard {
-    min-height: clamp(360px, calc(100svw - 26px), 500px);
-    padding: 8px;
-  }
-
-  .liveTableSurface {
-    width: min(100%, calc(100svw - 52px));
-  }
-
-  .liveTableCenter {
-    inset: 30%;
-    padding: 8px;
-  }
-
-  .liveTableCenter .liveTablePhaseIcon {
-    display: inline-block;
-    height: 30px;
-    width: 30px;
-  }
-
-  .liveTableCenter .liveTableCenterKicker {
-    display: block;
-    font-size: 0.58rem;
-    letter-spacing: 0.04em;
-  }
-
-  .liveTableSeat {
-    min-height: clamp(64px, 20vw, 78px);
-    padding: 6px;
-    width: clamp(64px, 20vw, 78px);
-  }
-
-  .liveTableSeat .avatar {
-    height: clamp(28px, 7.7vw, 30px);
-    width: clamp(28px, 7.7vw, 30px);
-  }
-
-  .liveTableSeat .seatLabel {
-    font-size: clamp(0.72rem, 3.4vw, 0.84rem);
-  }
-
-  .liveTableBoard[data-seat-density="compact"] .liveTableSeat {
-    min-height: clamp(54px, 15.5vw, 62px);
-    padding: 5px 3px;
-    width: clamp(54px, 15.5vw, 62px);
-  }
-
-  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .avatar {
-    font-size: 0.72rem;
-    height: clamp(22px, 6.2vw, 25px);
-    width: clamp(22px, 6.2vw, 25px);
-  }
-
-  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .seatNumber {
-    font-size: 0.58rem;
-    height: 18px;
-    top: -10px;
-    width: 18px;
-  }
-
-  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .seatLabel {
-    font-size: clamp(0.58rem, 2.7vw, 0.68rem);
-  }
-
-  .liveTableBoard[data-seat-density="compact"] .liveTableSeat .seatLabel small {
-    font-size: 0.56rem;
-  }
-
-  .liveTableBoard[data-seat-density="compact"] .liveTableSeatState {
-    display: none;
   }
 
   .livePlayPhaseCard {

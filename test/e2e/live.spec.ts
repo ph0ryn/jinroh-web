@@ -25,7 +25,7 @@ test("players can create, join, start, and finish first night through the UI", a
   try {
     await host.page.getByLabel("Players").selectOption("3");
     await host.page.getByRole("button", { name: "Create room" }).click();
-    const inviteCode = host.page.locator('[aria-label="Room invite tools"] strong');
+    const inviteCode = host.page.locator("[data-live-room-code]:visible strong");
     const roundTable = host.page.locator("[data-live-round-table]");
 
     await expect(inviteCode).toHaveText(/^\d{6}$/u);
@@ -41,7 +41,7 @@ test("players can create, join, start, and finish first night through the UI", a
     for (const player of [player2, player3]) {
       await fillRoomCode(player.page, roomCode);
       await player.page.getByRole("button", { name: "Join room" }).click();
-      await expect(player.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
+      await expect(player.page.locator("[data-live-room-code]:visible strong")).toHaveText(
         roomCode,
       );
     }
@@ -150,7 +150,7 @@ test("leaving while waiting requires confirmation and transfers host controls", 
     await leaveDialog.getByRole("button", { name: "Cancel" }).click();
 
     await expect(leaveDialog).toHaveCount(0);
-    await expect(host.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(roomCode);
+    await expect(host.page.locator("[data-live-room-code]:visible strong")).toHaveText(roomCode);
     await expect(leaveButton).toBeFocused();
 
     await leaveButton.click();
@@ -161,7 +161,18 @@ test("leaving while waiting requires confirmation and transfers host controls", 
 
     await host.page.setViewportSize({ height: 500, width: 390 });
     await host.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await expect.poll(() => host.page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        host.page.evaluate(() => ({
+          documentOverflowX:
+            document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          documentOverflowY:
+            document.documentElement.scrollHeight - document.documentElement.clientHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        })),
+      )
+      .toEqual({ documentOverflowX: 0, documentOverflowY: 0, scrollX: 0, scrollY: 0 });
 
     await leaveButton.click();
     await leaveDialog.getByRole("button", { name: "Leave room", exact: true }).click();
@@ -217,9 +228,7 @@ test("creating with Enter exposes a scoped busy state", async ({ browser }) => {
 
     releaseCreateRequest();
 
-    await expect(host.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
-      /^\d{6}$/u,
-    );
+    await expect(host.page.locator("[data-live-room-code]:visible strong")).toHaveText(/^\d{6}$/u);
     expect(consoleErrors).toEqual([]);
   } finally {
     releaseCreateRequest();
@@ -268,9 +277,7 @@ test("joining with Enter exposes a scoped busy state", async ({ browser, request
 
     releaseJoinRequest();
 
-    await expect(joiner.page.locator('[aria-label="Room invite tools"] strong')).toHaveText(
-      room.code,
-    );
+    await expect(joiner.page.locator("[data-live-room-code]:visible strong")).toHaveText(room.code);
     expect(consoleErrors).toEqual([]);
   } finally {
     releaseJoinRequest();
@@ -331,9 +338,9 @@ test("the desktop round table uses the available play area", async ({ page, requ
   );
   await page.goto("/live");
 
-  const shell = page.locator(".liveShellGame");
-  const tableBoard = page.locator(".livePlayTablePanel .liveTableBoard");
-  const tableSurface = page.locator(".livePlayTablePanel .liveTableSurface");
+  const shell = page.locator('[data-live-mood="night"]');
+  const tableBoard = page.locator("[data-live-round-table]");
+  const tableSurface = page.locator("[data-live-table-surface]");
 
   await expect(shell).toBeVisible();
   await expect(tableBoard).toBeVisible();
@@ -438,7 +445,7 @@ async function readRoundTableGeometry(page: Page): Promise<{
   readonly surfaceWidth: number;
 }> {
   return page.locator("[data-live-round-table]").evaluate((board) => {
-    const surface = board.querySelector<HTMLElement>(".liveTableSurface");
+    const surface = board.querySelector<HTMLElement>("[data-live-table-surface]");
 
     if (surface === null) {
       throw new Error("Round table surface was not rendered.");
@@ -490,8 +497,8 @@ async function readCurrentSeatOrientation(page: Page): Promise<{
   readonly tableCenterY: number;
 }> {
   return page.locator("[data-live-round-table]").evaluate((board) => {
-    const surface = board.querySelector<HTMLElement>(".liveTableSurface");
-    const currentSeat = board.querySelector<HTMLElement>(".liveTableSeat.selected");
+    const surface = board.querySelector<HTMLElement>("[data-live-table-surface]");
+    const currentSeat = board.querySelector<HTMLElement>("[data-live-current-seat]");
 
     if (surface === null || currentSeat === null) {
       throw new Error("Current player seat orientation was not rendered.");
@@ -513,7 +520,7 @@ async function createAndJoinWaitingRoom(host: Page, guests: readonly Page[]): Pr
   await host.getByLabel("Players").selectOption(String(guests.length + 1));
   await host.getByRole("button", { name: "Create room" }).click();
 
-  const inviteCode = host.locator('[aria-label="Room invite tools"] strong');
+  const inviteCode = host.locator("[data-live-room-code]:visible strong");
 
   await expect(inviteCode).toHaveText(/^\d{6}$/u);
 
@@ -526,7 +533,7 @@ async function createAndJoinWaitingRoom(host: Page, guests: readonly Page[]): Pr
   for (const guest of guests) {
     await fillRoomCode(guest, roomCode);
     await guest.getByRole("button", { name: "Join room" }).click();
-    await expect(guest.locator('[aria-label="Room invite tools"] strong')).toHaveText(roomCode);
+    await expect(guest.locator("[data-live-room-code]:visible strong")).toHaveText(roomCode);
   }
 
   return roomCode;
