@@ -28,40 +28,22 @@ export const enLocalization = {
       winner: "Winner",
     },
     kind: {
-      action_resolved: "Action complete",
       attack_guarded: "Guarded attack",
       game_ended: "Game ended",
       game_started: "Game started",
-      initial_inspection: "Initial inspection",
-      inspection_result: "Inspection result",
-      peaceful_night: "Peaceful night",
       phase_changed: "Game advanced",
       player_died: "Player died",
       player_executed: "Execution",
-      spiritist_result: "Spiritist result",
       vote_resolved: "Voting complete",
       vote_submitted: "Vote submitted",
     },
-    inspectionView: {
-      human: "human",
-      werewolf: "a werewolf",
-    },
     message: {
-      action_resolved: "A private action was completed.",
       attack_guarded: "Someone was attacked, but no one died.",
       game_ended: (winner: string) => `${winner} won the game.`,
       game_started: "The game started. Confirm your role before the first day.",
-      initial_inspection: (targetName: string, result: string) =>
-        `${targetName} was inspected as ${result}.`,
-      inspection_result: (targetName: string, result: string) =>
-        `${targetName} was inspected as ${result}.`,
-      peaceful_night: "The night ended with no death.",
-      privateUnknown: "A private result was recorded.",
       phase_changed: (phase: string) => `${phase} started.`,
       player_died: (targetName: string) => `${targetName} died.`,
       player_executed: (targetName: string) => `${targetName} was executed.`,
-      spiritist_result: (targetName: string, result: string) =>
-        `${targetName} was revealed as ${result}.`,
       unknown: "The public log was updated.",
       vote_resolved: {
         candidate: (targetName: string) => `${targetName} received the most votes.`,
@@ -78,40 +60,8 @@ export const enLocalization = {
         execution_last_words: "Last words",
         first_night_ready: "Ready for daybreak",
         night_actions_hidden: "Night actions remain secret until dawn",
+        role_actions: "Role actions",
         votes_submitted: "Votes cast",
-      },
-      actionButtons: {
-        attack: "Attack",
-        day_ready: "Ready to vote",
-        end_speech: "Finish speaking",
-        execution_skip: "Finish last words",
-        first_night_ready: "Ready for daybreak",
-        guard: "Protect",
-        hunter_retaliate: "Take with you",
-        inspect: "Inspect",
-        vote: "Vote",
-      },
-      actions: {
-        attack: "Choose someone to attack",
-        day_ready: "Ready to vote",
-        end_speech: "Finish speaking",
-        execution_skip: "Finish last words",
-        first_night_ready: "Ready for daybreak",
-        guard: "Choose someone to protect",
-        hunter_retaliate: "Choose someone to take with you",
-        inspect: "Choose someone to inspect",
-        vote: "Choose someone to execute",
-      },
-      nightConversations: {
-        werewolf: "Werewolf council",
-      },
-      roleOptions: {
-        guard: {
-          guardConsecutiveTargetPolicy: "Protect the same player on consecutive nights",
-        },
-        seer: {
-          initialInspectionPolicy: "Receive an inspection result on the first night",
-        },
       },
       rolePresets: {
         "6p-classic": {
@@ -129,11 +79,6 @@ export const enLocalization = {
           name: "Open seven",
           shortLabel: "7O",
         },
-        "9p-hunter": {
-          description: "A nine-player game where executing the hunter has consequences.",
-          name: "Hunter nine",
-          shortLabel: "9H",
-        },
         "9p-spiritist": {
           description:
             "A nine-player game where the spiritist reveals the executed player's nature.",
@@ -141,58 +86,13 @@ export const enLocalization = {
           shortLabel: "9S",
         },
       },
-      roles: {
-        fox: {
-          description: "Survive until the game ends to steal victory for yourself.",
-          name: "Fox",
-          shortLabel: "F",
-        },
-        guard: {
-          description: "Protect one player from the werewolves each night.",
-          name: "Guard",
-          shortLabel: "G",
-        },
-        hunter: {
-          description: "If executed, choose one living player to take with you.",
-          name: "Hunter",
-          shortLabel: "H",
-        },
-        madman: {
-          description: "Help the werewolves win without knowing who they are.",
-          name: "Madman",
-          shortLabel: "M",
-        },
-        seer: {
-          description: "Inspect one player each night to learn whether they are a werewolf.",
-          name: "Seer",
-          shortLabel: "Se",
-        },
-        spiritist: {
-          description: "Learn whether each executed player was a werewolf.",
-          name: "Spiritist",
-          shortLabel: "Sp",
-        },
-        villager: {
-          description: "Find and execute the werewolves through discussion and voting.",
-          name: "Villager",
-          shortLabel: "V",
-        },
-        werewolf: {
-          description: "Hide among the village and attack one player each night.",
-          name: "Werewolf",
-          shortLabel: "W",
-        },
-      },
       unknown: {
-        action: "Unknown action",
         actionProgress: "Progress unavailable",
-        nightConversation: "Private conversation",
         role: {
           description: "No description is available for this role.",
           name: "Unknown role",
           shortLabel: "?",
         },
-        roleOption: "Role option",
         rolePreset: {
           description: "No description is available for this role mix.",
           name: "Unknown role mix",
@@ -212,7 +112,6 @@ export const enLocalization = {
     actions: {
       action: "Action",
       button: {
-        submit: "Submit",
         submitted: "Submitted",
         submitting: "Submitting",
       },
@@ -270,10 +169,7 @@ export const enLocalization = {
       you: "You",
     },
     team: {
-      fox: "Fox",
       none: "No team",
-      villagers: "Villagers",
-      werewolves: "Werewolves",
     },
   },
   home: {
@@ -284,7 +180,8 @@ export const enLocalization = {
       primaryActionConfirmed: (action: string) =>
         `${action} confirmed in the local product surface.`,
       roomOpened: "Room 428913 opened with eight joined players.",
-      seerSubmitted: "Seer action submitted. Public room state remains unchanged.",
+      roleActionSubmitted: (roleName: string) =>
+        `${roleName} action submitted. Public room state remains unchanged.`,
       visibility: {
         host: "Host",
         private: "Private",
@@ -293,12 +190,7 @@ export const enLocalization = {
       votingPrepared: "Voting phase prepared with one action per living player.",
     },
     actionRows: {
-      labels: {
-        guard: "Guard",
-        livingPlayers: "Living players",
-        seer: "Seer",
-        werewolves: "Werewolves",
-      },
+      livingPlayers: "Living players",
       status: {
         done: "Done",
         locked: "Locked",
@@ -372,14 +264,6 @@ export const enLocalization = {
       createBody: "Create a room, become host, and invite players with a six-digit code.",
       createTitle: "Create room",
       joinTitle: "Join with code",
-    },
-    sampleRoles: {
-      fox: "Fox",
-      guard: "Guard",
-      madman: "Madman",
-      seer: "Seer",
-      villager: "Villager",
-      werewolf: "Werewolf",
     },
     scenarios: {
       board: {
@@ -755,15 +639,6 @@ export const enLocalization = {
         voteVisibility: "Visibility",
         voteVisibilityCountOnly: "Count only",
         voteVisibilityVoterToTarget: "Voter to target",
-      },
-      roleSpecific: {
-        guardConsecutiveTargetPolicy: "Guard consecutive target policy",
-        guardConsecutiveTargetPolicyAllow: "Allow",
-        guardConsecutiveTargetPolicyDeny: "Deny same",
-        initialInspectionPolicy: "Initial inspection policy",
-        initialInspectionPolicyDisabled: "Disabled",
-        initialInspectionPolicyEnabled: "Enabled",
-        notConfigurable: (label: string) => `${label} cannot be changed yet.`,
       },
       roles: {
         assigned: "assigned",

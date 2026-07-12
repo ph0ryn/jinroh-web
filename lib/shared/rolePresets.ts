@@ -65,21 +65,6 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
     },
     shortLabel: "9S",
   },
-  {
-    description: "Nine-player setup with execution retaliation pressure.",
-    id: "9p-hunter",
-    name: "Hunter nine",
-    playerCount: 9,
-    roleCounts: {
-      guard: 1,
-      hunter: 1,
-      madman: 1,
-      seer: 1,
-      villager: 3,
-      werewolf: 2,
-    },
-    shortLabel: "9H",
-  },
 ] as const;
 
 export function getRolePresetsForPlayerCount(

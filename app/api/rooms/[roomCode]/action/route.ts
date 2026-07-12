@@ -2,6 +2,8 @@ import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { submitAction } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
 
+import type { RoomRouteContext } from "@/lib/server/roomRoute";
+
 type SubmitActionBody = {
   actionKey?: unknown;
   phaseInstanceId?: unknown;
@@ -9,13 +11,7 @@ type SubmitActionBody = {
   targetPlayerId?: unknown;
 };
 
-type RouteContext = {
-  params: Promise<{
-    roomCode: string;
-  }>;
-};
-
-export async function POST(request: Request, context: RouteContext): Promise<Response> {
+export async function POST(request: Request, context: RoomRouteContext): Promise<Response> {
   const auth = await requireAccount(request);
 
   if ("response" in auth) {

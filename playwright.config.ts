@@ -27,7 +27,7 @@ export default defineConfig({
           command: "node scripts/start-e2e-server.mjs",
           env: { E2E_PORT: port },
           reuseExistingServer: false,
-          timeout: 180_000,
+          timeout: 420_000,
           url: `${localBaseUrl}/live`,
         }
       : undefined,

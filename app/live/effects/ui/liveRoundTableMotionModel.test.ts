@@ -33,7 +33,6 @@ describe("live round table motion model", () => {
         ...firstSummary.game!,
         actionProgress: {
           kind: "votes_submitted",
-          label: "Votes submitted.",
           required: 3,
           submitted: 2,
           visibility: "public",
@@ -236,6 +235,7 @@ function makeSummary(): RoomSummary {
     isHost: true,
     players,
     roleCatalog: [],
+    teamCatalog: [],
     rolePrivate: null,
     self: null,
     snapshotRevision: 1,

@@ -4,6 +4,13 @@ export const DEFAULT_TARGET_PLAYER_COUNT = 6;
 
 export type RoleId = string;
 
+const OPAQUE_IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const ACTION_KEY_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,127}$/;
+
+export function isRoleId(value: unknown): value is RoleId {
+  return typeof value === "string" && OPAQUE_IDENTIFIER_PATTERN.test(value);
+}
+
 export type Team = string;
 
 export type PlayerResult = "win" | "lose" | "draw" | "special";
@@ -16,21 +23,47 @@ export type GameStatus = "assigning_roles" | "playing" | "ended";
 
 export type GamePhase = "night" | "day" | "voting" | "execution";
 
-export const ACTION_KINDS = [
-  "first_night_ready",
-  "inspect",
-  "guard",
-  "attack",
-  "day_ready",
-  "vote",
-  "end_speech",
-  "execution_skip",
-  "hunter_retaliate",
-] as const;
+export type ActionKind = string;
 
-export type ActionKind = (typeof ACTION_KINDS)[number];
+export type LocalizedText = {
+  en: string;
+  ja: string;
+};
 
-export type DeathReason = "attack" | "execution" | "retaliation" | "rule_effect";
+export type ActionPresentationText = {
+  label: string;
+  submitLabel: string;
+};
+
+export type ActionPresentation = {
+  en: ActionPresentationText;
+  ja: ActionPresentationText;
+};
+
+export const DEFAULT_ACTION_PRESENTATION: ActionPresentation = {
+  en: {
+    label: "Choose an action",
+    submitLabel: "Submit",
+  },
+  ja: {
+    label: "アクションを選ぶ",
+    submitLabel: "送信",
+  },
+};
+
+export function isActionKind(value: unknown): value is ActionKind {
+  return typeof value === "string" && OPAQUE_IDENTIFIER_PATTERN.test(value);
+}
+
+export function isActionKey(value: unknown): value is string {
+  return typeof value === "string" && ACTION_KEY_PATTERN.test(value);
+}
+
+export function isEventKind(value: unknown): value is string {
+  return typeof value === "string" && OPAQUE_IDENTIFIER_PATTERN.test(value);
+}
+
+export type DeathReason = string;
 
 export type GameEventVisibility = "public" | "private" | "internal";
 
@@ -46,6 +79,7 @@ export type RoomSummary = {
   players: PublicPlayer[];
   defaultRoleCounts: RoleCounts;
   roleCatalog: RoleCatalogItem[];
+  teamCatalog: TeamCatalogItem[];
   game: PublicGameView | null;
   self: SelfPrivateView | null;
   rolePrivate: RolePrivateView | null;
@@ -107,6 +141,7 @@ export type PublicGameEvent = {
   id: string;
   kind: string;
   payload: Record<string, unknown>;
+  presentation: EventPresentation | null;
   createdAt: string;
 };
 
@@ -116,6 +151,7 @@ export type PublicActionProgressKind =
   | "execution_last_words"
   | "first_night_ready"
   | "night_actions_hidden"
+  | "role_actions"
   | "votes_submitted";
 
 export type PublicActionProgress =
@@ -124,12 +160,10 @@ export type PublicActionProgress =
       visibility: "public";
       required: number;
       submitted: number;
-      label: string;
     }
   | {
       kind: "night_actions_hidden";
       visibility: "hidden";
-      label: string;
     };
 
 export type PublicActionStatus = "open" | "submitted";
@@ -146,7 +180,6 @@ export type SelfPrivateView = {
   actionReceipts: ActionSubmissionReceipt[];
   playerId: string;
   roleId: RoleId | null;
-  roleName: string | null;
   actions: PublicAction[];
   events: PrivateGameEvent[];
   result: PlayerResult | null;
@@ -154,21 +187,29 @@ export type SelfPrivateView = {
 
 export type PrivateGameEvent = {
   kind: string;
-  payload: Record<string, unknown>;
+  presentation: EventPresentation;
   createdAt: string;
 };
 
+export type EventPresentation = {
+  details: readonly EventPresentationDetail[];
+  message: LocalizedText;
+  title: LocalizedText;
+};
+
+export type EventPresentationDetail = {
+  label: LocalizedText;
+  value: LocalizedText;
+};
+
 export type RolePrivateView = {
-  roleId: RoleId;
-  label: string;
   nightConversation: NightConversationView | null;
 } | null;
 
 export type NightConversationView = {
   canSend: boolean;
   groupId: string;
-  label: string;
-  labelKey: string;
+  label: LocalizedText;
   maxMessageLength: number;
   messages: NightConversationMessage[];
   nightNumber: number;
@@ -187,7 +228,7 @@ export type NightConversationMessage = {
 export type PublicAction = {
   key: string;
   kind: ActionKind;
-  label: string;
+  presentation: ActionPresentation;
   phaseInstanceId: string;
   status: PublicActionStatus;
   targetKind: "none" | "single_player";
@@ -210,14 +251,13 @@ export type RealtimeAuthorization = {
 
 export type RuleSetInput = {
   roleCounts: Partial<Record<RoleId, number>>;
+  roleOptions: RoleOptionValues;
   dayMode: "ready_check" | "ordered_speech";
   dayReadyCheckSecondsPerPlayer: number;
   daySpeechSeconds: number;
   executionLastWordsSeconds: number;
   firstDaySpeechRounds: number;
   firstNightSeconds: number;
-  guardConsecutiveTargetPolicy: "allow" | "deny";
-  initialInspectionPolicy: "enabled" | "disabled";
   nightSeconds: number;
   normalDaySpeechRounds: number;
   voteResultVisibility: "count_only" | "voter_to_target";
@@ -228,14 +268,13 @@ export type RoleCounts = Partial<Record<RoleId, number>>;
 
 export type RuleSet = {
   roleCounts: RoleCounts;
+  roleOptions: RoleOptionValues;
   dayMode: "ready_check" | "ordered_speech";
   dayReadyCheckSecondsPerPlayer: number;
   daySpeechSeconds: number;
   executionLastWordsSeconds: number;
   firstDaySpeechRounds: number;
   firstNightSeconds: number;
-  guardConsecutiveTargetPolicy: "allow" | "deny";
-  initialInspectionPolicy: "enabled" | "disabled";
   nightSeconds: number;
   normalDaySpeechRounds: number;
   voteResultVisibility: "count_only" | "voter_to_target";
@@ -244,22 +283,43 @@ export type RuleSet = {
 
 export type RuleSetOptions = Omit<RuleSet, "roleCounts">;
 
-export type RoleCatalogItem = {
+export type RoleOptionValues = Partial<Record<RoleId, Readonly<Record<string, string>>>>;
+
+export type RolePresentationText = {
   description: string;
+  name: string;
+  shortLabel: string;
+};
+
+export type RolePresentation = {
+  en: RolePresentationText;
+  ja: RolePresentationText;
+};
+
+export type RoleCatalogItem = {
   id: RoleId;
   maxCount: number | null;
   minCount: number;
-  name: string;
   order: number;
-  shortLabel: string;
+  presentation: RolePresentation;
   specificOptions: readonly RoleSpecificOptionItem[];
-  team: Team;
+};
+
+export type TeamCatalogItem = {
+  id: Team;
+  presentation: LocalizedText;
 };
 
 export type RoleSpecificOptionItem = {
+  choices: readonly RoleSpecificOptionChoice[];
+  defaultValue: string;
   key: string;
-  label: string;
-  roleId: RoleId;
+  label: LocalizedText;
+};
+
+export type RoleSpecificOptionChoice = {
+  label: LocalizedText;
+  value: string;
 };
 
 export const DEFAULT_RULE_SET_OPTIONS: RuleSetOptions = {
@@ -269,10 +329,9 @@ export const DEFAULT_RULE_SET_OPTIONS: RuleSetOptions = {
   executionLastWordsSeconds: 60,
   firstDaySpeechRounds: 2,
   firstNightSeconds: 30,
-  guardConsecutiveTargetPolicy: "deny",
-  initialInspectionPolicy: "enabled",
   nightSeconds: 180,
   normalDaySpeechRounds: 1,
+  roleOptions: {},
   voteResultVisibility: "count_only",
   votingSeconds: 30,
 };

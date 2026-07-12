@@ -1,8 +1,10 @@
 import "server-only";
+import { DEFAULT_ACTION_PRESENTATION, isRoleId } from "@/lib/shared/game";
+
 import {
   CountGroup,
-  DeathReason,
-  EffectTag,
+  DEATH_REASON,
+  EFFECT_TAG,
   GameEffectKind,
   GameEffectLayer,
   InspectionView,
@@ -11,19 +13,23 @@ import {
 
 import type {
   CurrentAction,
+  DeathReason,
+  EffectTag,
+  FirstNightStartedEffect,
   GameEffect,
   GameActionKind,
   GameEndCandidate,
-  GameEndReason,
   PlayerResult,
   PlayerId,
   ReadonlyGameState,
   ResolvedDeath,
   RoleActionDefinition,
+  RoleActionPresentation,
   RoleDefaultCountContext,
   RoleId,
   RoleNightConversationDefinition,
   RolePublicMetadata,
+  RoleTeamDefinition,
   RoleCounts,
   RuleOptions,
   RoleSetupContribution,
@@ -31,13 +37,40 @@ import type {
   Team,
   WinnerJudgementContribution,
 } from "../types";
+import type { RolePresentation } from "@/lib/shared/game";
 
-export const ROLE_REGISTRY_VERSION = "jinroh-core-v2";
+export const ROLE_REGISTRY_VERSION_PREFIX = "jinroh-role-registry-v1";
+
+const FULL_ROLE_STATE = Symbol("fullRoleState");
 
 export type RoleContext = {
+  readonly [FULL_ROLE_STATE]?: ReadonlyGameState;
   roles: RoleRegistry;
   state: ReadonlyGameState;
 };
+
+export function scopeRoleContext(context: RoleContext, roleId: RoleId): RoleContext {
+  const fullState = context[FULL_ROLE_STATE] ?? context.state;
+  const currentActions = fullState.currentActions.filter(
+    (action) => action.resolverRoleId === null || action.resolverRoleId === roleId,
+  );
+  const visibleCurrentActionIds = new Set(currentActions.map((action) => action.id));
+
+  return {
+    [FULL_ROLE_STATE]: fullState,
+    roles: context.roles,
+    state: {
+      ...fullState,
+      currentActions,
+      pendingActions: fullState.pendingActions.filter((action) =>
+        visibleCurrentActionIds.has(action.currentActionId),
+      ),
+      resolvedActions: fullState.resolvedActions.filter(
+        (action) => action.resolverRoleId === roleId,
+      ),
+    },
+  };
+}
 
 export type PlayerRoleContext = RoleContext & {
   playerId: PlayerId;
@@ -74,11 +107,11 @@ export type RoleActionResolvedContext = RoleContext & {
 };
 
 export type WinnerJudgementContext = RoleContext & {
-  endReasons: readonly GameEndReason[];
+  ownEndCandidates: readonly GameEndCandidate[];
 };
 
 export type PlayerResultContext = PlayerRoleContext & {
-  endReasons: readonly GameEndReason[];
+  ownEndCandidates: readonly GameEndCandidate[];
   winnerTeam: Team;
 };
 
@@ -97,10 +130,9 @@ export type RoleRuleValidationContext = {
 };
 
 export abstract class Role {
-  abstract readonly description: string;
   abstract readonly id: RoleId;
-  abstract readonly name: string;
-  abstract readonly team: Team;
+  abstract readonly presentation: RolePresentation;
+  abstract readonly team: RoleTeamDefinition;
 
   readonly incompatibleRoleIds: readonly RoleId[] = [];
   readonly maxCount: number | null = null;
@@ -108,19 +140,28 @@ export abstract class Role {
   readonly nightConversation: RoleNightConversationDefinition | null = null;
   readonly order: number = 1000;
   readonly required: boolean = false;
-  readonly shortLabel: string = "?";
+  readonly version: number = 1;
+
+  get description(): string {
+    return this.presentation.en.description;
+  }
+
+  get name(): string {
+    return this.presentation.en.name;
+  }
+
+  get shortLabel(): string {
+    return this.presentation.en.shortLabel;
+  }
 
   getPublicMetadata(): RolePublicMetadata {
     return {
-      description: this.description,
       id: this.id,
       maxCount: this.maxCount,
       minCount: this.minCount,
-      name: this.name,
       order: this.order,
-      shortLabel: this.shortLabel,
+      presentation: this.presentation,
       specificOptions: this.getSpecificOptions(),
-      team: this.team,
     };
   }
 
@@ -132,6 +173,16 @@ export abstract class Role {
 
   getSpecificOptions(): readonly RoleSpecificOptionDefinition[] {
     return [];
+  }
+
+  protected getOptionValue(options: RuleOptions, optionKey: string): string {
+    const definition = this.getSpecificOptions().find((option) => option.key === optionKey);
+
+    if (definition === undefined) {
+      throw new Error(`Unknown option for ${this.id}: ${optionKey}`);
+    }
+
+    return options.roleOptions[this.id]?.[optionKey] ?? definition.defaultValue;
   }
 
   countAs(context: PlayerRoleContext): CountGroup {
@@ -150,6 +201,12 @@ export abstract class Role {
     void context;
 
     return [];
+  }
+
+  getActionPresentation(actionKind: GameActionKind): RoleActionPresentation {
+    void actionKind;
+
+    return DEFAULT_ACTION_PRESENTATION;
   }
 
   getEligibleTargets(
@@ -181,7 +238,7 @@ export abstract class Role {
     return [];
   }
 
-  onFirstNightStarted(context: PlayerRoleContext): readonly GameEffect[] {
+  onFirstNightStarted(context: PlayerRoleContext): readonly FirstNightStartedEffect[] {
     void context;
 
     return [];
@@ -192,8 +249,8 @@ export abstract class Role {
       this.createDeathEffect({
         id: `death:attack:${context.targetId}`,
         playerId: context.targetId,
-        reason: DeathReason.Attack,
-        tags: [EffectTag.Attack, EffectTag.Guardable],
+        reason: DEATH_REASON.Attack,
+        tags: [EFFECT_TAG.Attack, EFFECT_TAG.Guardable],
       }),
     ];
   }
@@ -203,8 +260,8 @@ export abstract class Role {
       this.createDeathEffect({
         id: `death:execution:${context.targetId}`,
         playerId: context.targetId,
-        reason: DeathReason.Execution,
-        tags: [EffectTag.Execution, EffectTag.Unpreventable],
+        reason: DEATH_REASON.Execution,
+        tags: [EFFECT_TAG.Execution, EFFECT_TAG.Unpreventable],
       }),
     ];
   }
@@ -277,11 +334,15 @@ export abstract class Role {
 }
 
 export class RoleRegistry {
-  readonly version = ROLE_REGISTRY_VERSION;
+  readonly version: string;
 
   readonly #roles: readonly Role[];
 
   readonly #rolesById: ReadonlyMap<RoleId, Role>;
+
+  readonly #teams: readonly RoleTeamDefinition[];
+
+  readonly #teamsById: ReadonlyMap<string, RoleTeamDefinition>;
 
   constructor(roles: readonly Role[]) {
     const roleIds = roles.map((role) => role.id);
@@ -289,6 +350,26 @@ export class RoleRegistry {
 
     if (roleIds.length !== uniqueRoleIds.size) {
       throw new Error("Duplicate role ids are not allowed.");
+    }
+
+    for (const role of roles) {
+      validateRoleDefinition(role);
+    }
+
+    const teamsById = new Map<string, RoleTeamDefinition>();
+
+    for (const role of roles) {
+      const existingTeam = teamsById.get(role.team.id);
+
+      if (
+        existingTeam !== undefined &&
+        (existingTeam.presentation.en !== role.team.presentation.en ||
+          existingTeam.presentation.ja !== role.team.presentation.ja)
+      ) {
+        throw new Error(`Team presentations disagree: ${role.team.id}`);
+      }
+
+      teamsById.set(role.team.id, role.team);
     }
 
     this.#roles = [...roles].sort((left, right) => {
@@ -299,6 +380,11 @@ export class RoleRegistry {
       return left.id.localeCompare(right.id);
     });
     this.#rolesById = new Map(roles.map((role) => [role.id, role]));
+    this.#teams = [...teamsById.values()].toSorted((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+    this.#teamsById = teamsById;
+    this.version = createRegistryVersion(this.#roles);
   }
 
   get(roleId: RoleId): Role {
@@ -315,7 +401,110 @@ export class RoleRegistry {
     return this.#roles;
   }
 
+  getTeam(teamId: string): RoleTeamDefinition {
+    const team = this.#teamsById.get(teamId);
+
+    if (team === undefined) {
+      throw new Error(`Unknown team: ${teamId}`);
+    }
+
+    return team;
+  }
+
+  getTeams(): readonly RoleTeamDefinition[] {
+    return this.#teams;
+  }
+
   getActiveRoles(state: ReadonlyGameState): readonly Role[] {
     return state.resolvedRoleSetup.activeRoleIds.map((roleId) => this.get(roleId));
   }
+}
+
+function validateRoleDefinition(role: Role): void {
+  if (!isRoleId(role.id)) {
+    throw new Error("Invalid role id.");
+  }
+
+  if (!isRoleId(role.team.id) || !isLocalizedTextValid(role.team.presentation)) {
+    throw new Error(`Invalid role team: ${role.id}`);
+  }
+
+  if (!Number.isSafeInteger(role.version) || role.version < 1) {
+    throw new Error(`Invalid role version: ${role.id}`);
+  }
+
+  if (
+    !isRolePresentationTextValid(role.presentation.en) ||
+    !isRolePresentationTextValid(role.presentation.ja)
+  ) {
+    throw new Error(`Invalid role presentation: ${role.id}`);
+  }
+
+  if (
+    role.nightConversation !== null &&
+    (!/^[a-z][a-z0-9_:-]{0,63}$/u.test(role.nightConversation.groupId) ||
+      !isLocalizedTextValid(role.nightConversation.label))
+  ) {
+    throw new Error(`Invalid night conversation definition: ${role.id}`);
+  }
+
+  const options = role.getSpecificOptions();
+  const optionKeys = options.map((option) => option.key);
+
+  if (new Set(optionKeys).size !== optionKeys.length) {
+    throw new Error(`Duplicate role option keys: ${role.id}`);
+  }
+
+  for (const option of options) {
+    const values = option.choices.map((choice) => choice.value);
+
+    if (
+      !/^[a-z][a-z0-9_]{0,63}$/u.test(option.key) ||
+      !isLocalizedTextValid(option.label) ||
+      values.length === 0 ||
+      new Set(values).size !== values.length ||
+      !values.includes(option.defaultValue) ||
+      option.choices.some(
+        (choice) =>
+          !/^[a-z][a-z0-9_]{0,63}$/u.test(choice.value) || !isLocalizedTextValid(choice.label),
+      )
+    ) {
+      throw new Error(`Invalid role option definition: ${role.id}:${option.key}`);
+    }
+  }
+}
+
+function isLocalizedTextValid(text: { en: string; ja: string }): boolean {
+  return text.en.trim().length > 0 && text.ja.trim().length > 0;
+}
+
+function isRolePresentationTextValid(text: {
+  description: string;
+  name: string;
+  shortLabel: string;
+}): boolean {
+  return (
+    text.description.trim().length > 0 &&
+    text.name.trim().length > 0 &&
+    text.shortLabel.trim().length > 0
+  );
+}
+
+function createRegistryVersion(roles: readonly Role[]): string {
+  const manifest = JSON.stringify(
+    roles.map((role) => ({
+      metadata: role.getPublicMetadata(),
+      nightConversation: role.nightConversation,
+      team: role.team,
+      version: role.version,
+    })),
+  );
+  let hash = 2166136261;
+
+  for (const character of manifest) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${ROLE_REGISTRY_VERSION_PREFIX}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }

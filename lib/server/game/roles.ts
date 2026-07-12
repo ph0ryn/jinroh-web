@@ -1,5 +1,5 @@
 import "server-only";
-import { RoleRegistry } from "./roles/base";
+import { RoleRegistry, scopeRoleContext } from "./roles/base";
 import { FoxRole } from "./roles/fox";
 import { GuardRole } from "./roles/guard";
 import { HunterRole } from "./roles/hunter";
@@ -8,26 +8,34 @@ import { SeerRole } from "./roles/seer";
 import { SpiritistRole } from "./roles/spiritist";
 import { VillagerRole } from "./roles/villager";
 import { WerewolfRole } from "./roles/werewolf";
-import { GameEndReason, PlayerResult, RoleSetupContributionKind, Team } from "./types";
+import { PlayerResult } from "./types";
 
-import type { PlayerResultContext, WinnerJudgementContext } from "./roles/base";
 import type {
+  PlayerResultContext,
+  PlayerRoleContext,
+  RoleContext,
+  WinnerJudgementContext,
+} from "./roles/base";
+import type {
+  GameEndCandidate,
   RoleCounts,
   RoleId,
   RolePublicMetadata,
-  RoleSetupContribution,
-  WinnerJudgementContribution,
+  RoleTeamDefinition,
+  Team,
 } from "./types";
 
-export { ROLE_REGISTRY_VERSION, Role, RoleRegistry } from "./roles/base";
+export { ROLE_REGISTRY_VERSION_PREFIX, Role, RoleRegistry, scopeRoleContext } from "./roles/base";
 export type {
   AttackContext,
   DeathResolvedContext,
   ExecutionContext,
+  ExecutionResolvedContext,
   InspectionContext,
   PlayerResultContext,
   PlayerRoleContext,
   RoleContext,
+  RoleActionResolvedContext,
   RoleRuleValidationContext,
   RoleRuleValidationIssue,
   RoleRuleValidationIssueCode,
@@ -61,6 +69,10 @@ export function getRoleCatalog(): readonly RolePublicMetadata[] {
   return roleRegistry.getAll().map((role) => role.getPublicMetadata());
 }
 
+export function getTeamCatalog(): readonly RoleTeamDefinition[] {
+  return roleRegistry.getTeams();
+}
+
 export function makeDefaultRoleCounts(playerCount: number): RoleCounts {
   const roleCounts: Record<RoleId, number> = {};
   let assignedRoleCount = 0;
@@ -78,80 +90,70 @@ export function makeDefaultRoleCounts(playerCount: number): RoleCounts {
   return roleCounts;
 }
 
-export function getCoreSetupContributions(): readonly RoleSetupContribution[] {
-  return [
-    {
-      judgement: {
-        id: "core_werewolf_dominance",
-        priority: 100,
-        sourceRoleId: null,
-        winnerTeam: Team.Werewolf,
-      },
-      kind: RoleSetupContributionKind.WinnerJudgement,
-    },
-    {
-      judgement: {
-        id: "core_werewolves_eliminated",
-        priority: 100,
-        sourceRoleId: null,
-        winnerTeam: Team.Village,
-      },
-      kind: RoleSetupContributionKind.WinnerJudgement,
-    },
-  ];
-}
+type WinnerTeamEvaluationContext = RoleContext & {
+  endCandidates: readonly GameEndCandidate[];
+};
 
-export function evaluateCoreWinnerJudgement(
-  judgement: WinnerJudgementContribution,
-  endReasons: readonly GameEndReason[],
-): boolean {
-  if (judgement.id === "core_werewolf_dominance") {
-    return endReasons.includes(GameEndReason.WerewolfDominance);
-  }
+type PlayerResultEvaluationContext = PlayerRoleContext & {
+  endCandidates: readonly GameEndCandidate[];
+  winnerTeam: Team;
+};
 
-  if (judgement.id === "core_werewolves_eliminated") {
-    return endReasons.includes(GameEndReason.WerewolvesEliminated);
-  }
+export function evaluateWinnerTeam(context: WinnerTeamEvaluationContext): Team {
+  const judgements = context.state.resolvedRoleSetup.contributions
+    .map((contribution) => contribution.judgement)
+    .toSorted((left, right) => {
+      if (left.priority !== right.priority) {
+        return left.priority - right.priority;
+      }
 
-  return false;
-}
+      const ownerComparison = left.sourceRoleId.localeCompare(right.sourceRoleId);
 
-export function evaluateWinnerTeam(context: WinnerJudgementContext): Team {
-  const judgements = [...context.state.resolvedRoleSetup.winnerJudgements].sort((left, right) => {
-    if (left.priority !== right.priority) {
-      return left.priority - right.priority;
-    }
-
-    return left.id.localeCompare(right.id);
-  });
+      return ownerComparison === 0 ? left.id.localeCompare(right.id) : ownerComparison;
+    });
 
   for (const judgement of judgements) {
-    const winnerMatched =
-      judgement.sourceRoleId === null
-        ? evaluateCoreWinnerJudgement(judgement, context.endReasons)
-        : context.roles.get(judgement.sourceRoleId).evaluateWinnerJudgement(judgement, context);
+    const judgementRole = context.roles.get(judgement.sourceRoleId);
+    const ownedContext = scopeRoleContext(context, judgementRole.id);
+    const judgementContext: WinnerJudgementContext = {
+      ownEndCandidates: context.endCandidates.filter(
+        (candidate) => candidate.sourceRoleId === judgementRole.id,
+      ),
+      ...ownedContext,
+    };
+    const winnerMatched = judgementRole.evaluateWinnerJudgement(judgement, judgementContext);
 
     if (winnerMatched) {
+      context.roles.getTeam(judgement.winnerTeam);
       return judgement.winnerTeam;
     }
   }
 
-  return Team.Neutral;
+  throw new Error("No winner judgement matched the resolved end candidates.");
 }
 
-export function evaluatePlayerResult(context: PlayerResultContext): PlayerResult {
+export function evaluatePlayerResult(context: PlayerResultEvaluationContext): PlayerResult {
   const roleId = context.state.roleByPlayerId.get(context.playerId);
 
   if (roleId === undefined) {
-    return PlayerResult.Lose;
+    throw new Error(`Missing role assignment for player: ${context.playerId}`);
   }
 
   const role = context.roles.get(roleId);
-  const roleResult = role.evaluateResult(context);
+  const ownedContext = scopeRoleContext(context, role.id);
+  const resultContext: PlayerResultContext = {
+    ownEndCandidates: context.endCandidates.filter(
+      (candidate) => candidate.sourceRoleId === role.id,
+    ),
+    playerId: context.playerId,
+    ...ownedContext,
+    winnerTeam: context.winnerTeam,
+  };
+  const roleResult = role.evaluateResult(resultContext);
 
   if (roleResult !== null) {
     return roleResult;
   }
 
-  return role.team === context.winnerTeam ? PlayerResult.Win : PlayerResult.Lose;
+  return role.team.id === context.winnerTeam ? PlayerResult.Win : PlayerResult.Lose;
 }

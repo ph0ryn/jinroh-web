@@ -7,6 +7,7 @@ import { useI18n } from "./i18nProvider";
 import { LanguageSwitcher } from "./languageSwitcher";
 
 import type { Localization } from "@/lib/i18n/localization";
+import type { RoleCatalogItem, RoleId } from "@/lib/shared/game";
 import type { CSSProperties, ReactNode } from "react";
 
 type LocalView = "home" | "waiting" | "board" | "night" | "day" | "voting" | "execution" | "result";
@@ -26,8 +27,6 @@ type IconName =
   | "skull"
   | "vote"
   | "wolf";
-
-type RoleId = "fox" | "guard" | "madman" | "seer" | "villager" | "werewolf";
 
 type GamePhase = "day" | "execution" | "night" | "voting";
 
@@ -71,20 +70,11 @@ type ActivityItem = {
   readonly dateTime: string;
   readonly time: string;
   readonly icon: IconName;
-  readonly text: (t: Localization) => string;
+  readonly text: (t: Localization, roleNameById: ReadonlyMap<RoleId, string>) => string;
   readonly visibility: "public" | "private" | "host";
 };
 
 type CopyStatus = "copy" | "copied" | "copyFailed";
-
-const defaultRoleCounts: Record<RoleId, number> = {
-  fox: 1,
-  guard: 1,
-  madman: 1,
-  seer: 1,
-  villager: 3,
-  werewolf: 2,
-};
 
 const phaseTrack: readonly LocalView[] = [
   "waiting",
@@ -362,7 +352,8 @@ const initialActivityItems: readonly ActivityItem[] = [
     dateTime: "2026-07-07T20:22:00+09:00",
     icon: "eye",
     id: "activity-seer",
-    text: (t) => t.home.activity.seerSubmitted,
+    text: (t, roleNameById) =>
+      t.home.activity.roleActionSubmitted(getHomeRoleName("seer", roleNameById, t)),
     time: "20:22",
     visibility: "private",
   },
@@ -376,28 +367,29 @@ const initialActivityItems: readonly ActivityItem[] = [
   },
 ];
 
-const roleSummary: readonly {
+// Explicit marketing composition; display metadata comes from the server role catalog.
+const HOME_DEMO_ROLE_SUMMARY: readonly {
   readonly roleId: RoleId;
   readonly count: number;
   readonly icon: IconName;
 }[] = [
-  { count: defaultRoleCounts.werewolf, icon: "wolf", roleId: "werewolf" },
-  { count: defaultRoleCounts.seer, icon: "eye", roleId: "seer" },
-  { count: defaultRoleCounts.guard, icon: "shield", roleId: "guard" },
-  { count: defaultRoleCounts.madman, icon: "skull", roleId: "madman" },
-  { count: defaultRoleCounts.villager, icon: "people", roleId: "villager" },
-  { count: defaultRoleCounts.fox, icon: "flag", roleId: "fox" },
+  { count: 2, icon: "wolf", roleId: "werewolf" },
+  { count: 1, icon: "eye", roleId: "seer" },
+  { count: 1, icon: "shield", roleId: "guard" },
+  { count: 1, icon: "skull", roleId: "madman" },
+  { count: 3, icon: "people", roleId: "villager" },
+  { count: 1, icon: "flag", roleId: "fox" },
 ];
 
 const actionRows: readonly {
   readonly icon: IconName;
-  readonly label: keyof Localization["home"]["actionRows"]["labels"];
+  readonly roleId: RoleId | null;
   readonly status: keyof Localization["home"]["actionRows"]["status"];
 }[] = [
-  { icon: "wolf", label: "werewolves", status: "pending" },
-  { icon: "eye", label: "seer", status: "done" },
-  { icon: "shield", label: "guard", status: "open" },
-  { icon: "vote", label: "livingPlayers", status: "locked" },
+  { icon: "wolf", roleId: "werewolf", status: "pending" },
+  { icon: "eye", roleId: "seer", status: "done" },
+  { icon: "shield", roleId: "guard", status: "open" },
+  { icon: "vote", roleId: null, status: "locked" },
 ];
 
 function getLocalizedNavItems(t: Localization): readonly NavItem[] {
@@ -474,8 +466,12 @@ function getLocalizedScenarios(t: Localization): Record<LocalView, Scenario> {
   };
 }
 
-export function JinrohSurface() {
-  const { t } = useI18n();
+export function JinrohSurface({
+  roleCatalog,
+}: {
+  readonly roleCatalog: readonly RoleCatalogItem[];
+}) {
+  const { locale, t } = useI18n();
   const [activeView, setActiveView] = useState<LocalView>("home");
   const [selectedPlayerId, setSelectedPlayerId] = useState("sora");
   const [roomCode, setRoomCode] = useState("428913");
@@ -484,6 +480,10 @@ export function JinrohSurface() {
 
   const localizedNavItems = useMemo(() => getLocalizedNavItems(t), [t]);
   const localizedScenarios = useMemo(() => getLocalizedScenarios(t), [t]);
+  const roleNameById = useMemo(
+    () => new Map(roleCatalog.map((role) => [role.id, role.presentation[locale].name])),
+    [locale, roleCatalog],
+  );
   const scenario = localizedScenarios[activeView];
   const selectedPlayer =
     samplePlayers.find((player) => player.id === selectedPlayerId) ?? fallbackPlayer;
@@ -638,6 +638,7 @@ export function JinrohSurface() {
               <GameBoard
                 activeView={activeView}
                 players={visiblePlayers}
+                roleNameById={roleNameById}
                 scenario={scenario}
                 selectedPlayerId={selectedPlayer.id}
                 t={t}
@@ -645,7 +646,7 @@ export function JinrohSurface() {
               />
             )}
 
-            <ActivityStrip activityItems={activityItems} t={t} />
+            <ActivityStrip activityItems={activityItems} roleNameById={roleNameById} t={t} />
           </section>
 
           <aside className="commandPanel" aria-label={t.home.aria.commandPanel}>
@@ -678,7 +679,7 @@ export function JinrohSurface() {
                   <span>
                     {t.home.panel.selectedSeatRole(
                       selectedPlayer.seatNumber,
-                      getHomeRoleName(selectedPlayer.roleId, t),
+                      getHomeRoleName(selectedPlayer.roleId, roleNameById, t),
                     )}
                   </span>
                 </div>
@@ -692,9 +693,13 @@ export function JinrohSurface() {
               </div>
               <div className="actionList">
                 {actionRows.map((row) => (
-                  <div className="actionRow" key={row.label}>
+                  <div className="actionRow" key={row.roleId ?? "living-players"}>
                     <Icon name={row.icon} />
-                    <span>{t.home.actionRows.labels[row.label]}</span>
+                    <span>
+                      {row.roleId === null
+                        ? t.home.actionRows.livingPlayers
+                        : getHomeRoleName(row.roleId, roleNameById, t)}
+                    </span>
                     <strong data-status={row.status}>{t.home.actionRows.status[row.status]}</strong>
                   </div>
                 ))}
@@ -704,10 +709,10 @@ export function JinrohSurface() {
         </div>
 
         <footer className="roleLegend" aria-label={t.home.aria.roleCounts}>
-          {roleSummary.map((role) => (
+          {HOME_DEMO_ROLE_SUMMARY.map((role) => (
             <div className="roleLegendItem" key={role.roleId}>
               <Icon name={role.icon} />
-              <span>{getHomeRoleName(role.roleId, t)}</span>
+              <span>{getHomeRoleName(role.roleId, roleNameById, t)}</span>
               <strong>{role.count}</strong>
             </div>
           ))}
@@ -843,6 +848,7 @@ function getPhaseTrackLabel(view: LocalView, t: Localization): string {
 function GameBoard({
   activeView,
   players,
+  roleNameById,
   scenario,
   selectedPlayerId,
   t,
@@ -850,6 +856,7 @@ function GameBoard({
 }: {
   readonly activeView: LocalView;
   readonly players: readonly Player[];
+  readonly roleNameById: ReadonlyMap<RoleId, string>;
   readonly scenario: Scenario;
   readonly selectedPlayerId: string;
   readonly t: Localization;
@@ -915,7 +922,7 @@ function GameBoard({
             </span>
             <span>
               <strong>{player.displayName}</strong>
-              <small>{getHomeRoleName(player.roleId, t)}</small>
+              <small>{getHomeRoleName(player.roleId, roleNameById, t)}</small>
             </span>
             <em>{player.alive ? t.game.seatStatus.alive : t.game.seatStatus.out}</em>
           </button>
@@ -927,9 +934,11 @@ function GameBoard({
 
 function ActivityStrip({
   activityItems,
+  roleNameById,
   t,
 }: {
   readonly activityItems: readonly ActivityItem[];
+  readonly roleNameById: ReadonlyMap<RoleId, string>;
   readonly t: Localization;
 }) {
   return (
@@ -943,7 +952,7 @@ function ActivityStrip({
           <div className="activityRow" key={activityItem.id}>
             <time dateTime={activityItem.dateTime}>{activityItem.time}</time>
             <Icon name={activityItem.icon} />
-            <span>{activityItem.text(t)}</span>
+            <span>{activityItem.text(t, roleNameById)}</span>
             <strong>{t.home.activity.visibility[activityItem.visibility]}</strong>
           </div>
         ))}
@@ -952,8 +961,12 @@ function ActivityStrip({
   );
 }
 
-function getHomeRoleName(roleId: RoleId, t: Localization): string {
-  return t.home.sampleRoles[roleId];
+function getHomeRoleName(
+  roleId: RoleId,
+  roleNameById: ReadonlyMap<RoleId, string>,
+  t: Localization,
+): string {
+  return roleNameById.get(roleId) ?? t.game.catalog.unknown.role.name;
 }
 
 function getPlayerStatusLabel(player: Player, t: Localization): string {

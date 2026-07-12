@@ -92,7 +92,6 @@ describe("live action feedback model", () => {
         ...first.game!,
         actionProgress: {
           kind: "first_night_ready",
-          label: "Ready for daybreak.",
           required: 3,
           submitted: 1,
           visibility: "public",
@@ -167,6 +166,7 @@ function makeSummary(): RoomSummary {
     isHost: true,
     players: [],
     roleCatalog: [],
+    teamCatalog: [],
     rolePrivate: null,
     self: {
       actionReceipts: [],
@@ -176,7 +176,10 @@ function makeSummary(): RoomSummary {
           eligibleTargetIds: [],
           key: "ready",
           kind: "first_night_ready",
-          label: "Ready for daybreak",
+          presentation: {
+            en: { label: "Ready for daybreak", submitLabel: "Ready for daybreak" },
+            ja: { label: "夜明けを待つ", submitLabel: "夜明けを待つ" },
+          },
           phaseInstanceId: "phase-1",
           status: "open",
           targetKind: "none",
@@ -186,7 +189,6 @@ function makeSummary(): RoomSummary {
       playerId: "alice",
       result: null,
       roleId: "villager",
-      roleName: "Villager",
     },
     snapshotRevision: 1,
     status: "playing",

@@ -1,19 +1,18 @@
 import "server-only";
+import { DEFAULT_RULE_SET_OPTIONS, isActionKey, isRoleId } from "@/lib/shared/game";
 import { isValidRuleSetNumber, RULE_SET_NUMBER_FIELDS } from "@/lib/shared/ruleSetConstraints";
 
 import {
-  getCoreSetupContributions,
   getRoleIds,
   makeDefaultRoleCounts as makeDefaultRoleCountsFromRoles,
   roleRegistry,
+  scopeRoleContext,
 } from "./roles";
+import { toRegisteredRuleOptions } from "./ruleSetAdapters";
 import {
   DayDiscussionMode,
   GameStatus,
-  GuardConsecutiveTargetPolicy,
-  InitialInspectionPolicy,
   RoleSetupContributionKind,
-  Team,
   VoteResultVisibility,
 } from "./types";
 
@@ -25,15 +24,12 @@ import type {
   RoleCounts,
   RoleId,
   RuleOptions,
+  Team,
 } from "./types";
 
-export const ENGINE_VERSION = "jinroh-engine-v1";
-
 export type RuleSet = {
-  engineVersion: string;
   options: RuleOptions;
   roleCounts: RoleCounts;
-  roleRegistryVersion: string;
 };
 
 export type RuleSetInput = {
@@ -71,29 +67,18 @@ export type RuleSetValidationResult =
     };
 
 export const DEFAULT_RULE_OPTIONS: RuleOptions = {
-  dayDiscussionMode: DayDiscussionMode.ReadyCheck,
-  dayReadyCheckSecondsPerPlayer: 90,
-  daySpeechSeconds: 90,
-  executionLastWordsSeconds: 60,
-  firstDaySpeechRounds: 2,
-  firstNightSeconds: 30,
-  guardConsecutiveTargetPolicy: GuardConsecutiveTargetPolicy.DenySameTarget,
-  initialInspectionPolicy: InitialInspectionPolicy.Enabled,
-  nightSeconds: 180,
-  normalDaySpeechRounds: 1,
-  voteResultVisibility: VoteResultVisibility.CountOnly,
-  votingSeconds: 30,
+  ...toRegisteredRuleOptions(DEFAULT_RULE_SET_OPTIONS),
+  roleOptions: getDefaultRoleOptions(),
 };
 
 export function normalizeRuleSetInput(input: RuleSetInput = {}, playerCount = 0): RuleSet {
   return {
-    engineVersion: ENGINE_VERSION,
     options: {
       ...DEFAULT_RULE_OPTIONS,
       ...input.options,
+      roleOptions: normalizeRoleOptions(input.options?.roleOptions),
     },
     roleCounts: normalizeRoleCounts(input.roleCounts, playerCount),
-    roleRegistryVersion: roleRegistry.version,
   };
 }
 
@@ -208,27 +193,52 @@ export function validateRuleSet(ruleSet: RuleSet, playerCount: number): RuleSetV
 export function resolveRoleSetup(ruleSet: RuleSet): ResolvedRoleSetup {
   const activeRoleIds = getRoleIds().filter((roleId) => (ruleSet.roleCounts[roleId] ?? 0) > 0);
   const context = createRoleSetupContext(ruleSet, activeRoleIds);
-  const contributions = [
-    ...getCoreSetupContributions(),
-    ...activeRoleIds.flatMap((roleId) => roleRegistry.get(roleId).getSetupContributions(context)),
-  ];
+  const contributionKeys = new Set<string>();
+  const contributions = activeRoleIds.flatMap((roleId) => {
+    const roleContributions = roleRegistry
+      .get(roleId)
+      .getSetupContributions(scopeRoleContext(context, roleId));
+
+    for (const contribution of roleContributions) {
+      const judgement = contribution.judgement;
+      const key = getWinnerJudgementKey(judgement.sourceRoleId, judgement.id);
+
+      if (judgement.sourceRoleId !== roleId) {
+        throw new Error(`Role ${roleId} returned a judgement owned by ${judgement.sourceRoleId}.`);
+      }
+
+      roleRegistry.getTeam(judgement.winnerTeam);
+
+      if (contributionKeys.has(key)) {
+        throw new Error(`Duplicate winner judgement: ${key}`);
+      }
+
+      contributionKeys.add(key);
+    }
+
+    return roleContributions;
+  });
 
   return {
     activeRoleIds,
     contributions,
     nightConversationGroups: resolveNightConversationGroups(activeRoleIds),
-    winnerJudgements: contributions.map((contribution) => contribution.judgement),
   };
 }
 
 export function parseResolvedRoleSetup(value: unknown): ResolvedRoleSetup | null {
-  if (!isRecord(value)) {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 3 ||
+    !("activeRoleIds" in value) ||
+    !("contributions" in value) ||
+    !("nightConversationGroups" in value)
+  ) {
     return null;
   }
 
   const activeRoleIds = parseStringArray(value["activeRoleIds"]);
   const nightConversationGroups = parseNightConversationGroups(value["nightConversationGroups"]);
-  const winnerJudgements = parseWinnerJudgements(value["winnerJudgements"]);
   const contributions = parseRoleSetupContributions(value["contributions"]);
 
   if (
@@ -237,30 +247,36 @@ export function parseResolvedRoleSetup(value: unknown): ResolvedRoleSetup | null
     new Set(activeRoleIds).size !== activeRoleIds.length ||
     activeRoleIds.some((roleId) => !getRoleIds().includes(roleId)) ||
     nightConversationGroups === null ||
-    winnerJudgements === null ||
     contributions === null
   ) {
     return null;
   }
 
   const activeRoleIdSet = new Set(activeRoleIds);
+  const nightConversationGroupIds = nightConversationGroups.map((group) => group.groupId);
+  const nightConversationRoleIds = nightConversationGroups.flatMap((group) => group.roleIds);
 
   if (
+    new Set(nightConversationGroupIds).size !== nightConversationGroupIds.length ||
+    new Set(nightConversationRoleIds).size !== nightConversationRoleIds.length ||
     nightConversationGroups.some(
       (group) =>
-        group.groupId.length === 0 ||
-        group.labelKey.length === 0 ||
+        !/^[a-z][a-z0-9_:-]{0,63}$/u.test(group.groupId) ||
+        !isLocalizedText(group.label) ||
         group.roleIds.length === 0 ||
         new Set(group.roleIds).size !== group.roleIds.length ||
         group.roleIds.some((roleId) => !activeRoleIdSet.has(roleId)),
     ) ||
-    winnerJudgements.some(
-      (judgement) =>
-        judgement.sourceRoleId !== null && !activeRoleIdSet.has(judgement.sourceRoleId),
+    contributions.some(
+      (contribution) =>
+        !activeRoleIdSet.has(contribution.judgement.sourceRoleId) ||
+        !roleRegistry.getTeams().some((team) => team.id === contribution.judgement.winnerTeam),
     ) ||
-    new Set(winnerJudgements.map((judgement) => judgement.id)).size !== winnerJudgements.length ||
-    JSON.stringify(contributions.map((contribution) => contribution.judgement)) !==
-      JSON.stringify(winnerJudgements)
+    new Set(
+      contributions.map((contribution) =>
+        getWinnerJudgementKey(contribution.judgement.sourceRoleId, contribution.judgement.id),
+      ),
+    ).size !== contributions.length
   ) {
     return null;
   }
@@ -269,7 +285,6 @@ export function parseResolvedRoleSetup(value: unknown): ResolvedRoleSetup | null
     activeRoleIds,
     contributions,
     nightConversationGroups,
-    winnerJudgements,
   };
 }
 
@@ -281,7 +296,7 @@ function parseNightConversationGroups(value: unknown): NightConversationGroup[] 
   const groups: NightConversationGroup[] = [];
 
   for (const candidate of value) {
-    if (!isRecord(candidate)) {
+    if (!isRecord(candidate) || Object.keys(candidate).length !== 3) {
       return null;
     }
 
@@ -289,7 +304,7 @@ function parseNightConversationGroups(value: unknown): NightConversationGroup[] 
 
     if (
       typeof candidate["groupId"] !== "string" ||
-      typeof candidate["labelKey"] !== "string" ||
+      !isLocalizedText(candidate["label"]) ||
       roleIds === null
     ) {
       return null;
@@ -297,32 +312,12 @@ function parseNightConversationGroups(value: unknown): NightConversationGroup[] 
 
     groups.push({
       groupId: candidate["groupId"],
-      labelKey: candidate["labelKey"],
+      label: candidate["label"],
       roleIds,
     });
   }
 
   return groups;
-}
-
-function parseWinnerJudgements(value: unknown): ResolvedRoleSetup["winnerJudgements"] | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-
-  const judgements: ResolvedRoleSetup["winnerJudgements"][number][] = [];
-
-  for (const candidate of value) {
-    const judgement = parseWinnerJudgement(candidate);
-
-    if (judgement === null) {
-      return null;
-    }
-
-    judgements.push(judgement);
-  }
-
-  return judgements;
 }
 
 function parseRoleSetupContributions(value: unknown): ResolvedRoleSetup["contributions"] | null {
@@ -333,7 +328,12 @@ function parseRoleSetupContributions(value: unknown): ResolvedRoleSetup["contrib
   const contributions: ResolvedRoleSetup["contributions"][number][] = [];
 
   for (const candidate of value) {
-    if (!isRecord(candidate) || candidate["kind"] !== RoleSetupContributionKind.WinnerJudgement) {
+    if (
+      !isRecord(candidate) ||
+      Object.keys(candidate).length !== 2 ||
+      candidate["kind"] !== RoleSetupContributionKind.WinnerJudgement ||
+      !("judgement" in candidate)
+    ) {
       return null;
     }
 
@@ -354,14 +354,16 @@ function parseRoleSetupContributions(value: unknown): ResolvedRoleSetup["contrib
 
 function parseWinnerJudgement(
   value: unknown,
-): ResolvedRoleSetup["winnerJudgements"][number] | null {
+): ResolvedRoleSetup["contributions"][number]["judgement"] | null {
   if (
     !isRecord(value) ||
-    typeof value["id"] !== "string" ||
-    value["id"].length === 0 ||
+    Object.keys(value).length !== 4 ||
+    !isActionKey(value["id"]) ||
     !Number.isSafeInteger(value["priority"]) ||
-    (value["sourceRoleId"] !== null && typeof value["sourceRoleId"] !== "string") ||
-    !isTeam(value["winnerTeam"])
+    (value["priority"] as number) < -2_147_483_648 ||
+    (value["priority"] as number) > 2_147_483_647 ||
+    !isRoleId(value["sourceRoleId"]) ||
+    !isRegisteredTeam(value["winnerTeam"])
   ) {
     return null;
   }
@@ -378,12 +380,27 @@ function parseStringArray(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
 }
 
-function isTeam(value: unknown): value is Team {
-  return Object.values(Team).some((team) => team === value);
+function isRegisteredTeam(value: unknown): value is Team {
+  return isRoleId(value) && roleRegistry.getTeams().some((team) => team.id === value);
+}
+
+function getWinnerJudgementKey(sourceRoleId: RoleId, judgementId: string): string {
+  return JSON.stringify([sourceRoleId, judgementId]);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLocalizedText(value: unknown): value is { en: string; ja: string } {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 2 &&
+    typeof value["en"] === "string" &&
+    value["en"].length > 0 &&
+    typeof value["ja"] === "string" &&
+    value["ja"].length > 0
+  );
 }
 
 function resolveNightConversationGroups(
@@ -400,9 +417,16 @@ function resolveNightConversationGroups(
 
     const existingGroup = groupsById.get(nightConversation.groupId);
 
+    if (
+      existingGroup !== undefined &&
+      JSON.stringify(existingGroup.label) !== JSON.stringify(nightConversation.label)
+    ) {
+      throw new Error(`Night conversation labels disagree: ${nightConversation.groupId}`);
+    }
+
     groupsById.set(nightConversation.groupId, {
       groupId: nightConversation.groupId,
-      labelKey: nightConversation.labelKey,
+      label: nightConversation.label,
       roleIds: [...(existingGroup?.roleIds ?? []), roleId],
     });
   }
@@ -423,25 +447,52 @@ function normalizeRoleCounts(
   ) as RoleCounts;
 }
 
+function getDefaultRoleOptions(): RuleOptions["roleOptions"] {
+  return Object.fromEntries(
+    roleRegistry.getAll().flatMap((role) => {
+      const options = role.getSpecificOptions();
+
+      return options.length === 0
+        ? []
+        : [
+            [
+              role.id,
+              Object.fromEntries(options.map((option) => [option.key, option.defaultValue])),
+            ],
+          ];
+    }),
+  );
+}
+
+function normalizeRoleOptions(
+  input: RuleOptions["roleOptions"] | undefined,
+): RuleOptions["roleOptions"] {
+  return Object.fromEntries(
+    roleRegistry.getAll().flatMap((role) => {
+      const definitions = role.getSpecificOptions();
+
+      return definitions.length === 0
+        ? []
+        : [
+            [
+              role.id,
+              Object.fromEntries(
+                definitions.map((definition) => [
+                  definition.key,
+                  input?.[role.id]?.[definition.key] ?? definition.defaultValue,
+                ]),
+              ),
+            ],
+          ];
+    }),
+  );
+}
+
 function validateOptions(options: RuleOptions, issues: RuleSetValidationIssue[]): void {
   if (!Object.values(DayDiscussionMode).includes(options.dayDiscussionMode)) {
     issues.push({
       code: "invalid_option",
       message: "Day discussion mode must be ready_check or ordered_speech.",
-    });
-  }
-
-  if (!Object.values(InitialInspectionPolicy).includes(options.initialInspectionPolicy)) {
-    issues.push({
-      code: "invalid_option",
-      message: "Initial inspection policy must be enabled or disabled.",
-    });
-  }
-
-  if (!Object.values(GuardConsecutiveTargetPolicy).includes(options.guardConsecutiveTargetPolicy)) {
-    issues.push({
-      code: "invalid_option",
-      message: "Guard consecutive target policy must be allow or deny_same_target.",
     });
   }
 
@@ -460,6 +511,59 @@ function validateOptions(options: RuleOptions, issues: RuleSetValidationIssue[])
         code: "invalid_option",
         message: `${field} is outside the supported range.`,
       });
+    }
+  }
+
+  validateRoleOptions(options.roleOptions, issues);
+}
+
+function validateRoleOptions(
+  values: RuleOptions["roleOptions"],
+  issues: RuleSetValidationIssue[],
+): void {
+  const rolesWithOptions = roleRegistry
+    .getAll()
+    .filter((role) => role.getSpecificOptions().length > 0);
+  const expectedRoleIds = rolesWithOptions.map((role) => role.id);
+  const actualRoleIds = Object.keys(values);
+
+  if (
+    actualRoleIds.length !== expectedRoleIds.length ||
+    actualRoleIds.some((roleId) => !expectedRoleIds.includes(roleId))
+  ) {
+    issues.push({ code: "invalid_option", message: "Role option owners are invalid." });
+    return;
+  }
+
+  for (const role of rolesWithOptions) {
+    const definitions = role.getSpecificOptions();
+    const roleValues = values[role.id];
+
+    if (
+      roleValues === undefined ||
+      Object.keys(roleValues).length !== definitions.length ||
+      Object.keys(roleValues).some(
+        (optionKey) => !definitions.some((definition) => definition.key === optionKey),
+      )
+    ) {
+      issues.push({
+        code: "invalid_option",
+        message: `${role.name} options are invalid.`,
+        roleId: role.id,
+      });
+      continue;
+    }
+
+    for (const definition of definitions) {
+      const value = roleValues[definition.key];
+
+      if (!definition.choices.some((choice) => choice.value === value)) {
+        issues.push({
+          code: "invalid_option",
+          message: `${role.name} option ${definition.key} is invalid.`,
+          roleId: role.id,
+        });
+      }
     }
   }
 }
@@ -484,17 +588,16 @@ export function createEmptyGameStateForRuleSet(
   return {
     alivePlayerIds: [],
     currentActions: [],
-    events: [],
     finalOutcome: null,
     nightNumber: 0,
     pendingActions: [],
     phase: null,
     phaseInstanceId: null,
+    resolvedActions: [],
     resolvedRoleSetup: {
       activeRoleIds,
       contributions: [],
       nightConversationGroups: [],
-      winnerJudgements: [],
     },
     roleByPlayerId: new Map(),
     ruleOptions: ruleSet.options,

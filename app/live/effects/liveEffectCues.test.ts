@@ -762,6 +762,7 @@ function createSummary(options: SummaryOptions): RoomSummary {
     waitingExpiresAt: "2099-01-01T00:00:00.000Z",
     players: [ALICE, BOB, CAROL],
     roleCatalog: [],
+    teamCatalog: [],
     rolePrivate: null,
     self: {
       actionReceipts: [],
@@ -770,7 +771,6 @@ function createSummary(options: SummaryOptions): RoomSummary {
       playerId: ALICE.id,
       result: options.playerResult ?? null,
       roleId,
-      roleName: roleId,
     },
     snapshotRevision: options.snapshotRevision ?? 1,
     status: options.status,
@@ -788,6 +788,7 @@ function createEvent(
     id,
     kind,
     payload,
+    presentation: null,
   };
 }
 

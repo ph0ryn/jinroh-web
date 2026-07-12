@@ -1,5 +1,5 @@
 import type { Locale, Localization } from "@/lib/i18n/localization";
-import type { PublicPlayer, RoomSummary } from "@/lib/shared/game";
+import type { PublicPlayer, RoomSummary, TeamCatalogItem } from "@/lib/shared/game";
 
 type PublicEventDetail = {
   readonly label: string;
@@ -26,35 +26,50 @@ export function formatPhaseTitle(phase: string | null, t: Localization): string 
   return t.game.phase.game;
 }
 
-export function formatWinner(winnerTeam: string | null, t: Localization): string {
+export function formatWinner(
+  winnerTeam: string | null,
+  teamCatalog: readonly TeamCatalogItem[],
+  locale: Locale,
+  t: Localization,
+): string {
   if (winnerTeam === null) {
     return t.game.team.none;
   }
 
-  if (winnerTeam === "werewolves") {
-    return t.game.team.werewolves;
-  }
-
-  if (winnerTeam === "villagers") {
-    return t.game.team.villagers;
-  }
-
-  return t.game.team.fox;
+  return teamCatalog.find((team) => team.id === winnerTeam)?.presentation[locale] ?? winnerTeam;
 }
 
 export function formatPublicEvent(
   event: NonNullable<RoomSummary["game"]>["events"][number],
   players: readonly PublicPlayer[],
+  teamCatalog: readonly TeamCatalogItem[],
+  locale: Locale,
   t: Localization,
 ): {
   readonly details: readonly PublicEventDetail[];
   readonly kindLabel: string;
   readonly message: string;
 } {
+  if (event.presentation !== null) {
+    return {
+      details: event.presentation.details.map((detail) => ({
+        label: detail.label[locale],
+        value: detail.value[locale],
+      })),
+      kindLabel: event.presentation.title[locale],
+      message: event.presentation.message[locale],
+    };
+  }
+
   const targetName = getPayloadPublicPlayerName(event.payload["targetPlayerId"], players);
   switch (event.kind) {
     case "game_ended": {
-      const winner = formatWinner(toStringOrNull(event.payload["winnerTeam"]), t);
+      const winner = formatWinner(
+        toStringOrNull(event.payload["winnerTeam"]),
+        teamCatalog,
+        locale,
+        t,
+      );
 
       return {
         details: [{ label: t.events.details.winner, value: winner }],
@@ -97,13 +112,6 @@ export function formatPublicEvent(
         message: t.events.message.attack_guarded,
       };
 
-    case "peaceful_night":
-      return {
-        details: [],
-        kindLabel: t.events.kind.peaceful_night,
-        message: t.events.message.peaceful_night,
-      };
-
     case "vote_submitted":
       return {
         details: [],
@@ -129,39 +137,20 @@ export function formatPublicEvent(
 
 export function formatPrivateEvent(
   event: NonNullable<RoomSummary["self"]>["events"][number],
-  players: readonly PublicPlayer[],
-  t: Localization,
-): { readonly kindLabel: string; readonly message: string } {
-  const targetName =
-    getPayloadPublicPlayerName(event.payload["targetPlayerId"], players) ??
-    t.game.seatStatus.player;
-  const result =
-    event.payload["result"] === "werewolf"
-      ? t.events.inspectionView.werewolf
-      : t.events.inspectionView.human;
-
-  switch (event.kind) {
-    case "initial_inspection":
-      return {
-        kindLabel: t.events.kind.initial_inspection,
-        message: t.events.message.initial_inspection(targetName, result),
-      };
-    case "inspection_result":
-      return {
-        kindLabel: t.events.kind.inspection_result,
-        message: t.events.message.inspection_result(targetName, result),
-      };
-    case "spiritist_result":
-      return {
-        kindLabel: t.events.kind.spiritist_result,
-        message: t.events.message.spiritist_result(targetName, result),
-      };
-    default:
-      return {
-        kindLabel: formatUnknownEventKind(event.kind),
-        message: t.events.message.privateUnknown,
-      };
-  }
+  locale: Locale,
+): {
+  readonly details: readonly PublicEventDetail[];
+  readonly kindLabel: string;
+  readonly message: string;
+} {
+  return {
+    details: event.presentation.details.map((detail) => ({
+      label: detail.label[locale],
+      value: detail.value[locale],
+    })),
+    kindLabel: event.presentation.title[locale],
+    message: event.presentation.message[locale],
+  };
 }
 
 export function formatDateTime(value: string | null, locale: Locale, t: Localization): string {

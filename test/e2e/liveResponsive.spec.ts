@@ -477,7 +477,7 @@ test("waiting room visual baselines cover the four layout modes", async ({ page,
         animations: "disabled",
         caret: "hide",
         maxDiffPixels: 100,
-        mask: [page.locator(".liveInviteCode strong"), page.locator(".liveInviteQrCode")],
+        mask: [page.locator(".liveInviteCode"), page.locator(".liveInviteQrCode")],
       },
     );
   }

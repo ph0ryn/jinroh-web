@@ -15,16 +15,17 @@ import styles from "./liveRoundTable.module.css";
 import { getLiveRoundTableSeats } from "./liveRoundTableModel";
 import { getLiveSeatPresentation } from "./liveSeatPresentation";
 
-import type { Localization } from "@/lib/i18n/localization";
+import type { Locale, Localization } from "@/lib/i18n/localization";
 import type { RoomSummary } from "@/lib/shared/game";
 import type { CSSProperties, ReactNode } from "react";
 
 type LiveRoundTableProps = {
+  readonly locale: Locale;
   readonly summary: RoomSummary;
   readonly t: Localization;
 };
 
-export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
+export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
   const seats = getLiveRoundTableSeats(summary);
   const mood = getLiveMood(summary);
   const rootRef = useLiveRoundTableMotion(summary);
@@ -41,7 +42,7 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
         <span className={styles["innerRing"]} aria-hidden="true" />
         <div className={styles["center"]}>
           <span className={`${styles["phaseIcon"]} ${styles[mood] ?? ""}`} aria-hidden="true" />
-          <span className={styles["centerKicker"]}>{getLiveTableMeta(summary, t)}</span>
+          <span className={styles["centerKicker"]}>{getLiveTableMeta(summary, locale, t)}</span>
           <strong>{getLiveTableTitle(summary, t)}</strong>
         </div>
 
@@ -85,7 +86,11 @@ export function LiveRoundTable({ summary, t }: LiveRoundTableProps) {
           const seatPresentation = getLiveSeatPresentation(player, summary, t);
           const revealedRole =
             summary.status === "ended" && player.revealedRoleId !== null
-              ? getLocalizedRole(t, player.revealedRoleId)
+              ? getLocalizedRole(
+                  t,
+                  locale,
+                  summary.roleCatalog.find((role) => role.id === player.revealedRoleId),
+                )
               : null;
 
           const seatClassName = [
@@ -179,13 +184,15 @@ function LiveSeatPosition({
   );
 }
 
-function getLiveTableMeta(summary: RoomSummary, t: Localization): string {
+function getLiveTableMeta(summary: RoomSummary, locale: Locale, t: Localization): string {
   if (summary.status === "waiting") {
     return t.live.waiting.seated(countJoinedPlayers(summary), summary.targetPlayerCount);
   }
 
   if (summary.game?.status === "ended") {
-    return t.live.phasePanel.result(formatWinner(summary.game.winnerTeam, t)).message;
+    return t.live.phasePanel.result(
+      formatWinner(summary.game.winnerTeam, summary.teamCatalog, locale, t),
+    ).message;
   }
 
   if (summary.game?.phase === "night") {

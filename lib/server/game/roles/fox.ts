@@ -1,11 +1,12 @@
 import "server-only";
 import {
   CountGroup,
-  DeathReason,
-  EffectTag,
+  DEATH_REASON,
+  EFFECT_TAG,
+  GameEffectKind,
+  GameEffectLayer,
   PlayerResult,
   RoleSetupContributionKind,
-  Team,
 } from "../types";
 import { Role } from "./base";
 
@@ -14,6 +15,7 @@ import type {
   RoleId,
   RoleDefaultCountContext,
   RoleSetupContribution,
+  RoleTeamDefinition,
   WinnerJudgementContribution,
 } from "../types";
 import type {
@@ -25,15 +27,30 @@ import type {
   WinnerJudgementContext,
 } from "./base";
 
+const FOX_ALIVE_JUDGEMENT = "fox_alive";
+const FOX_TEAM = {
+  id: "fox",
+  presentation: { en: "Fox", ja: "妖狐" },
+} as const satisfies RoleTeamDefinition;
+
 export class FoxRole extends Role {
-  override readonly description =
-    "Cannot be killed by attacks and can win alone if alive at game end.";
   override readonly id: RoleId = "fox";
   override readonly maxCount = 1;
-  override readonly name = "Fox";
   override readonly order = 70;
-  override readonly shortLabel = "F";
-  override readonly team = Team.Fox;
+  override readonly presentation = {
+    en: {
+      description: "Survive until the game ends to steal victory for yourself.",
+      name: "Fox",
+      shortLabel: "F",
+    },
+    ja: {
+      description: "ゲーム終了まで生き残り、単独勝利を奪います。",
+      name: "妖狐",
+      shortLabel: "狐",
+    },
+  };
+  override readonly team = FOX_TEAM;
+  override readonly version = 2;
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
     void context;
@@ -53,10 +70,10 @@ export class FoxRole extends Role {
     return [
       {
         judgement: {
-          id: "fox_alive",
+          id: FOX_ALIVE_JUDGEMENT,
           priority: 10,
           sourceRoleId: this.id,
-          winnerTeam: Team.Fox,
+          winnerTeam: this.team.id,
         },
         kind: RoleSetupContributionKind.WinnerJudgement,
       },
@@ -68,23 +85,37 @@ export class FoxRole extends Role {
       this.createDeathEffect({
         id: `death:inspection:${context.targetId}`,
         playerId: context.targetId,
-        reason: DeathReason.RuleEffect,
-        tags: [EffectTag.Inspection, EffectTag.Unpreventable],
+        reason: DEATH_REASON.RuleEffect,
+        tags: [EFFECT_TAG.Inspection, EFFECT_TAG.Unpreventable],
       }),
     ];
   }
 
   override onAttacked(context: AttackContext): readonly GameEffect[] {
-    void context;
-
-    return [];
+    return [
+      {
+        emitterRoleId: this.id,
+        id: `protection:fox-immunity:${context.targetId}`,
+        kind: GameEffectKind.Protection,
+        layer: GameEffectLayer.Prevention,
+        playerId: context.targetId,
+        prevents: [EFFECT_TAG.Attack],
+        priority: 5,
+        reason: "fox_immunity",
+        sourceActionId: null,
+        tags: [],
+      },
+      ...super.onAttacked(context),
+    ];
   }
 
   override evaluateWinnerJudgement(
     judgement: WinnerJudgementContribution,
     context: WinnerJudgementContext,
   ): boolean {
-    void judgement;
+    if (judgement.id !== FOX_ALIVE_JUDGEMENT) {
+      return false;
+    }
 
     return context.state.alivePlayerIds.some((playerId) => {
       return context.state.roleByPlayerId.get(playerId) === this.id;
@@ -92,7 +123,7 @@ export class FoxRole extends Role {
   }
 
   override evaluateResult(context: PlayerResultContext): PlayerResult | null {
-    if (context.winnerTeam !== Team.Fox) {
+    if (context.winnerTeam !== this.team.id) {
       return null;
     }
 

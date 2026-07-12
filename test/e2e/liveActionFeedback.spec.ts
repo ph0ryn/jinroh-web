@@ -1,6 +1,5 @@
 import { expect, test } from "playwright/test";
 
-import { getLocalizedActionLabel } from "@/lib/i18n/localization";
 import { enLocalization } from "@/lib/i18n/localization/en";
 
 import {
@@ -36,7 +35,7 @@ test("an accepted action confirms once and leaves a private receipt", async ({ p
   await installActionFeedbackRecorder(page);
 
   const actionRow = getActionRow(page, action);
-  const actionLabel = getLocalizedActionLabel(enLocalization, action.kind);
+  const actionLabel = action.presentation.en.label;
   const targetSelect = page.getByLabel(enLocalization.live.aria.actionTarget(actionLabel), {
     exact: true,
   });
@@ -146,7 +145,7 @@ test("a rejected action never plays confirmation feedback", async ({ page, reque
 
   const actionRow = getActionRow(page, action);
   const submitButton = actionRow.getByRole("button", {
-    name: getLocalizedActionLabel(enLocalization, action.kind),
+    name: action.presentation.en.submitLabel,
   });
 
   await submitButton.click();
@@ -175,7 +174,7 @@ test("the phase chapter supersedes final-submission feedback without queueing", 
   await installActionFeedbackRecorder(page);
   await getActionRow(page, action)
     .getByRole("button", {
-      name: enLocalization.game.catalog.actionButtons.first_night_ready,
+      name: action.presentation.en.submitLabel,
       exact: true,
     })
     .click();
@@ -207,7 +206,7 @@ test("reduced motion settles an accepted action without transient choreography",
 
   await actionRow
     .getByRole("button", {
-      name: enLocalization.game.catalog.actionButtons.first_night_ready,
+      name: action.presentation.en.submitLabel,
       exact: true,
     })
     .click();

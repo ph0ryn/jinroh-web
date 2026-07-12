@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-import { getLocalizedActionLabel, type Localization } from "@/lib/i18n/localization";
-
 import {
   LiveActionFeedbackFrame,
   type LiveActionFeedbackState,
@@ -11,12 +9,14 @@ import {
 import { getActionButtonLabel } from "./livePresentation";
 
 import type { LiveActionFeedbackCue } from "./effects/ui/liveActionFeedbackModel";
+import type { Locale, Localization } from "@/lib/i18n/localization";
 import type { PublicAction, PublicPlayer } from "@/lib/shared/game";
 
 type LiveActionListProps = {
   readonly actions: readonly PublicAction[];
   readonly feedbackCue: LiveActionFeedbackCue | null;
   readonly isBusy: boolean;
+  readonly locale: Locale;
   readonly pendingActionKey: string | null;
   readonly players: readonly PublicPlayer[];
   readonly t: Localization;
@@ -28,6 +28,7 @@ export function LiveActionList({
   actions,
   feedbackCue,
   isBusy,
+  locale,
   pendingActionKey,
   players,
   t,
@@ -45,6 +46,7 @@ export function LiveActionList({
           action={action}
           feedbackCue={feedbackCue}
           isBusy={isBusy}
+          locale={locale}
           key={`${action.phaseInstanceId}:${action.key}`}
           pendingActionKey={pendingActionKey}
           players={players}
@@ -61,6 +63,7 @@ function LiveActionRow({
   action,
   feedbackCue,
   isBusy,
+  locale,
   pendingActionKey,
   players,
   t,
@@ -68,7 +71,7 @@ function LiveActionRow({
   onSubmitAction,
 }: Omit<LiveActionListProps, "actions"> & { readonly action: PublicAction }) {
   const [selectedTargetState, setSelectedTargetState] = useState(action.eligibleTargetIds[0] ?? "");
-  const actionLabel = getLocalizedActionLabel(t, action.kind);
+  const actionLabel = action.presentation[locale].label;
   const selectedTarget = action.eligibleTargetIds.includes(selectedTargetState)
     ? selectedTargetState
     : (action.eligibleTargetIds[0] ?? "");
@@ -136,7 +139,9 @@ function LiveActionRow({
         }
         disabled={isBusy || action.status === "submitted" || !hasRequiredTarget}
       >
-        <span data-live-action-submit-motion>{getActionButtonLabel(action, isPending, t)}</span>
+        <span data-live-action-submit-motion>
+          {getActionButtonLabel(action, isPending, locale, t)}
+        </span>
       </button>
     </LiveActionFeedbackFrame>
   );

@@ -1,7 +1,6 @@
-import { getLocalizedActionButtonLabel, type Localization } from "@/lib/i18n/localization";
-
 import { formatPhaseTitle, formatWinner } from "./liveEventPresentation";
 
+import type { Locale, Localization } from "@/lib/i18n/localization";
 import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 
 export type LiveMood = "day" | "execution" | "night" | "result" | "setup" | "voting" | "waiting";
@@ -82,6 +81,7 @@ export function getPlayerInitial(displayName: string): string {
 export function getPlayPhaseGuidance(
   summary: RoomSummary,
   isBusy: boolean,
+  locale: Locale,
   t: Localization,
 ): LiveGuidance {
   if (isBusy) {
@@ -89,7 +89,9 @@ export function getPlayPhaseGuidance(
   }
 
   if (summary.game?.status === "ended") {
-    return t.live.phasePanel.result(formatWinner(summary.game.winnerTeam, t));
+    return t.live.phasePanel.result(
+      formatWinner(summary.game.winnerTeam, summary.teamCatalog, locale, t),
+    );
   }
 
   if (summary.game?.phase === "night") {
@@ -178,6 +180,7 @@ export function countJoinedPlayers(summary: Pick<RoomSummary, "players">): numbe
 export function getActionButtonLabel(
   action: PublicAction,
   isSubmitting: boolean,
+  locale: Locale,
   t: Localization,
 ): string {
   if (action.status === "submitted") {
@@ -188,7 +191,7 @@ export function getActionButtonLabel(
     return t.game.actions.button.submitting;
   }
 
-  return getLocalizedActionButtonLabel(t, action.kind);
+  return action.presentation[locale].submitLabel;
 }
 
 export function formatRoomStatus(summary: RoomSummary | null, t: Localization): string {

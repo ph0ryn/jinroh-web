@@ -1,4 +1,10 @@
 import "server-only";
+import type {
+  ActionPresentation,
+  LocalizedText,
+  RoleOptionValues,
+  RolePresentation,
+} from "@/lib/shared/game";
 
 export type RoleId = string;
 
@@ -6,12 +12,12 @@ export type PlayerId = string;
 
 export type PhaseInstanceId = string;
 
-export enum Team {
-  Village = "village",
-  Werewolf = "werewolf",
-  Fox = "fox",
-  Neutral = "neutral",
-}
+export type Team = string;
+
+export type RoleTeamDefinition = {
+  id: Team;
+  presentation: LocalizedText;
+};
 
 export enum GameStatus {
   AssigningRoles = "assigning_roles",
@@ -29,16 +35,6 @@ export enum GamePhase {
 export enum DayDiscussionMode {
   ReadyCheck = "ready_check",
   OrderedSpeech = "ordered_speech",
-}
-
-export enum InitialInspectionPolicy {
-  Disabled = "disabled",
-  Enabled = "enabled",
-}
-
-export enum GuardConsecutiveTargetPolicy {
-  Allow = "allow",
-  DenySameTarget = "deny_same_target",
 }
 
 export enum VoteResultVisibility {
@@ -65,22 +61,11 @@ export enum PlayerResult {
   Special = "special",
 }
 
-export enum GameActionKind {
-  Inspect = "inspect",
-  Attack = "attack",
-  Guard = "guard",
-  ReadyForFirstDay = "ready_for_first_day",
-  ReadyForVoting = "ready_for_voting",
-  EndSpeech = "end_speech",
-  HunterRetaliate = "hunter_retaliate",
-  Vote = "vote",
-  None = "none",
-}
+export type GameActionKind = string;
 
 export enum RoleTargetKind {
   None = "none",
   SinglePlayer = "single_player",
-  MultiplePlayers = "multiple_players",
 }
 
 export enum ActionScope {
@@ -89,21 +74,10 @@ export enum ActionScope {
   AllAlivePlayers = "all_alive_players",
 }
 
-export enum RoleGroupActionPolicy {
-  FirstSubmitWins = "first_submit_wins",
-}
-
-export enum SubmitPolicy {
-  FirstSubmitWins = "first_submit_wins",
-}
-
-export enum ResolveTiming {
-  Immediate = "immediate",
-  PhaseEnd = "phase_end",
-}
-
 export enum GameEffectKind {
+  Attack = "attack",
   Death = "death",
+  Inspection = "inspection",
   Protection = "protection",
   InspectionResult = "inspection_result",
   CurrentAction = "current_action",
@@ -119,71 +93,57 @@ export enum GameEffectLayer {
   Action = "action",
 }
 
-export enum GameEndReason {
-  WerewolfDominance = "werewolf_dominance",
-  WerewolvesEliminated = "werewolves_eliminated",
-}
+export type GameEndReason = string;
 
-export enum DeathReason {
-  Attack = "attack",
-  Execution = "execution",
-  Retaliation = "retaliation",
-  RuleEffect = "rule_effect",
-}
+export type DeathReason = string;
 
-export enum GameEventKind {
-  ActionSubmitted = "action_submitted",
-  ActionResolved = "action_resolved",
-  EffectApplied = "effect_applied",
-  PlayerDied = "player_died",
-  PhaseChanged = "phase_changed",
-  VoteResolved = "vote_resolved",
-  GameEnded = "game_ended",
-  SpiritistResult = "spiritist_result",
-}
-
-export enum GameEventVisibility {
-  Public = "public",
-  Private = "private",
-  Internal = "internal",
-}
+export const DEATH_REASON = {
+  Attack: "attack",
+  Execution: "execution",
+  RuleEffect: "rule_effect",
+} as const;
 
 export enum RoleSetupContributionKind {
   WinnerJudgement = "winner_judgement",
 }
 
-export enum EffectTag {
-  Attack = "attack",
-  Execution = "execution",
-  Guardable = "guardable",
-  Inspection = "inspection",
-  Retaliation = "retaliation",
-  Unpreventable = "unpreventable",
+export type EffectTag = string;
+
+export const EFFECT_TAG = {
+  Attack: "attack",
+  Execution: "execution",
+  Guardable: "guardable",
+  Inspection: "inspection",
+  Unpreventable: "unpreventable",
+} as const;
+
+export enum ActionActorStateRequirement {
+  Alive = "alive",
+  Assigned = "assigned",
+}
+
+export enum ActionTargetStateRequirement {
+  Alive = "alive",
+  Assigned = "assigned",
 }
 
 export type RoleActionDefinition = {
   kind: GameActionKind;
-  phase: GamePhase;
-  required: boolean;
-  resolveTiming: ResolveTiming;
-  roleGroupPolicy: RoleGroupActionPolicy | null;
   roleGroupRoleId: RoleId | null;
-  scope: ActionScope;
-  submitPolicy: SubmitPolicy;
   target: RoleTargetKind;
+  targetStateRequirement: ActionTargetStateRequirement;
 };
 
 export type RolePublicMetadata = {
-  description: string;
   id: RoleId;
   maxCount: number | null;
   minCount: number;
-  name: string;
   order: number;
-  shortLabel: string;
+  presentation: RolePresentation;
   specificOptions: readonly RoleSpecificOptionDefinition[];
-  team: Team;
 };
+
+export type RoleActionPresentation = ActionPresentation;
 
 export type RoleDefaultCountContext = {
   assignedRoleCount: number;
@@ -191,22 +151,32 @@ export type RoleDefaultCountContext = {
 };
 
 export type RoleSpecificOptionDefinition = {
+  choices: readonly RoleSpecificOptionChoice[];
+  defaultValue: string;
   key: string;
-  label: string;
-  roleId: RoleId;
+  label: LocalizedText;
+};
+
+export type RoleSpecificOptionChoice = {
+  label: LocalizedText;
+  value: string;
 };
 
 export type CurrentAction = {
   actionKey: string;
+  actorStateRequirement: ActionActorStateRequirement;
   allowedPlayerIds: readonly PlayerId[];
   closesAt: string | null;
+  eligibleTargetPlayerIds: readonly PlayerId[];
   id: string;
   kind: GameActionKind;
   openedAt: string;
   ownerPlayerId: PlayerId | null;
   ownerRoleId: RoleId | null;
+  resolverRoleId: RoleId | null;
   scope: ActionScope;
   target: RoleTargetKind;
+  targetStateRequirement: ActionTargetStateRequirement;
 };
 
 export type PendingAction = {
@@ -225,10 +195,9 @@ export type RuleOptions = {
   executionLastWordsSeconds: number;
   firstDaySpeechRounds: number;
   firstNightSeconds: number;
-  guardConsecutiveTargetPolicy: GuardConsecutiveTargetPolicy;
-  initialInspectionPolicy: InitialInspectionPolicy;
   nightSeconds: number;
   normalDaySpeechRounds: number;
+  roleOptions: RoleOptionValues;
   voteResultVisibility: VoteResultVisibility;
   votingSeconds: number;
 };
@@ -237,7 +206,7 @@ export type RoleCounts = Readonly<Record<RoleId, number>>;
 
 export type RoleNightConversationDefinition = {
   groupId: string;
-  labelKey: string;
+  label: LocalizedText;
 };
 
 export type NightConversationGroup = RoleNightConversationDefinition & {
@@ -247,7 +216,7 @@ export type NightConversationGroup = RoleNightConversationDefinition & {
 export type WinnerJudgementContribution = {
   id: string;
   priority: number;
-  sourceRoleId: RoleId | null;
+  sourceRoleId: RoleId;
   winnerTeam: Team;
 };
 
@@ -260,7 +229,6 @@ export type ResolvedRoleSetup = {
   activeRoleIds: readonly RoleId[];
   contributions: readonly RoleSetupContribution[];
   nightConversationGroups: readonly NightConversationGroup[];
-  winnerJudgements: readonly WinnerJudgementContribution[];
 };
 
 export type NightConversationMessageState = {
@@ -283,9 +251,17 @@ export type GameEffectBase<K extends GameEffectKind> = {
 };
 
 export type GameEffect =
+  | (GameEffectBase<GameEffectKind.Attack> & {
+      attackerIds: readonly PlayerId[];
+      targetId: PlayerId;
+    })
   | (GameEffectBase<GameEffectKind.Death> & {
       playerId: PlayerId;
       reason: DeathReason;
+    })
+  | (GameEffectBase<GameEffectKind.Inspection> & {
+      targetId: PlayerId;
+      viewerId: PlayerId;
     })
   | (GameEffectBase<GameEffectKind.Protection> & {
       playerId: PlayerId;
@@ -293,6 +269,7 @@ export type GameEffect =
       reason: string;
     })
   | (GameEffectBase<GameEffectKind.InspectionResult> & {
+      presentation: GameEventPresentation;
       targetId: PlayerId;
       view: InspectionView;
       viewerId: PlayerId;
@@ -302,17 +279,52 @@ export type GameEffect =
       actionKey: string;
       actorPlayerId: PlayerId | null;
       actorRoleId: RoleId | null;
+      actorStateRequirement: ActionActorStateRequirement;
       eligibleTargetPlayerIds: readonly PlayerId[];
+      resolverRoleId: RoleId;
       target: RoleTargetKind;
+      targetStateRequirement: ActionTargetStateRequirement;
     })
   | (GameEffectBase<GameEffectKind.PublicMessage> & {
-      messageKey: string;
+      eventKind: string;
+      presentation: GameEventPresentation;
     })
   | (GameEffectBase<GameEffectKind.PrivateMessage> & {
-      messageKey: string;
-      payload: Readonly<Record<string, unknown>>;
+      eventKind: string;
       playerId: PlayerId;
+      presentation: GameEventPresentation;
     });
+
+export type FirstNightStartedEffect = Extract<
+  GameEffect,
+  {
+    kind:
+      | GameEffectKind.InspectionResult
+      | GameEffectKind.PrivateMessage
+      | GameEffectKind.PublicMessage;
+  }
+>;
+
+export type GameEventPresentation = {
+  details: readonly GameEventPresentationDetail[];
+  message: LocalizedText;
+  title: LocalizedText;
+};
+
+export type GameEventPresentationDetail = {
+  label: LocalizedText;
+  value: GameEventPresentationValue;
+};
+
+export type GameEventPresentationValue =
+  | {
+      kind: "localized_text";
+      text: LocalizedText;
+    }
+  | {
+      kind: "player";
+      playerId: PlayerId;
+    };
 
 export type GameEndCandidate = {
   reason: GameEndReason;
@@ -327,33 +339,35 @@ export type ResolvedDeath = {
 };
 
 export type FinalOutcome = {
-  endReasons: readonly GameEndReason[];
+  endCandidates: readonly GameEndCandidate[];
   playerResultsByPlayerId: ReadonlyMap<PlayerId, PlayerResult>;
   winnerTeam: Team;
 };
 
-export type GameEvent = {
+export type ResolvedRoleAction = {
+  actionKey: string;
   actorPlayerId: PlayerId | null;
+  actorRoleId: RoleId | null;
+  dayNumber: number;
   id: string;
-  kind: GameEventKind;
-  payload: Readonly<Record<string, unknown>>;
-  phase: GamePhase | null;
-  phaseInstanceId: PhaseInstanceId | null;
+  kind: GameActionKind;
+  nightNumber: number;
+  phase: GamePhase;
+  phaseInstanceId: PhaseInstanceId;
+  resolutionStatus: "missing" | "submitted";
+  resolverRoleId: RoleId;
   targetPlayerIds: readonly PlayerId[];
-  visibility: GameEventVisibility;
-  visibleToPlayerIds: readonly PlayerId[];
-  visibleToRoleIds: readonly RoleId[];
 };
 
 export type ReadonlyGameState = {
   alivePlayerIds: readonly PlayerId[];
   currentActions: readonly CurrentAction[];
-  events: readonly GameEvent[];
   finalOutcome: FinalOutcome | null;
   nightNumber: number;
   pendingActions: readonly PendingAction[];
   phase: GamePhase | null;
   phaseInstanceId: PhaseInstanceId | null;
+  resolvedActions: readonly ResolvedRoleAction[];
   resolvedRoleSetup: ResolvedRoleSetup;
   roleByPlayerId: ReadonlyMap<PlayerId, RoleId>;
   ruleOptions: RuleOptions;

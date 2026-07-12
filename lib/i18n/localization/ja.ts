@@ -30,40 +30,22 @@ export const jaLocalization = {
       winner: "勝利陣営",
     },
     kind: {
-      action_resolved: "行動完了",
       attack_guarded: "襲撃防衛",
       game_ended: "ゲーム終了",
       game_started: "ゲーム開始",
-      initial_inspection: "初日占い",
-      inspection_result: "占い結果",
-      peaceful_night: "平和な夜",
       phase_changed: "ゲーム進行",
       player_died: "死亡",
       player_executed: "処刑",
-      spiritist_result: "霊能結果",
       vote_resolved: "投票結果",
       vote_submitted: "投票送信",
     },
-    inspectionView: {
-      human: "人間",
-      werewolf: "人狼",
-    },
     message: {
-      action_resolved: "非公開の行動が完了しました。",
       attack_guarded: "誰かが襲撃されましたが、死亡者はいませんでした。",
       game_ended: (winner: string) => `${winner}の勝利です。`,
       game_started: "ゲームが始まりました。初日の前に自分の役職を確認してください。",
-      initial_inspection: (targetName: string, result: string) =>
-        `${targetName} は ${result} と判定されました。`,
-      inspection_result: (targetName: string, result: string) =>
-        `${targetName} は ${result} と判定されました。`,
-      peaceful_night: "この夜は死亡者なしで終了しました。",
-      privateUnknown: "非公開の結果が記録されました。",
       phase_changed: (phase: string) => `${phase}が始まりました。`,
       player_died: (targetName: string) => `${targetName} が死亡しました。`,
       player_executed: (targetName: string) => `${targetName} が処刑されました。`,
-      spiritist_result: (targetName: string, result: string) =>
-        `${targetName} は ${result} と判定されました。`,
       unknown: "公開ログが更新されました。",
       vote_resolved: {
         candidate: (targetName: string) => `${targetName} が最多票を受けました。`,
@@ -80,40 +62,8 @@ export const jaLocalization = {
         execution_last_words: "最後の言葉",
         first_night_ready: "夜明けの準備",
         night_actions_hidden: "夜の行動は夜明けまで明かされません",
+        role_actions: "役職アクション",
         votes_submitted: "投票済み",
-      },
-      actionButtons: {
-        attack: "襲撃する",
-        day_ready: "投票へ進む",
-        end_speech: "発言を終える",
-        execution_skip: "最後の言葉を終える",
-        first_night_ready: "夜明けを待つ",
-        guard: "護衛する",
-        hunter_retaliate: "道連れにする",
-        inspect: "占う",
-        vote: "投票する",
-      },
-      actions: {
-        attack: "襲撃する相手を選ぶ",
-        day_ready: "投票へ進む",
-        end_speech: "発言を終える",
-        execution_skip: "最後の言葉を終える",
-        first_night_ready: "夜明けを待つ",
-        guard: "護衛する相手を選ぶ",
-        hunter_retaliate: "道連れにする相手を選ぶ",
-        inspect: "占う相手を選ぶ",
-        vote: "処刑する相手を選ぶ",
-      },
-      nightConversations: {
-        werewolf: "人狼の密談",
-      },
-      roleOptions: {
-        guard: {
-          guardConsecutiveTargetPolicy: "前夜と同じ相手を護衛する",
-        },
-        seer: {
-          initialInspectionPolicy: "初夜に占い結果を得る",
-        },
       },
       rolePresets: {
         "6p-classic": {
@@ -131,69 +81,19 @@ export const jaLocalization = {
           name: "7人・狩人なし",
           shortLabel: "7O",
         },
-        "9p-hunter": {
-          description: "ハンターの処刑が波乱を呼ぶ、9人向けの構成です。",
-          name: "9人・ハンター",
-          shortLabel: "9H",
-        },
         "9p-spiritist": {
           description: "霊能者が処刑された者の正体を見抜く、9人向けの構成です。",
           name: "9人・霊能者",
           shortLabel: "9S",
         },
       },
-      roles: {
-        fox: {
-          description: "ゲーム終了まで生き残り、単独勝利を奪います。",
-          name: "妖狐",
-          shortLabel: "狐",
-        },
-        guard: {
-          description: "毎夜1人を選び、人狼の襲撃から守ります。",
-          name: "狩人",
-          shortLabel: "狩",
-        },
-        hunter: {
-          description: "処刑されたとき、生存者1人を道連れにします。",
-          name: "ハンター",
-          shortLabel: "猟",
-        },
-        madman: {
-          description: "人狼の正体を知らないまま、人狼陣営の勝利に力を貸します。",
-          name: "狂人",
-          shortLabel: "狂",
-        },
-        seer: {
-          description: "毎夜1人を占い、人狼かどうかを知ることができます。",
-          name: "占い師",
-          shortLabel: "占",
-        },
-        spiritist: {
-          description: "処刑された者が人狼だったかどうかを知ることができます。",
-          name: "霊能者",
-          shortLabel: "霊",
-        },
-        villager: {
-          description: "話し合いと投票で人狼を見つけ、村を勝利へ導きます。",
-          name: "村人",
-          shortLabel: "村",
-        },
-        werewolf: {
-          description: "村に紛れ込み、毎夜1人を襲撃します。",
-          name: "人狼",
-          shortLabel: "狼",
-        },
-      },
       unknown: {
-        action: "不明な行動",
         actionProgress: "進行状況を確認できません",
-        nightConversation: "非公開の会話",
         role: {
           description: "この役職の説明はありません。",
           name: "不明な役職",
           shortLabel: "？",
         },
-        roleOption: "役職設定",
         rolePreset: {
           description: "この役職構成の説明はありません。",
           name: "不明な役職構成",
@@ -213,7 +113,6 @@ export const jaLocalization = {
     actions: {
       action: "アクション",
       button: {
-        submit: "送信",
         submitted: "送信済み",
         submitting: "送信中",
       },
@@ -271,10 +170,7 @@ export const jaLocalization = {
       you: "あなた",
     },
     team: {
-      fox: "妖狐",
       none: "該当なし",
-      villagers: "村人陣営",
-      werewolves: "人狼陣営",
     },
   },
   home: {
@@ -285,7 +181,8 @@ export const jaLocalization = {
       primaryActionConfirmed: (action: string) =>
         `${action} がローカルのプロダクト画面で確認されました。`,
       roomOpened: "部屋 428913 が開かれ、8人のプレイヤーが参加しました。",
-      seerSubmitted: "占い師アクションが送信されました。公開部屋状態は変わりません。",
+      roleActionSubmitted: (roleName: string) =>
+        `${roleName}アクションが送信されました。公開部屋状態は変わりません。`,
       visibility: {
         host: "ホスト",
         private: "非公開",
@@ -294,12 +191,7 @@ export const jaLocalization = {
       votingPrepared: "生存プレイヤーごとに1つの投票アクションを準備しました。",
     },
     actionRows: {
-      labels: {
-        guard: "騎士",
-        livingPlayers: "生存者",
-        seer: "占い師",
-        werewolves: "人狼",
-      },
+      livingPlayers: "生存者",
       status: {
         done: "完了",
         locked: "ロック中",
@@ -371,14 +263,6 @@ export const jaLocalization = {
       createBody: "部屋を作ってホストになり、6桁コードでプレイヤーを招待します。",
       createTitle: "部屋を作る",
       joinTitle: "コードで参加",
-    },
-    sampleRoles: {
-      fox: "妖狐",
-      guard: "騎士",
-      madman: "狂人",
-      seer: "占い師",
-      villager: "村人",
-      werewolf: "人狼",
     },
     scenarios: {
       board: {
@@ -742,15 +626,6 @@ export const jaLocalization = {
         voteVisibility: "表示範囲",
         voteVisibilityCountOnly: "票数のみ",
         voteVisibilityVoterToTarget: "投票者と投票先",
-      },
-      roleSpecific: {
-        guardConsecutiveTargetPolicy: "連続護衛ルール",
-        guardConsecutiveTargetPolicyAllow: "許可",
-        guardConsecutiveTargetPolicyDeny: "同一対象を禁止",
-        initialInspectionPolicy: "初日占いルール",
-        initialInspectionPolicyDisabled: "無効",
-        initialInspectionPolicyEnabled: "有効",
-        notConfigurable: (label: string) => `${label}は現在変更できません。`,
       },
       roles: {
         assigned: "割り当て済み",

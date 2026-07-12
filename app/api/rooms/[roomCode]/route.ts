@@ -3,13 +3,9 @@ import { getRoomView } from "@/lib/server/gameRepository";
 import { RoomNotFoundError } from "@/lib/server/gameRepositoryErrors";
 import { jsonError, jsonOk } from "@/lib/server/http";
 
-type RouteContext = {
-  params: Promise<{
-    roomCode: string;
-  }>;
-};
+import type { RoomRouteContext } from "@/lib/server/roomRoute";
 
-export async function GET(request: Request, context: RouteContext): Promise<Response> {
+export async function GET(request: Request, context: RoomRouteContext): Promise<Response> {
   const auth = await requireAccount(request);
 
   if ("response" in auth) {

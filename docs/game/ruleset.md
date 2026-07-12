@@ -36,12 +36,11 @@ firstDaySpeechRounds:
 normalDaySpeechRounds:
   1
 
-initialInspectionPolicy:
-  enabled
-
-guardConsecutiveTargetPolicy:
-  allow
-  deny_same_target
+roleOptions:
+  guard:
+    consecutive_target: deny
+  seer:
+    initial_inspection: enabled
 
 nightSeconds:
   180
@@ -57,8 +56,14 @@ voteResultVisibility:
   voter_to_target
 ```
 
-狩人の連続護衛可否は `RuleSet` の option として扱う。
-狩人 Role は、`RuleSet` の option と event history を見て action が有効かを判断する。
+役職固有 option は `roleOptions[roleId][optionKey]` の opaque な値として保持する。
+option key、default、選択肢、localized label、検証は owning Role の
+`getSpecificOptions()` が定義する。Browser、HTTP API、persistence、common engine は
+Role catalog から generic に検証・描画し、特定 option key を列挙しない。
+Guard Role は自分の option と直近の action history を見て target eligibility を判断し、
+Seer Role は自分の option から first-night inspection を判断する。
+Guard の `consecutive_target: deny` は直前の Night に提出された target だけを除外する。
+直前の Night が `missing` なら、それより古い target は再び選択できる。
 
 投票結果の公開範囲も `RuleSet` の option として扱う。
 これは投票解決後に browser へ返す情報だけを変える。
@@ -117,7 +122,7 @@ validationに適合しない保存値をdefaultで補完してはならず、Pha
 - 同居不可の役職が同時に含まれていないか
 - 選択されたオプションが役職制約と矛盾していないか
 - Day の会議方式が `ready_check` か `ordered_speech` のどちらか1つに決まっているか
-- 初日白判定確定占いの設定が `disabled` か `enabled` のどちらかに決まっているか
+- 各 role option が owning Role の choice に含まれているか
 - 初日白判定確定占いが有効な場合、占い結果 `human` になる対象候補が存在するか
 
 ゲーム開始後、`RuleSet` は固定する。
@@ -125,6 +130,14 @@ validationに適合しない保存値をdefaultで補完してはならず、Pha
 
 `resolved role setup` は、固定された `RuleSet` と採用中 Role からゲーム開始時に作る。
 開始後に Role 構成が変わらないため、setup contribution の結果も同じゲーム中は固定される。
+
+`resolvedRoleSetup` は `activeRoleIds`、`contributions`、
+`nightConversationGroups` だけを持つ。winner judgement は Role が生成する typed setup
+contribution として `contributions` に保存し、同じ内容を並行する別 field に
+複製しない。engine version と role registry version は
+`game_rule_sets` の専用 column が正本であり、resolved setup JSON に重複させない。
+winner judgement の一意性は `(sourceRoleId, id)` で検証し、winner Team は
+`RoleRegistry` に登録された Role definitions の opaque Team ID から選ぶ。
 
 ## Role Assignment
 
@@ -138,6 +151,8 @@ Role assignment は、ゲーム開始時に実行する。
 
 方針。
 
+- 開始時の Player 集合を固定 game roster とし、開始後に membership history から
+  assignment や alive state を追加、削除、補完しない
 - Role assignment は Player ID を基準に行う
 - Account ID は使わない
 - ゲーム終了前の割り当て結果は各 Player にのみ秘密情報として見せる

@@ -14,12 +14,8 @@ export const localizations = {
 
 export type { Localization };
 export {
-  getLocalizedActionButtonLabel,
-  getLocalizedActionLabel,
   getLocalizedActionProgressLabel,
-  getLocalizedNightConversationLabel,
   getLocalizedRole,
-  getLocalizedRoleOptionLabel,
   getLocalizedRolePreset,
 } from "./resolvers";
 export type { LocalizedActionProgressKind } from "./resolvers";

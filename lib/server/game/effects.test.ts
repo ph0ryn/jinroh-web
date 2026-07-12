@@ -1,19 +1,53 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   collectDeathResolvedEffects,
   collectExecutionEffects,
   collectRoleActionEffects,
+  expandRoleInteractionEffects,
   resolveEffects,
 } from "./effects";
 import { roleRegistry } from "./roles";
 import { DEFAULT_RULE_OPTIONS } from "./ruleset";
-import { DeathReason, GameActionKind, GameEffectKind, GamePhase, GameStatus } from "./types";
+import { DEATH_REASON, GameEffectKind, GameEffectLayer, GamePhase, GameStatus } from "./types";
 
 import type { RoleContext } from "./roles";
 import type { PlayerId, ReadonlyGameState, ResolvedRoleSetup, RoleId } from "./types";
 
 describe("resolveEffects", () => {
+  it("rejects effects that claim another role as their owner", () => {
+    const context = createRoleContext([
+      ["target", "villager"],
+      ["wolf", "werewolf"],
+    ]);
+    const villagerRole = roleRegistry.get("villager");
+    const hook = vi.spyOn(villagerRole, "onExecuted").mockReturnValue([
+      {
+        emitterRoleId: "werewolf",
+        id: "foreign-effect",
+        kind: GameEffectKind.Death,
+        layer: GameEffectLayer.Death,
+        playerId: "target",
+        priority: 100,
+        reason: "foreign_reason",
+        sourceActionId: null,
+        tags: [],
+      },
+    ]);
+
+    try {
+      expect(() =>
+        collectExecutionEffects({
+          context,
+          sourceActionId: "execution-action",
+          targetId: "target",
+        }),
+      ).toThrow("Role villager returned an effect owned by werewolf.");
+    } finally {
+      hook.mockRestore();
+    }
+  });
+
   it("lets guard protection prevent guardable attack death", () => {
     const context = createRoleContext([
       ["wolf", "werewolf"],
@@ -22,24 +56,24 @@ describe("resolveEffects", () => {
     ]);
     const effects = [
       ...collectRoleActionEffects({
-        actionKind: GameActionKind.Attack,
+        actionKind: "attack",
         actorId: "wolf",
-        actorRoleId: "werewolf",
         context,
+        resolverRoleId: "werewolf",
         sourceActionId: "attack-action",
         targetId: "target",
       }),
       ...collectRoleActionEffects({
-        actionKind: GameActionKind.Guard,
+        actionKind: "guard",
         actorId: "guard",
-        actorRoleId: "guard",
         context,
+        resolverRoleId: "guard",
         sourceActionId: "guard-action",
         targetId: "target",
       }),
     ];
 
-    const resolution = resolveEffects(effects);
+    const resolution = resolveEffects(expandRoleInteractionEffects(effects, context));
 
     expect(resolution.deathEffectsByPlayerId.has("target")).toBe(false);
     expect(resolution.preventedEffects).toHaveLength(1);
@@ -58,16 +92,16 @@ describe("resolveEffects", () => {
         targetId: "target",
       }),
       ...collectRoleActionEffects({
-        actionKind: GameActionKind.Guard,
+        actionKind: "guard",
         actorId: "guard",
-        actorRoleId: "guard",
         context,
+        resolverRoleId: "guard",
         sourceActionId: "guard-action",
         targetId: "target",
       }),
     ];
 
-    const resolution = resolveEffects(effects);
+    const resolution = resolveEffects(expandRoleInteractionEffects(effects, context));
 
     expect(resolution.deathEffectsByPlayerId.get("target")?.kind).toBe(GameEffectKind.Death);
     expect(resolution.preventedEffects).toHaveLength(0);
@@ -80,49 +114,34 @@ describe("resolveEffects", () => {
       ["wolf", "werewolf"],
     ]);
     const attackResolution = resolveEffects(
-      collectRoleActionEffects({
-        actionKind: GameActionKind.Attack,
-        actorId: "wolf",
-        actorRoleId: "werewolf",
+      expandRoleInteractionEffects(
+        collectRoleActionEffects({
+          actionKind: "attack",
+          actorId: "wolf",
+          context,
+          resolverRoleId: "werewolf",
+          sourceActionId: "attack-action",
+          targetId: "fox",
+        }),
         context,
-        sourceActionId: "attack-action",
-        targetId: "fox",
-      }),
+      ),
     );
     const inspectionResolution = resolveEffects(
-      collectRoleActionEffects({
-        actionKind: GameActionKind.Inspect,
-        actorId: "seer",
-        actorRoleId: "seer",
+      expandRoleInteractionEffects(
+        collectRoleActionEffects({
+          actionKind: "inspect",
+          actorId: "seer",
+          context,
+          resolverRoleId: "seer",
+          sourceActionId: "inspect-action",
+          targetId: "fox",
+        }),
         context,
-        sourceActionId: "inspect-action",
-        targetId: "fox",
-      }),
+      ),
     );
 
     expect(attackResolution.deathEffectsByPlayerId.has("fox")).toBe(false);
     expect(inspectionResolution.deathEffectsByPlayerId.get("fox")?.kind).toBe(GameEffectKind.Death);
-  });
-
-  it("collects hunter retaliation as an execution follow-up action from the role class", () => {
-    const context = createRoleContext([
-      ["hunter", "hunter"],
-      ["wolf", "werewolf"],
-      ["villager", "villager"],
-    ]);
-    const effects = collectExecutionEffects({
-      context,
-      sourceActionId: "execution-action",
-      targetId: "hunter",
-    });
-    const actionEffect = effects.find((effect) => effect.kind === GameEffectKind.CurrentAction);
-
-    expect(actionEffect).toMatchObject({
-      actionKind: GameActionKind.HunterRetaliate,
-      actorPlayerId: "hunter",
-      eligibleTargetPlayerIds: ["wolf", "villager"],
-      kind: GameEffectKind.CurrentAction,
-    });
   });
 
   it("collects spiritist result private messages from the role class", () => {
@@ -136,7 +155,7 @@ describe("resolveEffects", () => {
       deaths: [
         {
           playerId: "target",
-          reason: DeathReason.Execution,
+          reason: DEATH_REASON.Execution,
           roleId: "villager",
           sourceActionId: "execution-action",
         },
@@ -146,13 +165,12 @@ describe("resolveEffects", () => {
 
     expect(effects).toEqual([
       expect.objectContaining({
+        eventKind: "spiritist_result",
         kind: GameEffectKind.PrivateMessage,
-        messageKey: "spiritist_result",
-        payload: {
-          result: "human",
-          targetPlayerId: "target",
-        },
         playerId: "spiritist",
+        presentation: expect.objectContaining({
+          title: { en: "Spiritist result", ja: "霊能結果" },
+        }),
       }),
     ]);
   });
@@ -165,17 +183,16 @@ function createRoleContext(assignments: readonly (readonly [PlayerId, RoleId])[]
     activeRoleIds,
     contributions: [],
     nightConversationGroups: [],
-    winnerJudgements: [],
   };
   const state: ReadonlyGameState = {
     alivePlayerIds: assignments.map(([playerId]) => playerId),
     currentActions: [],
-    events: [],
     finalOutcome: null,
     nightNumber: 2,
     pendingActions: [],
     phase: GamePhase.Night,
     phaseInstanceId: "night-2",
+    resolvedActions: [],
     resolvedRoleSetup,
     roleByPlayerId,
     ruleOptions: DEFAULT_RULE_OPTIONS,

@@ -2,23 +2,23 @@ import "server-only";
 import { randomInt } from "node:crypto";
 
 import {
-  ActionScope,
-  GameActionKind,
+  ActionTargetStateRequirement,
+  EFFECT_TAG,
   GameEffectKind,
   GameEffectLayer,
   GamePhase,
   GameStatus,
-  InitialInspectionPolicy,
   InspectionView,
-  ResolveTiming,
   RoleTargetKind,
-  SubmitPolicy,
-  Team,
 } from "../types";
-import { Role } from "./base";
+import { Role, scopeRoleContext } from "./base";
+import { VILLAGE_TEAM } from "./villager";
 
 import type {
+  GameActionKind,
   GameEffect,
+  GameEventPresentation,
+  FirstNightStartedEffect,
   ReadonlyGameState,
   RoleActionDefinition,
   RoleDefaultCountContext,
@@ -33,15 +33,40 @@ import type {
   RoleRuleValidationIssue,
 } from "./base";
 
+const INSPECT_ACTION_KIND: GameActionKind = "inspect";
+const INITIAL_INSPECTION_OPTION_KEY = "initial_inspection";
+const INITIAL_INSPECTION_DISABLED = "disabled";
+const INITIAL_INSPECTION_ENABLED = "enabled";
+
 export class SeerRole extends Role {
-  override readonly description =
-    "Inspects one player at night and receives their inspection view.";
   override readonly id: RoleId = "seer";
   override readonly maxCount = 1;
-  override readonly name = "Seer";
   override readonly order = 30;
-  override readonly shortLabel = "Se";
-  override readonly team = Team.Village;
+  override readonly presentation = {
+    en: {
+      description: "Inspect one player each night to learn whether they are a werewolf.",
+      name: "Seer",
+      shortLabel: "Se",
+    },
+    ja: {
+      description: "毎夜1人を占い、人狼かどうかを知ることができます。",
+      name: "占い師",
+      shortLabel: "占",
+    },
+  };
+  override readonly team = VILLAGE_TEAM;
+  override readonly version = 2;
+
+  override getActionPresentation(actionKind: GameActionKind) {
+    if (actionKind !== INSPECT_ACTION_KIND) {
+      return super.getActionPresentation(actionKind);
+    }
+
+    return {
+      en: { label: "Choose someone to inspect", submitLabel: "Inspect" },
+      ja: { label: "占う相手を選ぶ", submitLabel: "占う" },
+    };
+  }
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
     return context.playerCount >= 4 ? 1 : 0;
@@ -50,9 +75,22 @@ export class SeerRole extends Role {
   override getSpecificOptions(): readonly RoleSpecificOptionDefinition[] {
     return [
       {
-        key: "initialInspectionPolicy",
-        label: "Initial inspection",
-        roleId: this.id,
+        choices: [
+          {
+            label: { en: "Enabled", ja: "有効" },
+            value: INITIAL_INSPECTION_ENABLED,
+          },
+          {
+            label: { en: "Disabled", ja: "無効" },
+            value: INITIAL_INSPECTION_DISABLED,
+          },
+        ],
+        defaultValue: INITIAL_INSPECTION_ENABLED,
+        key: INITIAL_INSPECTION_OPTION_KEY,
+        label: {
+          en: "Receive an inspection result on the first night",
+          ja: "初夜に占い結果を得る",
+        },
       },
     ];
   }
@@ -64,22 +102,18 @@ export class SeerRole extends Role {
 
     return [
       {
-        kind: GameActionKind.Inspect,
-        phase: GamePhase.Night,
-        required: true,
-        resolveTiming: ResolveTiming.PhaseEnd,
-        roleGroupPolicy: null,
+        kind: INSPECT_ACTION_KIND,
         roleGroupRoleId: null,
-        scope: ActionScope.Player,
-        submitPolicy: SubmitPolicy.FirstSubmitWins,
         target: RoleTargetKind.SinglePlayer,
+        targetStateRequirement: ActionTargetStateRequirement.Alive,
       },
     ];
   }
 
   override validateRuleSet(context: RoleRuleValidationContext): readonly RoleRuleValidationIssue[] {
     if (
-      context.options.initialInspectionPolicy !== InitialInspectionPolicy.Enabled ||
+      this.getOptionValue(context.options, INITIAL_INSPECTION_OPTION_KEY) !==
+        INITIAL_INSPECTION_ENABLED ||
       (context.roleCounts[this.id] ?? 0) <= 0 ||
       this.hasInitialInspectionHumanCandidate(context)
     ) {
@@ -95,8 +129,11 @@ export class SeerRole extends Role {
     ];
   }
 
-  override onFirstNightStarted(context: PlayerRoleContext): readonly GameEffect[] {
-    if (context.state.ruleOptions.initialInspectionPolicy !== InitialInspectionPolicy.Enabled) {
+  override onFirstNightStarted(context: PlayerRoleContext): readonly FirstNightStartedEffect[] {
+    if (
+      this.getOptionValue(context.state.ruleOptions, INITIAL_INSPECTION_OPTION_KEY) !==
+      INITIAL_INSPECTION_ENABLED
+    ) {
       return [];
     }
 
@@ -115,7 +152,7 @@ export class SeerRole extends Role {
 
       return (
         role.seenAs({
-          ...context,
+          ...scopeRoleContext(context, role.id),
           targetId: playerId,
           viewerId: context.playerId,
         }) === InspectionView.Human
@@ -127,18 +164,19 @@ export class SeerRole extends Role {
 
     const targetId = candidateIds[randomInt(candidateIds.length)];
 
+    if (targetId === undefined) {
+      return [];
+    }
+
     return [
       {
         emitterRoleId: this.id,
+        eventKind: "initial_inspection",
         id: `initial-inspection:${context.playerId}:${targetId}`,
         kind: GameEffectKind.PrivateMessage,
         layer: GameEffectLayer.Information,
-        messageKey: "initial_inspection",
-        payload: {
-          result: "human",
-          targetPlayerId: targetId,
-        },
         playerId: context.playerId,
+        presentation: createInspectionPresentation(targetId, InspectionView.Human, true),
         priority: 100,
         sourceActionId: null,
         tags: [],
@@ -147,7 +185,7 @@ export class SeerRole extends Role {
   }
 
   override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
-    if (context.actionKind !== GameActionKind.Inspect || context.targetId === null) {
+    if (context.actionKind !== INSPECT_ACTION_KIND || context.targetId === null) {
       return [];
     }
 
@@ -159,10 +197,11 @@ export class SeerRole extends Role {
 
     const targetRole = context.roles.get(targetRoleId);
     const inspectionContext = {
-      ...context,
+      ...scopeRoleContext(context, targetRole.id),
       targetId: context.targetId,
       viewerId: context.actorId,
     };
+    const inspectionView = targetRole.seenAs(inspectionContext);
 
     return [
       {
@@ -170,14 +209,25 @@ export class SeerRole extends Role {
         id: `inspection:${context.actorId}:${context.targetId}`,
         kind: GameEffectKind.InspectionResult,
         layer: GameEffectLayer.Information,
+        presentation: createInspectionPresentation(context.targetId, inspectionView, false),
         priority: 100,
         sourceActionId: null,
         tags: [],
         targetId: context.targetId,
-        view: targetRole.seenAs(inspectionContext),
+        view: inspectionView,
         viewerId: context.actorId,
       },
-      ...targetRole.onInspected(inspectionContext),
+      {
+        emitterRoleId: this.id,
+        id: `inspection-hook:${context.actorId}:${context.targetId}`,
+        kind: GameEffectKind.Inspection,
+        layer: GameEffectLayer.Action,
+        priority: 100,
+        sourceActionId: null,
+        tags: [EFFECT_TAG.Inspection],
+        targetId: context.targetId,
+        viewerId: context.actorId,
+      },
     ];
   }
 
@@ -193,6 +243,39 @@ export class SeerRole extends Role {
       );
     });
   }
+}
+
+function createInspectionPresentation(
+  targetId: string,
+  view: InspectionView,
+  initial: boolean,
+): GameEventPresentation {
+  let result = { en: "unknown", ja: "不明" };
+
+  if (view === InspectionView.Werewolf) {
+    result = { en: "a werewolf", ja: "人狼" };
+  } else if (view === InspectionView.Human) {
+    result = { en: "human", ja: "人間" };
+  }
+
+  return {
+    details: [
+      {
+        label: { en: "Player", ja: "プレイヤー" },
+        value: { kind: "player", playerId: targetId },
+      },
+      {
+        label: { en: "Result", ja: "結果" },
+        value: { kind: "localized_text", text: result },
+      },
+    ],
+    message: initial
+      ? { en: "Your first-night inspection is complete.", ja: "初夜の占いが完了しました。" }
+      : { en: "Your inspection is complete.", ja: "占いが完了しました。" },
+    title: initial
+      ? { en: "Initial inspection", ja: "初日占い" }
+      : { en: "Inspection result", ja: "占い結果" },
+  };
 }
 
 function createInspectionCandidateContext(
@@ -216,18 +299,17 @@ function createInspectionCandidateState(
   return {
     alivePlayerIds: ["viewer", "candidate"],
     currentActions: [],
-    events: [],
     finalOutcome: null,
     nightConversationMessages: [],
     nightNumber: 1,
     pendingActions: [],
     phase: GamePhase.Night,
     phaseInstanceId: "setup",
+    resolvedActions: [],
     resolvedRoleSetup: {
       activeRoleIds: [...new Set([viewerRoleId, roleId])],
       contributions: [],
       nightConversationGroups: [],
-      winnerJudgements: [],
     },
     roleByPlayerId: new Map([
       ["viewer", viewerRoleId],

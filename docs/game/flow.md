@@ -38,6 +38,17 @@ Room waiting / game = null
   -> day
 ```
 
+すべての playing phase は一意な `phaseInstanceId` を持つ。永続層は phase ごとに
+`game_phase_instances` を追加し、`game_states` は現在の instance だけを参照する。
+phase 解決 transaction は古い instance の `endedAt` を固定してから次の instance を作る。
+current action、resolved action、event、speech slot は phase instance に帰属し、
+同じ phase name が再登場しても履歴を混ぜない。
+
+同じ user-visible Day の中で発言者や Role action window だけが切り替わる場合も、
+compare-and-swap の単位として新しい phase instance を作る。Day 番号と phase name は
+維持し、Day 全体で固定した ordered speech plan のような継続 state は次の instance
+へ明示的に引き継ぐ。
+
 phase の番号は、その phase に入る時点で更新する。
 
 ```text
@@ -104,27 +115,25 @@ action submitted
 
 action resolved
   Engine が必要な action を集めて処理する
+  core / Role action は submitted / missing のどちらも normalized history に固定する
 ```
 
 Role は action の意味を定義できる。
 Engine は action の受付、順序、解決、状態反映を管理する。
 
-Action の責務は3層に分ける。
+Action の責務は2層に分ける。
 
 ```text
 Role
-  その役職が可能な action を定義する
-
-ActionResolver
-  action を検証し、基本 effect を生成する
+  その役職が可能な action、target、解決後の effect を定義する
 
 Game Engine
-  action を受け付け、resolver と Role hook の結果を集約する
+  action を具体化して受け付け、core rule と Role hook の結果を集約する
 ```
 
 Role は action の存在を定義する。
-ActionResolver は action の解決方法を定義する。
-Role hook は action や effect に反応する。
+Role の target resolver は提出可能な target を定義し、Role hook は action や effect に反応する。
+Engine は owner、actor state、target eligibility を検証し、effect を順序付けて適用する。
 
 一部の action は Role ではなく core rule から提供する。
 投票はその代表で、全生存 Player が参加する昼の基本 action として Engine が扱う。
@@ -144,7 +153,8 @@ all_alive_players
 
 人狼の襲撃は role group action として扱う。
 人狼が複数いても、`WerewolfRole` を持つ Player group として最終的に1つの襲撃先だけを解決する。
-狂人は `Team.Werewolf` でも、`WerewolfRole` を持たないため襲撃 action には関係しない。
+狂人は人狼側の登録済み team ID を共有していても、`WerewolfRole` を持たないため
+襲撃 action には関係しない。
 
 Engine は action の受付可否を `currentActions` で管理する。
 `currentActions` は、現在受け付けている action の枠だけを表す。
@@ -157,22 +167,35 @@ current action
 pending action
   実際に提出された target や submittedAt
 
-resolved event / result
-  解決済みの結果、公開情報、秘密情報
+resolved action
+  opaque action kind、nullable resolver Role、actor、target、phase instance、
+  Day / Night counters、submitted / missing を持つ完全な履歴
+
+game event / result
+  browser へ投影できる公開情報、宛先付き秘密情報、固定済み結果
 ```
 
 二重送信や再送が来た場合は、同じ current action に対して最初に受理した有効 pending action だけを見る。
 後から届いた同じ current action への pending action は state に反映しない。
 これは通常の player action でも role group action でも同じ。
 
-```text
-submitPolicy:
-  first_submit_wins
-```
+すべての current action は `first_submit_wins` として受理する。
+これは Role ごとに切り替える設定ではなく、永続化と Engine に共通する不変条件である。
 
 current action は、投票開始、夜開始、発言 slot 開始など、action を受け付ける timing の開始時に作る。
 timing が解決されたら、該当する current action は削除する。
-過去の action と衝突しないように phase name や phase instance を key に含める必要はない。
+`actionKey` の一意性は phase instance ごとに保証するため、Role が opaque key に
+phase name を埋め込んで global uniqueness を再実装する必要はない。
+
+timing の解決中に Role hook の generic な `CurrentAction` effect から有効な action が
+具体化された場合、その follow-up window は blocking とする。Engine は同じ
+user-visible phase の新しい phase instance を開き、follow-up が submitted または
+missing として normalized history に入るまで、game end と core phase transition を
+実行しない。同じ phase の通常の Role action declaration は再度開かない。
+
+follow-up 後の resolver は、すでに確定した core decision を normalized core-action
+history から復元して進行を再開する。ordered speech と Voting は bounded event や
+follow-up の pending action から元の決定を推測しない。
 
 current action の作り方。
 
@@ -193,9 +216,14 @@ all alive players action
 
 人狼が2人いて同じ夜に別々の襲撃先を送った場合も、最初に受理された有効な襲撃だけを解決する。
 
-action の提出権限は、submitter の Role が現在その action を提供しているかで判定する。
-`Role.team` が action 権限を直接意味するわけではない。
-たとえば狂人は `Team.Werewolf` でも、`MadmanRole` が襲撃 action を提供しない限り、襲撃 action を提出できない。
+action の提出権限は materialize 済み `CurrentAction.allowedPlayerIds` を正本として判定する。
+`actorPlayerId` / `actorRoleId` が提出 audience を作り、`resolverRoleId` は意味を解決する Role を示す。
+submitter の Role、action owner、resolver Role を暗黙に同一視せず、`Role.team` も権限を意味しない。
+
+target の現在状態は `targetStateRequirement` で扱う。`alive` は action materialization
+時に生存 target だけを残し、提出時にも生存を再確認する。`assigned` は fixed game
+roster に assignment があれば死亡後も target にできる。この値は current-action
+submission / materialization policy であり、resolved action history には保存しない。
 
 ## First Night
 
@@ -212,8 +240,10 @@ First night は、Role assignment 後、最初の Day に入る前の `night` ph
 - `firstNightSeconds` 以内に最初の Day に進める
 
 初日襲撃は固定で発生しない。
-人狼の襲撃 action は出さない。
-その他の night action も、初日夜では Player 操作として受け付けない。
+現在の組み込み Role は、初日夜に通常夜用の対象選択 action を返さない。
+ただし Engine は初日夜も各 Role の `getActions` を同じ generic contract で評価する。
+将来の Role が初日夜に Player 操作を必要とする場合は、その Role 自身が phase と
+`nightNumber` を判定して action を返し、common engine に例外を追加しない。
 
 夜会話は action ではないため、初日夜でも表示対象になり得る。
 Werewolf night conversation は、実際に WerewolfRole を持つ Player だけに表示する。
@@ -237,7 +267,12 @@ ready for first day slot
 
 初日白判定確定占いが有効な場合、Engine が占い師本人を除く、占い結果 `human` になる
 生存 Player からランダムに対象を選び、占い師に private result を返す。
-この抽選は internal event として記録し、public view には対象を出さない。
+この結果は占い師本人宛ての private event として記録し、public view には対象を出さない。
+
+`onFirstNightStarted` は inspection result と public / private message だけを返す
+informational hook。causal effect は拒否する。将来、first night 開始時に causal
+behavior が必要になった場合は、Role 固有の例外ではなく generic な persisted
+hook / action-window contract を別に追加する。
 
 First night が終わったら、`status` は `playing` のまま、`phase` は `day` になる。
 
@@ -256,6 +291,8 @@ Night の基本ルール。
 - Role ごとの night current action を作る
 - 夜会話 group の対象 Player には night conversation を表示できる
 - 受理済み pending action は current action ごとに固定する
+- 受理通知と snapshot revision は submitter-private にし、共有 Role action の場合だけ
+  対象 Role group にも通知する
 - すべての night action が揃っても phase は短縮しない
 - `nightSeconds` 経過後に受理済み pending action を解決する
 - action 解決後、night current action を削除する
@@ -264,7 +301,7 @@ Night の基本ルール。
 
 未提出 action の扱いは Role 定義側で決める。
 Role 由来の current action に対応する pending action がない場合、Engine は
-owner Role の `onMissingAction` を呼ぶ。
+`resolverRoleId` が指す Role の `onMissingAction` を呼ぶ。
 default の `onMissingAction` は何も effect を返さない。
 core action の未提出は core rule 側で扱う。
 ただし、未提出 action のために Night を延長しない。
@@ -324,16 +361,20 @@ ready for voting slot
 
 - Day 開始時点の生存 Player から発言順を作る
 - 開始位置はランダムに決める
-- 作成した発言順はその Day の間固定する
+- 全周分の発言 plan を一度だけ永続化し、その Day の間固定する
 - 1人あたりの発言時間は `daySpeechSeconds`
 - `daySpeechSeconds` のデフォルトは90秒
 - 最初の Day は `firstDaySpeechRounds` 周（デフォルト2周）する
 - 2回目以降の Day は `normalDaySpeechRounds` 周（デフォルト1周）する
 - 現在の発言者は、自分の発言 slot を早く終了できる
+- 後続 slot の発言者が死亡済みなら、その slot を飛ばして次の生存者へ進む
 - すべての発言 slot が終わったら Voting に移行する
 
 発言順のランダム開始位置は、Day 開始時に一度だけ決める。
 再接続、再描画、Realtime 再送で順番を作り直さない。
+同じ Day 内で発言 slot や Role action window が切り替わって phase instance が
+更新されても、全 slot を含む元の plan を次の instance へそのまま保存する。
+死亡した後続話者の slot も plan から削除せず、次話者の選択時だけ読み飛ばす。
 
 発言 slot には予定終了時刻と実終了時刻を分けて持つ。
 
@@ -361,6 +402,10 @@ Role 固有の action ではない。
 - 同じ発言 slot への二重送信は最初の有効 action だけを受理する
 - 発言終了 action は会話内容を記録しない
 - 発言 slot が終わったら、対応する end speech current action は削除する
+
+発言終了を解決した hook が blocking follow-up を開いた場合、ordered speech は同じ
+Day でその follow-up を先に解決する。再開時は current Day の normalized core-action
+history にある submitted 発言終了 action を読み、次の slot または Voting へ進む。
 
 ```text
 end speech slot
@@ -402,6 +447,10 @@ vote current action
 集計時には、vote current action に対して受理済みの有効 pending action だけを見る。
 未投票者は票を持たない。
 Voting が解決されたら、vote current action と対応する pending action はすべて GameState から削除する。
+
+投票解決中に blocking follow-up が開いた場合、Voting phase を維持してその window を
+先に解決する。再開時は current Day / Night counters に属する normalized core vote
+history の submitted row から accepted votes を復元し、同じ集計結果を継続する。
 
 集計結果。
 
@@ -458,7 +507,8 @@ Game Engine
 その場合でも phase が進んだ後に終了判定は実行できる。
 
 投票数を変更する役職や、投票できなくする役職は現時点では扱わない。
-必要になったら、VoteResolver に modifier の入力点を追加する。
+必要になったら、role id の例外ではなく VoteResolver に generic な modifier
+の入力点を追加する。
 
 ## Execution
 
@@ -501,5 +551,5 @@ end last words slot
 処刑候補が遺言終了を選んだ場合、その slot は即時終了する。
 その後、`Role.onExecuted` を呼び、処刑 effect の解決へ進む。
 
-ハンターなど、処刑に反応する役職の特殊処理は各 Role に書く。
-Execution phase の core rule には入れない。
+Role 固有の処刑反応は各 owning Role module に書き、Execution phase の core rule には
+入れない。Hunter 固有の定義は `lib/server/game/roles/hunter.ts` にだけ置く。

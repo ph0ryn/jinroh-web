@@ -4,8 +4,8 @@ import { useState } from "react";
 
 import {
   getLocalizedRole,
-  getLocalizedRoleOptionLabel,
   getLocalizedRolePreset,
+  type Locale,
   type Localization,
 } from "@/lib/i18n/localization";
 import {
@@ -46,6 +46,7 @@ import {
   getPresetRoleEntries,
   getRoleCount,
   getRoleIdsFromCatalog,
+  getRoleSpecificOptionValue,
   getSettingsFlowItems,
   getStartRoleCatalog,
   getStartRuleSetValidationMessages,
@@ -59,6 +60,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 type StartSettingsDialogProps = {
   readonly defaultRoleCounts: Readonly<RoleCounts>;
   readonly isOpen: boolean;
+  readonly locale: Locale;
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
@@ -82,6 +84,7 @@ export function StartSettingsDialog(props: StartSettingsDialogProps) {
     >
       <StartSettingsDialogContent
         defaultRoleCounts={props.defaultRoleCounts}
+        locale={props.locale}
         playerCount={props.playerCount}
         roleCatalog={props.roleCatalog}
         settings={props.settings}
@@ -95,6 +98,7 @@ export function StartSettingsDialog(props: StartSettingsDialogProps) {
 
 function StartSettingsDialogContent({
   defaultRoleCounts,
+  locale,
   playerCount,
   roleCatalog,
   settings,
@@ -106,6 +110,9 @@ function StartSettingsDialogContent({
   const [draftSettings, setDraftSettings] = useState<StartRuleSetSettings>(() => ({
     ...settings,
     roleCounts: { ...settings.roleCounts },
+    roleOptions: Object.fromEntries(
+      Object.entries(settings.roleOptions).map(([roleId, options]) => [roleId, { ...options }]),
+    ),
   }));
   const { captureTransition, rootRef } = useLiveSettingsTabMotion({
     state: tabState,
@@ -114,8 +121,14 @@ function StartSettingsDialogContent({
     },
   });
   const canApplySettings =
-    getStartRuleSetValidationMessages(draftSettings, playerCount, roleCatalog, defaultRoleCounts, t)
-      .length === 0;
+    getStartRuleSetValidationMessages(
+      draftSettings,
+      playerCount,
+      roleCatalog,
+      defaultRoleCounts,
+      t,
+      locale,
+    ).length === 0;
 
   function handleDraftSettingsChange<Key extends keyof StartRuleSetSettings>(
     key: Key,
@@ -156,6 +169,19 @@ function StartSettingsDialogContent({
     setDraftSettings((currentSettings) => ({
       ...currentSettings,
       roleCounts: expandRolePresetCounts(preset, getRoleIdsFromCatalog(roleCatalog)),
+    }));
+  }
+
+  function handleDraftRoleOptionChange(roleId: RoleId, optionKey: string, value: string): void {
+    setDraftSettings((currentSettings) => ({
+      ...currentSettings,
+      roleOptions: {
+        ...currentSettings.roleOptions,
+        [roleId]: {
+          ...currentSettings.roleOptions[roleId],
+          [optionKey]: value,
+        },
+      },
     }));
   }
 
@@ -248,12 +274,14 @@ function StartSettingsDialogContent({
       <div className="liveSettingsBody">
         <StartRuleSetPanel
           defaultRoleCounts={defaultRoleCounts}
+          locale={locale}
           playerCount={playerCount}
           roleCatalog={roleCatalog}
           settings={draftSettings}
           tabState={tabState}
           onNumberChange={handleDraftNumberChange}
           onRoleCountChange={handleDraftRoleCountChange}
+          onRoleOptionChange={handleDraftRoleOptionChange}
           onRolePresetSelect={handleDraftRolePresetSelect}
           onSettingsChange={handleDraftSettingsChange}
           t={t}
@@ -264,7 +292,13 @@ function StartSettingsDialogContent({
         <button
           className="secondaryButton"
           type="button"
-          onClick={() => setDraftSettings({ ...DEFAULT_START_RULE_SET_SETTINGS, roleCounts: {} })}
+          onClick={() =>
+            setDraftSettings({
+              ...DEFAULT_START_RULE_SET_SETTINGS,
+              roleCounts: {},
+              roleOptions: {},
+            })
+          }
         >
           {t.live.buttons.reset}
         </button>
@@ -283,6 +317,7 @@ function StartSettingsDialogContent({
 
 function StartRuleSetPanel({
   defaultRoleCounts,
+  locale,
   playerCount,
   roleCatalog,
   settings,
@@ -290,10 +325,12 @@ function StartRuleSetPanel({
   t,
   onNumberChange,
   onRoleCountChange,
+  onRoleOptionChange,
   onRolePresetSelect,
   onSettingsChange,
 }: {
   readonly defaultRoleCounts: Readonly<RoleCounts>;
+  readonly locale: Locale;
   readonly playerCount: number;
   readonly roleCatalog: readonly RoleCatalogItem[];
   readonly settings: StartRuleSetSettings;
@@ -301,6 +338,7 @@ function StartRuleSetPanel({
   readonly t: Localization;
   readonly onNumberChange: (key: RuleSetNumberField, value: number) => void;
   readonly onRoleCountChange: (roleId: RoleId, value: number) => void;
+  readonly onRoleOptionChange: (roleId: RoleId, optionKey: string, value: string) => void;
   readonly onRolePresetSelect: (preset: RolePreset) => void;
   readonly onSettingsChange: <Key extends keyof StartRuleSetSettings>(
     key: Key,
@@ -326,6 +364,7 @@ function StartRuleSetPanel({
     roleCatalog,
     defaultRoleCounts,
     t,
+    locale,
   );
   const activeRoleOptions =
     roleCounts === null ? [] : getActiveRoleSpecificOptions(roleCatalog, roleCounts);
@@ -608,7 +647,7 @@ function StartRuleSetPanel({
                           aria-label={t.live.settings.roles.presetRoleMix(localizedPreset.name)}
                         >
                           {presetRoleEntries.map(({ count, role }) => {
-                            const localizedRole = getLocalizedRole(t, role.id);
+                            const localizedRole = getLocalizedRole(t, locale, role);
 
                             return (
                               <span
@@ -653,7 +692,7 @@ function StartRuleSetPanel({
                   startRoleCatalog.map((role) => {
                     const roleId = role.id;
                     const count = getRoleCount(roleCounts, roleId);
-                    const localizedRole = getLocalizedRole(t, roleId);
+                    const localizedRole = getLocalizedRole(t, locale, role);
                     const roleName = localizedRole.name;
                     const canDecrease = canChangeRoleCount(
                       roleCounts,
@@ -722,15 +761,14 @@ function StartRuleSetPanel({
                 {activeRoleOptions.map(({ option, role }) => (
                   <div className="liveSettingsOptionCard" key={`${role.id}:${option.key}`}>
                     <h4>
-                      {getLocalizedRole(t, role.id).name} -{" "}
-                      {getLocalizedRoleOptionLabel(t, role.id, option.key)}
+                      {getLocalizedRole(t, locale, role).name} - {option.label[locale]}
                     </h4>
                     {renderRoleSpecificOptionControl(
+                      role.id,
                       option,
-                      getLocalizedRoleOptionLabel(t, role.id, option.key),
+                      locale,
                       settings,
-                      onSettingsChange,
-                      t,
+                      onRoleOptionChange,
                     )}
                   </div>
                 ))}
@@ -811,63 +849,26 @@ function RuleSetNumberControl({
 }
 
 function renderRoleSpecificOptionControl(
+  roleId: RoleId,
   option: RoleSpecificOptionItem,
-  optionLabel: string,
+  locale: Locale,
   settings: StartRuleSetSettings,
-  onSettingsChange: <Key extends keyof StartRuleSetSettings>(
-    key: Key,
-    value: StartRuleSetSettings[Key],
-  ) => void,
-  t: Localization,
+  onRoleOptionChange: (roleId: RoleId, optionKey: string, value: string) => void,
 ): ReactNode {
-  switch (option.key) {
-    case "guardConsecutiveTargetPolicy":
-      return (
-        <div
-          className="liveSettingsSegments"
-          role="group"
-          aria-label={t.live.settings.roleSpecific.guardConsecutiveTargetPolicy}
+  const selectedValue = getRoleSpecificOptionValue(settings, roleId, option);
+
+  return (
+    <div className="liveSettingsSegments" role="group" aria-label={option.label[locale]}>
+      {option.choices.map((choice) => (
+        <button
+          aria-pressed={selectedValue === choice.value}
+          key={choice.value}
+          type="button"
+          onClick={() => onRoleOptionChange(roleId, option.key, choice.value)}
         >
-          <button
-            aria-pressed={settings.guardConsecutiveTargetPolicy === "deny"}
-            type="button"
-            onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "deny")}
-          >
-            {t.live.settings.roleSpecific.guardConsecutiveTargetPolicyDeny}
-          </button>
-          <button
-            aria-pressed={settings.guardConsecutiveTargetPolicy === "allow"}
-            type="button"
-            onClick={() => onSettingsChange("guardConsecutiveTargetPolicy", "allow")}
-          >
-            {t.live.settings.roleSpecific.guardConsecutiveTargetPolicyAllow}
-          </button>
-        </div>
-      );
-    case "initialInspectionPolicy":
-      return (
-        <div
-          className="liveSettingsSegments"
-          role="group"
-          aria-label={t.live.settings.roleSpecific.initialInspectionPolicy}
-        >
-          <button
-            aria-pressed={settings.initialInspectionPolicy === "enabled"}
-            type="button"
-            onClick={() => onSettingsChange("initialInspectionPolicy", "enabled")}
-          >
-            {t.live.settings.roleSpecific.initialInspectionPolicyEnabled}
-          </button>
-          <button
-            aria-pressed={settings.initialInspectionPolicy === "disabled"}
-            type="button"
-            onClick={() => onSettingsChange("initialInspectionPolicy", "disabled")}
-          >
-            {t.live.settings.roleSpecific.initialInspectionPolicyDisabled}
-          </button>
-        </div>
-      );
-    default:
-      return <p>{t.live.settings.roleSpecific.notConfigurable(optionLabel)}</p>;
-  }
+          {choice.label[locale]}
+        </button>
+      ))}
+    </div>
+  );
 }

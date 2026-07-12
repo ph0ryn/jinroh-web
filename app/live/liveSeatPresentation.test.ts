@@ -100,7 +100,6 @@ describe("getLiveSeatPresentation", () => {
     const firstSummary = createSummary(BASE_PLAYER, null, {
       actionProgress: {
         kind: "votes_submitted",
-        label: "Votes submitted.",
         required: 2,
         submitted: 0,
         visibility: "public",
@@ -111,7 +110,6 @@ describe("getLiveSeatPresentation", () => {
     const secondSummary = createSummary(BASE_PLAYER, null, {
       actionProgress: {
         kind: "votes_submitted",
-        label: "Votes submitted.",
         required: 2,
         submitted: 2,
         visibility: "public",
@@ -157,6 +155,7 @@ function createSummary(
     waitingExpiresAt: "2099-01-01T00:00:00.000Z",
     players: [...(overrides.players ?? [player])],
     roleCatalog: [],
+    teamCatalog: [],
     rolePrivate: null,
     self: null,
     snapshotRevision: 1,

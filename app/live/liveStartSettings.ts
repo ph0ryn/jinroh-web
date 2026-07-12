@@ -1,3 +1,4 @@
+import { getLocalizedRole } from "@/lib/i18n/localization/resolvers";
 import {
   DEFAULT_RULE_SET_OPTIONS,
   MAX_ROOM_PLAYERS,
@@ -14,6 +15,7 @@ export { RULE_SET_NUMBER_LIMITS } from "@/lib/shared/ruleSetConstraints";
 export type { RuleSetNumberField } from "@/lib/shared/ruleSetConstraints";
 
 import type { Localization } from "@/lib/i18n/localization";
+import type { Locale } from "@/lib/i18n/localization";
 
 export type StartRuleSetSettings = RuleSetInput;
 
@@ -24,11 +26,10 @@ export const DEFAULT_START_RULE_SET_SETTINGS: StartRuleSetSettings = {
   executionLastWordsSeconds: DEFAULT_RULE_SET_OPTIONS.executionLastWordsSeconds,
   firstDaySpeechRounds: DEFAULT_RULE_SET_OPTIONS.firstDaySpeechRounds,
   firstNightSeconds: DEFAULT_RULE_SET_OPTIONS.firstNightSeconds,
-  guardConsecutiveTargetPolicy: DEFAULT_RULE_SET_OPTIONS.guardConsecutiveTargetPolicy,
-  initialInspectionPolicy: DEFAULT_RULE_SET_OPTIONS.initialInspectionPolicy,
   nightSeconds: DEFAULT_RULE_SET_OPTIONS.nightSeconds,
   normalDaySpeechRounds: DEFAULT_RULE_SET_OPTIONS.normalDaySpeechRounds,
   roleCounts: {},
+  roleOptions: {},
   voteResultVisibility: DEFAULT_RULE_SET_OPTIONS.voteResultVisibility,
   votingSeconds: DEFAULT_RULE_SET_OPTIONS.votingSeconds,
 };
@@ -37,6 +38,9 @@ export function buildStartRuleSetInput(settings: StartRuleSetSettings): RuleSetI
   return {
     ...settings,
     roleCounts: { ...settings.roleCounts },
+    roleOptions: Object.fromEntries(
+      Object.entries(settings.roleOptions).map(([roleId, options]) => [roleId, { ...options }]),
+    ),
   };
 }
 
@@ -64,6 +68,7 @@ export function getStartRuleSetValidationMessages(
   roleCatalog: readonly RoleCatalogItem[],
   defaultRoleCounts: Readonly<RoleCounts>,
   t: Localization,
+  locale: Locale,
 ): readonly string[] {
   const startRoleCatalog = getStartRoleCatalog(roleCatalog);
   const roleCounts = getEffectiveStartRoleCounts(settings, roleCatalog, defaultRoleCounts);
@@ -88,17 +93,18 @@ export function getStartRuleSetValidationMessages(
   for (const definition of startRoleCatalog) {
     const count = getRoleCount(roleCounts, definition.id);
     const maxCount = getRoleMaxCount(definition.id, playerCount, roleCatalog);
+    const roleName = getLocalizedRole(t, locale, definition).name;
 
     if (!Number.isInteger(count) || count < 0) {
-      messages.push(t.live.settings.validation.countNonNegative(definition.name));
+      messages.push(t.live.settings.validation.countNonNegative(roleName));
     }
 
     if (count < definition.minCount) {
-      messages.push(t.live.settings.validation.countAtLeast(definition.name, definition.minCount));
+      messages.push(t.live.settings.validation.countAtLeast(roleName, definition.minCount));
     }
 
     if (count > maxCount) {
-      messages.push(t.live.settings.validation.countAtMost(definition.name, maxCount));
+      messages.push(t.live.settings.validation.countAtMost(roleName, maxCount));
     }
   }
 
@@ -178,6 +184,14 @@ export function getActiveRoleSpecificOptions(
 
 export function getRoleIdsFromCatalog(roleCatalog: readonly RoleCatalogItem[]): readonly RoleId[] {
   return getStartRoleCatalog(roleCatalog).map((role) => role.id);
+}
+
+export function getRoleSpecificOptionValue(
+  settings: StartRuleSetSettings,
+  roleId: RoleId,
+  option: RoleSpecificOptionItem,
+): string {
+  return settings.roleOptions[roleId]?.[option.key] ?? option.defaultValue;
 }
 
 export function getRoleCount(

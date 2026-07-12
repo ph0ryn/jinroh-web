@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   getLocalizedActionProgressLabel,
-  getLocalizedNightConversationLabel,
   getLocalizedRole,
   type Locale,
   type Localization,
@@ -15,7 +14,6 @@ import {
   MIN_ROOM_PLAYERS,
   type NightConversationView,
   type PublicAction,
-  type PublicPlayer,
   type RoomSummary,
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
@@ -898,7 +896,7 @@ export function LivePlayingSurface({
   const hasCurrentPlayer = summary.currentPlayerId !== null;
   const actionProgress = summary.game?.actionProgress ?? null;
   const phaseEndsAt = summary.game?.phaseEndsAt ?? null;
-  const phaseGuidance = getPlayPhaseGuidance(summary, isBusy, t);
+  const phaseGuidance = getPlayPhaseGuidance(summary, isBusy, locale, t);
   const nightConversation = hasCurrentPlayer
     ? (summary.rolePrivate?.nightConversation ?? null)
     : null;
@@ -907,7 +905,11 @@ export function LivePlayingSurface({
   const selfRole =
     summary.self?.roleId === null || summary.self?.roleId === undefined
       ? null
-      : getLocalizedRole(t, summary.self.roleId);
+      : getLocalizedRole(
+          t,
+          locale,
+          summary.roleCatalog.find((role) => role.id === summary.self?.roleId),
+        );
 
   return (
     <>
@@ -926,6 +928,7 @@ export function LivePlayingSurface({
                   actions={selfActions}
                   feedbackCue={actionFeedbackCue}
                   isBusy={isBusy}
+                  locale={locale}
                   pendingActionKey={pendingActionKey}
                   players={summary.players}
                   t={t}
@@ -966,12 +969,7 @@ export function LivePlayingSurface({
                   <span>{t.live.privateEventLog.title}</span>
                   <strong>{t.live.privateEventLog.meta(privateEvents.length)}</strong>
                 </div>
-                <PrivateEventList
-                  events={privateEvents}
-                  locale={locale}
-                  players={summary.players}
-                  t={t}
-                />
+                <PrivateEventList events={privateEvents} locale={locale} t={t} />
               </section>
             )}
           </div>
@@ -1022,7 +1020,7 @@ export function LivePlayingSurface({
           isOpen={isNightConversationOpen}
           meta={nightConversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}
           t={t}
-          title={getLocalizedNightConversationLabel(t, nightConversation.labelKey)}
+          title={nightConversation.label[locale]}
           onClose={onCloseNightConversation}
         >
           <NightConversationPanel
@@ -1066,7 +1064,7 @@ export function LiveEndedSurface({
 }: LiveEndedSurfaceProps) {
   const publicEventCount = summary.game?.events.length ?? 0;
   const selfResult = summary.self?.result ?? null;
-  const winner = formatWinner(summary.game?.winnerTeam ?? null, t);
+  const winner = formatWinner(summary.game?.winnerTeam ?? null, summary.teamCatalog, locale, t);
 
   return (
     <>
@@ -1222,7 +1220,7 @@ function NightConversationPanel({
   return (
     <div className="liveNightChatPanel" aria-label={t.live.aria.nightConversation}>
       <div className="liveNightChatHeader">
-        <strong>{getLocalizedNightConversationLabel(t, conversation.labelKey)}</strong>
+        <strong>{conversation.label[locale]}</strong>
         <em>{conversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}</em>
       </div>
 
@@ -1314,7 +1312,7 @@ function EventLog({
   return (
     <ol className="liveEventList" ref={containerRef} onScroll={handleScroll}>
       {events.map((event) => {
-        const display = formatPublicEvent(event, summary.players, t);
+        const display = formatPublicEvent(event, summary.players, summary.teamCatalog, locale, t);
 
         return (
           <li data-live-event-id={event.id} data-live-list-item-id={event.id} key={event.id}>
@@ -1341,24 +1339,32 @@ function EventLog({
 function PrivateEventList({
   events,
   locale,
-  players,
   t,
 }: {
   readonly events: NonNullable<RoomSummary["self"]>["events"];
   readonly locale: Locale;
-  readonly players: readonly PublicPlayer[];
   readonly t: Localization;
 }) {
   return (
     <ol className="liveEventList">
       {events.map((event, index) => {
-        const display = formatPrivateEvent(event, players, t);
+        const display = formatPrivateEvent(event, locale);
 
         return (
           <li key={`${event.kind}:${event.createdAt}:${index}`}>
             <time dateTime={event.createdAt}>{formatDateTime(event.createdAt, locale, t)}</time>
             <strong>{display.kindLabel}</strong>
             <p>{display.message}</p>
+            {display.details.length === 0 ? null : (
+              <dl className="liveEventDetails">
+                {display.details.map((detail, detailIndex) => (
+                  <div key={`${event.kind}:${event.createdAt}:${detail.label}:${detailIndex}`}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </li>
         );
       })}

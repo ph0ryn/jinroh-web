@@ -1,26 +1,29 @@
 import "server-only";
 import {
-  ActionScope,
+  ActionTargetStateRequirement,
   CountGroup,
-  GameActionKind,
-  GameEndReason,
+  EFFECT_TAG,
+  GameEffectKind,
+  GameEffectLayer,
   GamePhase,
   InspectionView,
   PlayerResult,
-  ResolveTiming,
-  RoleGroupActionPolicy,
+  RoleSetupContributionKind,
   RoleTargetKind,
-  SubmitPolicy,
-  Team,
 } from "../types";
-import { Role } from "./base";
+import { Role, scopeRoleContext } from "./base";
+import { VILLAGE_TEAM } from "./villager";
 
 import type {
+  GameActionKind,
   GameEffect,
   GameEndCandidate,
   RoleActionDefinition,
   RoleDefaultCountContext,
   RoleId,
+  RoleSetupContribution,
+  RoleTeamDefinition,
+  WinnerJudgementContribution,
 } from "../types";
 import type {
   InspectionContext,
@@ -28,21 +31,54 @@ import type {
   PlayerRoleContext,
   RoleActionResolvedContext,
   RoleContext,
+  WinnerJudgementContext,
 } from "./base";
 
+const ATTACK_ACTION_KIND: GameActionKind = "attack";
+const WEREWOLF_DOMINANCE_REASON = "werewolf_dominance";
+const WEREWOLVES_ELIMINATED_REASON = "werewolves_eliminated";
+const WEREWOLF_DOMINANCE_JUDGEMENT = "werewolf_dominance";
+const VILLAGE_ELIMINATION_JUDGEMENT = "werewolves_eliminated";
+
+export const WEREWOLF_TEAM = {
+  id: "werewolf",
+  presentation: { en: "Werewolves", ja: "人狼陣営" },
+} as const satisfies RoleTeamDefinition;
+
 export class WerewolfRole extends Role {
-  override readonly description = "Attacks at night and wins when werewolves dominate.";
   override readonly id: RoleId = "werewolf";
   override readonly minCount = 1;
-  override readonly name = "Werewolf";
   override readonly nightConversation = {
     groupId: "werewolf",
-    labelKey: "nightConversation.werewolf",
+    label: { en: "Werewolf council", ja: "人狼の密談" },
   };
   override readonly order = 10;
+  override readonly presentation = {
+    en: {
+      description: "Hide among the village and attack one player each night.",
+      name: "Werewolf",
+      shortLabel: "W",
+    },
+    ja: {
+      description: "村に紛れ込み、毎夜1人を襲撃します。",
+      name: "人狼",
+      shortLabel: "狼",
+    },
+  };
   override readonly required = true;
-  override readonly shortLabel = "W";
-  override readonly team = Team.Werewolf;
+  override readonly team = WEREWOLF_TEAM;
+  override readonly version = 2;
+
+  override getActionPresentation(actionKind: GameActionKind) {
+    if (actionKind !== ATTACK_ACTION_KIND) {
+      return super.getActionPresentation(actionKind);
+    }
+
+    return {
+      en: { label: "Choose someone to attack", submitLabel: "Attack" },
+      ja: { label: "襲撃する相手を選ぶ", submitLabel: "襲撃する" },
+    };
+  }
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
     return context.playerCount >= 7 ? 2 : 1;
@@ -67,15 +103,10 @@ export class WerewolfRole extends Role {
 
     return [
       {
-        kind: GameActionKind.Attack,
-        phase: GamePhase.Night,
-        required: true,
-        resolveTiming: ResolveTiming.PhaseEnd,
-        roleGroupPolicy: RoleGroupActionPolicy.FirstSubmitWins,
+        kind: ATTACK_ACTION_KIND,
         roleGroupRoleId: this.id,
-        scope: ActionScope.RoleGroup,
-        submitPolicy: SubmitPolicy.FirstSubmitWins,
         target: RoleTargetKind.SinglePlayer,
+        targetStateRequirement: ActionTargetStateRequirement.Alive,
       },
     ];
   }
@@ -84,7 +115,7 @@ export class WerewolfRole extends Role {
     action: RoleActionDefinition,
     context: PlayerRoleContext,
   ): readonly string[] {
-    if (action.kind !== GameActionKind.Attack) {
+    if (action.kind !== ATTACK_ACTION_KIND) {
       return super.getEligibleTargets(action, context);
     }
 
@@ -94,23 +125,48 @@ export class WerewolfRole extends Role {
   }
 
   override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
-    if (context.actionKind !== GameActionKind.Attack || context.targetId === null) {
+    if (context.actionKind !== ATTACK_ACTION_KIND || context.targetId === null) {
       return [];
     }
 
-    const targetRoleId = context.state.roleByPlayerId.get(context.targetId);
+    return [
+      {
+        attackerIds: this.getAliveWerewolfIds(context),
+        emitterRoleId: this.id,
+        id: `attack:${context.actorId}:${context.targetId}`,
+        kind: GameEffectKind.Attack,
+        layer: GameEffectLayer.Action,
+        priority: 100,
+        sourceActionId: null,
+        tags: [EFFECT_TAG.Attack],
+        targetId: context.targetId,
+      },
+    ];
+  }
 
-    if (targetRoleId === undefined) {
-      return [];
-    }
+  override getSetupContributions(context: RoleContext): readonly RoleSetupContribution[] {
+    void context;
 
-    const targetRole = context.roles.get(targetRoleId);
-
-    return targetRole.onAttacked({
-      ...context,
-      attackerIds: this.getAliveWerewolfIds(context),
-      targetId: context.targetId,
-    });
+    return [
+      {
+        judgement: {
+          id: WEREWOLF_DOMINANCE_JUDGEMENT,
+          priority: 100,
+          sourceRoleId: this.id,
+          winnerTeam: this.team.id,
+        },
+        kind: RoleSetupContributionKind.WinnerJudgement,
+      },
+      {
+        judgement: {
+          id: VILLAGE_ELIMINATION_JUDGEMENT,
+          priority: 100,
+          sourceRoleId: this.id,
+          winnerTeam: VILLAGE_TEAM.id,
+        },
+        kind: RoleSetupContributionKind.WinnerJudgement,
+      },
+    ];
   }
 
   override checkEndCondition(context: RoleContext): GameEndCandidate | null {
@@ -119,14 +175,14 @@ export class WerewolfRole extends Role {
 
     if (aliveWerewolves === 0) {
       return {
-        reason: GameEndReason.WerewolvesEliminated,
+        reason: WEREWOLVES_ELIMINATED_REASON,
         sourceRoleId: this.id,
       };
     }
 
     if (aliveWerewolves >= aliveOthers) {
       return {
-        reason: GameEndReason.WerewolfDominance,
+        reason: WEREWOLF_DOMINANCE_REASON,
         sourceRoleId: this.id,
       };
     }
@@ -134,8 +190,27 @@ export class WerewolfRole extends Role {
     return null;
   }
 
+  override evaluateWinnerJudgement(
+    judgement: WinnerJudgementContribution,
+    context: WinnerJudgementContext,
+  ): boolean {
+    if (judgement.id === WEREWOLF_DOMINANCE_JUDGEMENT) {
+      return context.ownEndCandidates.some(
+        (candidate) => candidate.reason === WEREWOLF_DOMINANCE_REASON,
+      );
+    }
+
+    if (judgement.id === VILLAGE_ELIMINATION_JUDGEMENT) {
+      return context.ownEndCandidates.some(
+        (candidate) => candidate.reason === WEREWOLVES_ELIMINATED_REASON,
+      );
+    }
+
+    return false;
+  }
+
   override evaluateResult(context: PlayerResultContext): PlayerResult | null {
-    return context.winnerTeam === Team.Werewolf ? PlayerResult.Win : null;
+    return context.winnerTeam === this.team.id ? PlayerResult.Win : null;
   }
 
   private getAliveWerewolfIds(context: RoleContext): readonly string[] {
@@ -156,7 +231,7 @@ export class WerewolfRole extends Role {
 
       const role = context.roles.get(roleId);
 
-      if (role.countAs({ ...context, playerId }) === group) {
+      if (role.countAs({ ...scopeRoleContext(context, role.id), playerId }) === group) {
         count += 1;
       }
     }

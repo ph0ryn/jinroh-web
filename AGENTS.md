@@ -111,9 +111,47 @@ Keep role behavior owned by `Role` classes and `RoleRegistry`.
 - Role-specific behavior must live in the role class through hooks, action
   definitions, target resolvers, setup contributions, winner judgements, and
   result evaluation.
+- Treat role-defined identifiers and action kinds as opaque data outside their
+  owning role module. Do not enumerate them in shared enums, engine or adapter
+  switches, API or persistence allowlists, localization gates, or UI branches.
+  Common code may enumerate only explicitly documented core primitives.
 - Adding a role should normally require adding a role class and registering it.
   Shared engine changes are acceptable only when adding a generic hook,
   resolver capability, effect type, or rule extension needed by a class.
+- Preserve the role that defines or resolves an action independently from the
+  players or roles allowed to submit it. Carry that resolver identity through
+  engine state, persistence, snapshots, and view adapters, and dispatch role
+  actions through the owning `Role` hook instead of inferring behavior from an
+  action-kind switch.
+- Generic action, effect, resolver, and projection contracts must carry enough
+  ownership, target, actor-state, and presentation information for a newly
+  registered role to work end to end without editing shared adapters.
+- Keep normalized action history separate from presentation events. Record both
+  submitted and missing core and role actions with their opaque key, kind,
+  resolver, actor, target, and phase instance. Common phase continuations may
+  resume from core history. Role hooks receive core current-action state plus
+  only their own role-action state and history; neither path may depend on
+  bounded or raw event payloads.
+- End candidates and winner judgements are also role-owned contracts. Each Role
+  owns its opaque end reasons and judgement IDs, may receive only its own end
+  candidates during evaluation, and must not require a shared reason enum,
+  persistence allowlist, or common winner branch.
+- A role module owns that role's identifiers, behavior, action semantics,
+  default metadata, and fallback action presentation. Another role must be able
+  to implement the same effects with its own identifiers without changing the
+  original role or common code.
+- Concretely, every Hunter-specific identifier, rule, hook, action, target rule,
+  and fallback presentation belongs in `lib/server/game/roles/hunter.ts`.
+  Outside registry/bootstrap composition, common code must support a different
+  role with equivalent effects without importing Hunter or recognizing its
+  identifiers.
+- Do not add a Hunter-specific production preset, localization entry, adapter
+  branch, or fixture as an integration requirement. Documentation and tests may
+  name Hunter as an example, but production composition must not make common
+  code aware of Hunter.
+- Increment a Role's `version` whenever its behavior or persisted contract
+  changes in a way that static metadata cannot describe. Registry versioning
+  includes static role metadata automatically.
 - Do not add role-specific `roleId` branches to common game engine logic unless
   the role is part of explicitly documented core game primitives.
 - Common game logic may coordinate generic concepts such as phases, actions,
@@ -124,8 +162,20 @@ Keep role behavior owned by `Role` classes and `RoleRegistry`.
   or inspection/count semantics.
 - UI should render configurable role state from server-provided role catalog and
   rule data rather than maintaining its own role metadata or role universe.
+- Registry and bootstrap modules may name a role only to import, export, and
+  register it. Cross-role composition such as presets may reference role IDs and
+  counts, but must not duplicate role metadata or behavior and must not be
+  required for the role to function.
+- Role modules must provide localized fallback presentation for their metadata,
+  actions, options, messages, and private conversation. Shared localization
+  resources must not enumerate role or role-action identifiers; they may
+  localize core UI and explicitly cross-role composition such as presets.
 - Tests and fixtures may hard-code example roles, but production behavior must
   not depend on fixture-only role lists.
+- Tests and documentation may name concrete roles as examples, but generic
+  extension behavior must also be verified with synthetic roles and action
+  identifiers so production support cannot depend on fixture-specific
+  allowlists.
 
 When modifying older code, check whether the change belongs in a role class,
 the registry, a generic engine extension, or a view/API adapter before editing.

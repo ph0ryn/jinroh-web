@@ -1,18 +1,9 @@
 import "server-only";
-import {
-  DayDiscussionMode,
-  GuardConsecutiveTargetPolicy,
-  InitialInspectionPolicy,
-  VoteResultVisibility,
-  type RuleOptions,
-} from "./types";
+import { DayDiscussionMode, VoteResultVisibility, type RuleOptions } from "./types";
 
-import type {
-  RuleSet as SharedRuleSet,
-  RuleSetOptions as SharedRuleSetOptions,
-} from "@/lib/shared/game";
+import type { RuleSetOptions as SharedRuleSetOptions } from "@/lib/shared/game";
 
-export function toRegisteredRuleOptions(ruleSet: SharedRuleSet): RuleOptions {
+export function toRegisteredRuleOptions(ruleSet: SharedRuleSetOptions): RuleOptions {
   return {
     dayDiscussionMode:
       ruleSet.dayMode === "ordered_speech"
@@ -23,16 +14,9 @@ export function toRegisteredRuleOptions(ruleSet: SharedRuleSet): RuleOptions {
     executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
     firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
     firstNightSeconds: ruleSet.firstNightSeconds,
-    guardConsecutiveTargetPolicy:
-      ruleSet.guardConsecutiveTargetPolicy === "allow"
-        ? GuardConsecutiveTargetPolicy.Allow
-        : GuardConsecutiveTargetPolicy.DenySameTarget,
-    initialInspectionPolicy:
-      ruleSet.initialInspectionPolicy === "disabled"
-        ? InitialInspectionPolicy.Disabled
-        : InitialInspectionPolicy.Enabled,
     nightSeconds: ruleSet.nightSeconds,
     normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
+    roleOptions: ruleSet.roleOptions,
     voteResultVisibility:
       ruleSet.voteResultVisibility === "voter_to_target"
         ? VoteResultVisibility.VoterToTarget
@@ -52,14 +36,9 @@ export function toSharedRuleOptions(options: RuleOptions): SharedRuleSetOptions 
     executionLastWordsSeconds: options.executionLastWordsSeconds,
     firstDaySpeechRounds: options.firstDaySpeechRounds,
     firstNightSeconds: options.firstNightSeconds,
-    guardConsecutiveTargetPolicy:
-      options.guardConsecutiveTargetPolicy === GuardConsecutiveTargetPolicy.Allow
-        ? "allow"
-        : "deny",
-    initialInspectionPolicy:
-      options.initialInspectionPolicy === InitialInspectionPolicy.Disabled ? "disabled" : "enabled",
     nightSeconds: options.nightSeconds,
     normalDaySpeechRounds: options.normalDaySpeechRounds,
+    roleOptions: options.roleOptions,
     voteResultVisibility:
       options.voteResultVisibility === VoteResultVisibility.VoterToTarget
         ? "voter_to_target"

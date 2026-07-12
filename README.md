@@ -19,7 +19,8 @@ voting, execution, and locked final results.
   targets, vote details in progress, or role-private night conversation content to
   the wrong browser view.
 - Visualize a complete game path with Werewolf, Villager, Madman, Seer, Guard,
-  and Fox roles while backend implementation follows the current product spec.
+  Spiritist, Hunter, and Fox roles while backend implementation follows the
+  current product spec.
 - Provide a high-polish mobile-first UI that also works as a desktop
   progress board.
 
@@ -39,6 +40,25 @@ and Supabase:
 
 Use `docs/spec.md` as the primary product boundary and `docs/game/*.md` for
 game-system details.
+
+## Architecture Boundaries
+
+- The application server is the only client for application database RPCs. Its
+  service-role runtime snapshot contains authoritative secret state and must be
+  projected into public, self-private, and role-private views before any
+  browser response.
+- Role-owned IDs, action kinds, end reasons, metadata, and behavior stay in the
+  owning Role module. Shared code coordinates generic hooks, effects, phases,
+  persistence, and projections without role-specific allowlists or switches.
+- Hunter-specific definitions live only in
+  `lib/server/game/roles/hunter.ts`. A different Role must be able to produce
+  equivalent effects under its own identifiers without changes to common code.
+- `game_phase_instances` preserves phase identity and timing history, while
+  `resolved_actions` preserves complete submitted and missing core and
+  role-action history independently from bounded presentation events.
+
+See `docs/supabase.md` for the transaction and secret-boundary details and
+`docs/game/roles.md` for the extension model.
 
 ## Local Setup
 
@@ -111,15 +131,15 @@ If the CLI cannot connect with the temporary login role, set
 same command.
 
 Before the first release, use a disposable development database and verify that
-the baseline is the only applied migration:
+the four responsibility-based baseline migrations are the only applied versions:
 
 ```sh
 pnpm exec supabase migration list
 ```
 
-Local and remote versions should both list only `0001`. Recreate any pre-release
-database that contains the superseded development migration history instead of
-repairing it in place.
+Local and remote versions should list only `0001` through `0004`. Recreate any
+pre-release database that contains the superseded development migration history
+instead of repairing it in place.
 
 To verify room-code reuse hardening, run:
 
@@ -135,18 +155,18 @@ order by indexname;
 The expected result is one `rooms_active_code_unique` row and no
 `rooms_public_room_code_global_unique` row.
 
-Rollback policy:
+Migration change policy:
 
-- Do not edit or delete an already-applied migration.
-- Prefer a forward migration that restores the previous behavior or adds a
+- Before the first production release, update the responsibility-based baseline
+  only together with recreating every disposable database that applied an older
+  baseline. Do not repair superseded development history in place.
+- After the first production release, do not edit or delete an already-applied
+  migration. Add a forward migration that restores behavior or provides a
   compatibility path.
-- For a failed `db push` before release traffic reaches the schema, fix the
-  migration locally and rerun against a fresh project.
 - For production data issues, snapshot/export the affected tables first, then
   apply a forward corrective migration.
-- Application deploys should be rolled back independently from database
-  migrations. Keep server code compatible with the currently applied schema
-  before promoting it.
+- Roll back application deploys independently from database migrations. Keep
+  server code compatible with the applied schema before promoting it.
 
 ## Run
 
@@ -180,8 +200,8 @@ curl -X POST http://localhost:3000/api/maintenance/expire-waiting-rooms \
   -d '{"limit":50}'
 ```
 
-The endpoint ends only already-expired waiting rooms and returns the number of
-rooms changed.
+The endpoint ends only already-expired waiting rooms, prunes obsolete Realtime
+grants, and returns both counts.
 
 ## Deploy
 
@@ -227,6 +247,9 @@ waiting rooms.
 pnpm run format
 pnpm run lint
 pnpm test
+pnpm run lint:db
+pnpm run test:db
+pnpm run db:diff
 pnpm exec tsc --noEmit --incremental false --pretty false
 pnpm run build
 pnpm run test:e2e:all
@@ -234,11 +257,13 @@ pnpm run test:e2e:all
 
 Unit tests cover the engine, roles, effects, persisted contracts, token
 handling, shared rule constraints, maintenance authentication, localization,
-and presentation helpers.
+and presentation helpers. Database tests require the local Supabase stack;
+`db:diff` should report no schema DDL after a clean reset.
 
-The Playwright suite owns one reproducible local lifecycle. It resets local
-Supabase, builds the application, injects the local Supabase JWT secret into the
-test server, and starts `next start`. Its specs verify the three-browser waiting-room
+The Playwright suite owns one reproducible local lifecycle. It reads and validates
+the loopback-only local environment from `supabase status -o env`, resets local
+Supabase, injects the local credentials into the build and test server, and starts
+`next start`. Its specs verify the three-browser waiting-room
 and first-night UI flow, eight-player role/private-view boundaries, stale action
 rejection, private night conversation, private Realtime authorization and
 broadcast delivery, and maintenance authentication.

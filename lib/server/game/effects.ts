@@ -1,7 +1,8 @@
 import "server-only";
+import { scopeRoleContext } from "./roles/base";
 import { GameEffectKind, GameEffectLayer } from "./types";
 
-import type { RoleContext } from "./roles";
+import type { RoleContext } from "./roles/base";
 import type { GameActionKind, GameEffect, PlayerId, ResolvedDeath, RoleId } from "./types";
 
 export type PreventedEffect = {
@@ -14,6 +15,77 @@ export type EffectResolution = {
   deathEffectsByPlayerId: ReadonlyMap<PlayerId, GameEffect>;
   preventedEffects: readonly PreventedEffect[];
 };
+
+export function assertRoleOwnsEffects(
+  ownerRoleId: RoleId,
+  effects: readonly GameEffect[],
+): readonly GameEffect[] {
+  const foreignEffect = effects.find((effect) => effect.emitterRoleId !== ownerRoleId);
+
+  if (foreignEffect !== undefined) {
+    throw new Error(
+      `Role ${ownerRoleId} returned an effect owned by ${foreignEffect.emitterRoleId}.`,
+    );
+  }
+
+  return effects;
+}
+
+export function expandRoleInteractionEffects(
+  effects: readonly GameEffect[],
+  context: RoleContext,
+): GameEffect[] {
+  const expandedEffects: GameEffect[] = [];
+  const pendingEffects = [...effects];
+
+  while (pendingEffects.length > 0) {
+    if (expandedEffects.length + pendingEffects.length > 1_000) {
+      throw new Error("Role interaction effect expansion exceeded its safe limit.");
+    }
+
+    const effect = pendingEffects.shift();
+
+    if (effect === undefined) {
+      break;
+    }
+
+    expandedEffects.push(effect);
+
+    if (effect.kind !== GameEffectKind.Attack && effect.kind !== GameEffectKind.Inspection) {
+      continue;
+    }
+
+    const targetRoleId = context.state.roleByPlayerId.get(effect.targetId);
+
+    if (targetRoleId === undefined) {
+      throw new Error(`Role interaction targets an unknown player: ${effect.targetId}`);
+    }
+
+    const targetRole = context.roles.get(targetRoleId);
+    const targetContext = scopeRoleContext(context, targetRole.id);
+    const interactionEffects =
+      effect.kind === GameEffectKind.Attack
+        ? targetRole.onAttacked({
+            ...targetContext,
+            attackerIds: effect.attackerIds,
+            targetId: effect.targetId,
+          })
+        : targetRole.onInspected({
+            ...targetContext,
+            targetId: effect.targetId,
+            viewerId: effect.viewerId,
+          });
+
+    pendingEffects.push(
+      ...assertRoleOwnsEffects(targetRole.id, interactionEffects).map((interactionEffect) => ({
+        ...interactionEffect,
+        sourceActionId: effect.sourceActionId,
+      })),
+    );
+  }
+
+  return expandedEffects;
+}
 
 const EFFECT_LAYER_ORDER: Readonly<Record<GameEffectLayer, number>> = {
   [GameEffectLayer.Action]: 50,
@@ -82,17 +154,18 @@ export function collectExecutionEffects(params: {
     getRequiredRoleIdForPlayer(params.context, params.targetId),
   );
 
-  return targetRole
-    .onExecuted({
-      ...params.context,
+  return assertRoleOwnsEffects(
+    targetRole.id,
+    targetRole.onExecuted({
+      ...scopeRoleContext(params.context, targetRole.id),
       targetId: params.targetId,
-    })
-    .map((effect) => {
-      return {
-        ...effect,
-        sourceActionId: params.sourceActionId,
-      };
-    });
+    }),
+  ).map((effect) => {
+    return {
+      ...effect,
+      sourceActionId: params.sourceActionId,
+    };
+  });
 }
 
 export function collectExecutionResolvedEffects(params: {
@@ -103,18 +176,19 @@ export function collectExecutionResolvedEffects(params: {
   const targetRoleId = getRequiredRoleIdForPlayer(params.context, params.targetId);
 
   return params.context.roles.getActiveRoles(params.context.state).flatMap((role) =>
-    role
-      .onExecutionResolved({
-        ...params.context,
+    assertRoleOwnsEffects(
+      role.id,
+      role.onExecutionResolved({
+        ...scopeRoleContext(params.context, role.id),
         targetId: params.targetId,
         targetRoleId,
-      })
-      .map((effect) => {
-        return {
-          ...effect,
-          sourceActionId: params.sourceActionId,
-        };
       }),
+    ).map((effect) => {
+      return {
+        ...effect,
+        sourceActionId: params.sourceActionId,
+      };
+    }),
   );
 }
 
@@ -125,17 +199,18 @@ export function collectDeathResolvedEffects(params: {
 }): readonly GameEffect[] {
   return params.deaths.flatMap((death) =>
     params.context.roles.getActiveRoles(params.context.state).flatMap((role) =>
-      role
-        .onDeathResolved({
-          ...params.context,
+      assertRoleOwnsEffects(
+        role.id,
+        role.onDeathResolved({
+          ...scopeRoleContext(params.context, role.id),
           death,
-        })
-        .map((effect) => {
-          return {
-            ...effect,
-            sourceActionId: params.sourceActionId,
-          };
         }),
+      ).map((effect) => {
+        return {
+          ...effect,
+          sourceActionId: params.sourceActionId,
+        };
+      }),
     ),
   );
 }
@@ -143,29 +218,29 @@ export function collectDeathResolvedEffects(params: {
 export function collectRoleActionEffects(params: {
   actionKind: GameActionKind;
   actorId: PlayerId;
-  actorRoleId: RoleId | null;
   context: RoleContext;
+  resolverRoleId: RoleId;
   sourceActionId: string | null;
   targetId: PlayerId | null;
 }): readonly GameEffect[] {
-  const actorRoleId =
-    params.actorRoleId ?? getRequiredRoleIdForPlayer(params.context, params.actorId);
-  const actorRole = params.context.roles.get(actorRoleId);
+  const actorRoleId = getRequiredRoleIdForPlayer(params.context, params.actorId);
+  const resolverRole = params.context.roles.get(params.resolverRoleId);
 
-  return actorRole
-    .onActionResolved({
-      ...params.context,
+  return assertRoleOwnsEffects(
+    resolverRole.id,
+    resolverRole.onActionResolved({
+      ...scopeRoleContext(params.context, resolverRole.id),
       actionKind: params.actionKind,
       actorId: params.actorId,
       actorRoleId,
       targetId: params.targetId,
-    })
-    .map((effect) => {
-      return {
-        ...effect,
-        sourceActionId: params.sourceActionId,
-      };
-    });
+    }),
+  ).map((effect) => {
+    return {
+      ...effect,
+      sourceActionId: params.sourceActionId,
+    };
+  });
 }
 
 function compareEffects(left: GameEffect, right: GameEffect): number {

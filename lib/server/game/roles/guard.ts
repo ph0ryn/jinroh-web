@@ -1,21 +1,17 @@
 import "server-only";
 import {
-  ActionScope,
-  EffectTag,
-  GameActionKind,
+  ActionTargetStateRequirement,
+  EFFECT_TAG,
   GameEffectKind,
   GameEffectLayer,
-  GameEventKind,
   GamePhase,
-  GuardConsecutiveTargetPolicy,
-  ResolveTiming,
   RoleTargetKind,
-  SubmitPolicy,
-  Team,
 } from "../types";
 import { Role } from "./base";
+import { VILLAGE_TEAM } from "./villager";
 
 import type {
+  GameActionKind,
   GameEffect,
   PlayerId,
   RoleActionDefinition,
@@ -25,14 +21,40 @@ import type {
 } from "../types";
 import type { PlayerRoleContext, RoleActionResolvedContext } from "./base";
 
+const GUARD_ACTION_KIND: GameActionKind = "guard";
+const CONSECUTIVE_TARGET_OPTION_KEY = "consecutive_target";
+const ALLOW_CONSECUTIVE_TARGET = "allow";
+const DENY_CONSECUTIVE_TARGET = "deny";
+
 export class GuardRole extends Role {
-  override readonly description = "Protects one player from guardable night death effects.";
   override readonly id: RoleId = "guard";
   override readonly maxCount = 1;
-  override readonly name = "Guard";
   override readonly order = 40;
-  override readonly shortLabel = "G";
-  override readonly team = Team.Village;
+  override readonly presentation = {
+    en: {
+      description: "Protect one player from the werewolves each night.",
+      name: "Guard",
+      shortLabel: "G",
+    },
+    ja: {
+      description: "毎夜1人を選び、人狼の襲撃から守ります。",
+      name: "狩人",
+      shortLabel: "狩",
+    },
+  };
+  override readonly team = VILLAGE_TEAM;
+  override readonly version = 2;
+
+  override getActionPresentation(actionKind: GameActionKind) {
+    if (actionKind !== GUARD_ACTION_KIND) {
+      return super.getActionPresentation(actionKind);
+    }
+
+    return {
+      en: { label: "Choose someone to protect", submitLabel: "Protect" },
+      ja: { label: "護衛する相手を選ぶ", submitLabel: "護衛する" },
+    };
+  }
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
     return context.playerCount >= 5 ? 1 : 0;
@@ -41,9 +63,22 @@ export class GuardRole extends Role {
   override getSpecificOptions(): readonly RoleSpecificOptionDefinition[] {
     return [
       {
-        key: "guardConsecutiveTargetPolicy",
-        label: "Consecutive target",
-        roleId: this.id,
+        choices: [
+          {
+            label: { en: "Deny the same target", ja: "同じ相手への連続護衛を禁止" },
+            value: DENY_CONSECUTIVE_TARGET,
+          },
+          {
+            label: { en: "Allow the same target", ja: "同じ相手への連続護衛を許可" },
+            value: ALLOW_CONSECUTIVE_TARGET,
+          },
+        ],
+        defaultValue: DENY_CONSECUTIVE_TARGET,
+        key: CONSECUTIVE_TARGET_OPTION_KEY,
+        label: {
+          en: "Protect the same player on consecutive nights",
+          ja: "前夜と同じ相手を護衛する",
+        },
       },
     ];
   }
@@ -55,15 +90,10 @@ export class GuardRole extends Role {
 
     return [
       {
-        kind: GameActionKind.Guard,
-        phase: GamePhase.Night,
-        required: true,
-        resolveTiming: ResolveTiming.PhaseEnd,
-        roleGroupPolicy: null,
+        kind: GUARD_ACTION_KIND,
         roleGroupRoleId: null,
-        scope: ActionScope.Player,
-        submitPolicy: SubmitPolicy.FirstSubmitWins,
         target: RoleTargetKind.SinglePlayer,
+        targetStateRequirement: ActionTargetStateRequirement.Alive,
       },
     ];
   }
@@ -72,7 +102,7 @@ export class GuardRole extends Role {
     action: RoleActionDefinition,
     context: PlayerRoleContext,
   ): readonly string[] {
-    if (action.kind !== GameActionKind.Guard) {
+    if (action.kind !== GUARD_ACTION_KIND) {
       return super.getEligibleTargets(action, context);
     }
 
@@ -82,7 +112,7 @@ export class GuardRole extends Role {
   }
 
   override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
-    if (context.actionKind !== GameActionKind.Guard || context.targetId === null) {
+    if (context.actionKind !== GUARD_ACTION_KIND || context.targetId === null) {
       return [];
     }
 
@@ -93,7 +123,7 @@ export class GuardRole extends Role {
         kind: GameEffectKind.Protection,
         layer: GameEffectLayer.Prevention,
         playerId: context.targetId,
-        prevents: [EffectTag.Guardable],
+        prevents: [EFFECT_TAG.Guardable],
         priority: 10,
         reason: "guard",
         sourceActionId: null,
@@ -104,29 +134,27 @@ export class GuardRole extends Role {
 
   private isTargetAllowed(context: PlayerRoleContext, targetPlayerId: PlayerId): boolean {
     if (
-      context.state.ruleOptions.guardConsecutiveTargetPolicy === GuardConsecutiveTargetPolicy.Allow
+      this.getOptionValue(context.state.ruleOptions, CONSECUTIVE_TARGET_OPTION_KEY) ===
+      ALLOW_CONSECUTIVE_TARGET
     ) {
       return true;
     }
 
-    const previousGuardEvent = [...context.state.events].reverse().find((event) => {
+    const previousGuardAction = [...context.state.resolvedActions].reverse().find((action) => {
       return (
-        event.kind === GameEventKind.ActionResolved &&
-        event.actorPlayerId === context.playerId &&
-        event.payload["actionKind"] === GameActionKind.Guard
+        action.resolutionStatus === "submitted" &&
+        action.actorPlayerId === context.playerId &&
+        action.kind === GUARD_ACTION_KIND &&
+        action.nightNumber === context.state.nightNumber - 1 &&
+        action.phase === GamePhase.Night &&
+        action.resolverRoleId === this.id
       );
     });
 
-    if (previousGuardEvent === undefined) {
+    if (previousGuardAction === undefined) {
       return true;
     }
 
-    const previousTargetIds = previousGuardEvent.payload["targetPlayerIds"];
-
-    if (!Array.isArray(previousTargetIds)) {
-      return true;
-    }
-
-    return previousTargetIds[0] !== targetPlayerId;
+    return previousGuardAction.targetPlayerIds[0] !== targetPlayerId;
   }
 }

@@ -13,13 +13,13 @@ Each Role can declare whether it participates in a night conversation group.
 ```ts
 export type RoleNightConversationDefinition = {
   groupId: string;
-  labelKey: string;
+  label: LocalizedText;
 };
 
 export class WerewolfRole extends Role {
   override readonly nightConversation = {
     groupId: "werewolf",
-    labelKey: "nightConversation.werewolf",
+    label: { en: "Werewolf council", ja: "人狼の密談" },
   };
 }
 ```
@@ -32,12 +32,13 @@ game start
   collect active Role definitions
   read Role.nightConversation
   group roles by groupId
-  persist resolvedRoleSetup.nightConversationGroups in GameState
+  persist resolvedRoleSetup.nightConversationGroups in game_rule_sets
 ```
 
 Only active roles can contribute conversation groups. A role without
 `nightConversation` contributes nothing. Future roles can join the same
 `groupId` or define a separate group without changing the chat storage model.
+Each Role can belong to at most one resolved conversation group.
 
 ## Visibility
 
@@ -48,7 +49,7 @@ Current v1 group:
 
 ```text
 groupId: werewolf
-labelKey: nightConversation.werewolf
+label: { en: Werewolf council, ja: 人狼の密談 }
 roleIds: [werewolf]
 ```
 
@@ -61,7 +62,9 @@ Important boundary:
 
 ## Timing
 
-- During `night`, eligible players can open the night chat and send messages.
+- During `night`, eligible, alive, connected players can open the night chat and
+  send messages.
+- Dead or disconnected group members keep the same view as read-only.
 - Outside `night`, eligible players can open the same view as read-only.
 - Ended games can omit the conversation view.
 - The button can be hidden for roles with no conversation group.
@@ -100,12 +103,14 @@ Sending a message happens in one server-side transaction.
 - Lock the current `game_states` row.
 - Confirm room and game status are `playing`.
 - Confirm phase is `night`.
+- Confirm the sender is `joined` and alive.
 - Confirm request `phaseInstanceId` and `nightNumber` match current state.
 - Resolve sender role from `role_assignments`.
 - Confirm sender role is in the requested conversation group.
 - Validate message body length and group id shape.
 - Insert one row into `night_conversation_messages`.
-- Increment `game_states.revision`.
+- Increment only the resolved group's role-private snapshot revision without
+  changing the room-public or phase revision.
 - Return a private-view invalidation result.
 
 Rejected requests do not insert messages.
@@ -126,6 +131,7 @@ Required coverage:
 - Werewolf players see the Werewolf night conversation.
 - Madman and villagers do not see the Werewolf night conversation.
 - A Werewolf can send a 1 to 100 character message during night.
+- Dead or disconnected group members cannot send messages.
 - A non-member role cannot send by calling the API directly.
 - Stale `phaseInstanceId` or stale `nightNumber` is rejected.
 - Day view is read-only but preserves current night's messages.

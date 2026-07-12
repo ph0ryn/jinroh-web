@@ -1,90 +1,64 @@
 # TypeScript モデルスケッチ
 
-この文書は、ゲーム設計で共有する型と class 境界の sketch を扱う。
-実装完了コードではなく、責務と境界を固定するための設計メモ。
+この文書は、ゲーム設計で共有する型と class 境界を扱う。
+型の完全な定義は [`lib/server/game/types.ts`](../../lib/server/game/types.ts)、
+役職の extension point は
+[`lib/server/game/roles/base.ts`](../../lib/server/game/roles/base.ts) を source of truth とする。
+ここに載せる code block は、責務と所有関係を説明するための非網羅な抜粋であり、
+実装の public surface を複製する API reference ではない。
 
-この文書の code block は非網羅の例示。
-`Role` class の method がここに載っていないことは、その extension point を使わないという意味ではない。
-役職ごとの source of truth は `Role` class と `RoleRegistry` であり、実装で必要になった generic
-hook、resolver、effect、rule extension は `Role` 側から提供できる形で追加する。
-common engine に特定 role id の分岐を足して挙動を埋め込まない。
+役職ごとの behavior は `Role` class と `RoleRegistry` が所有する。
+generic hook、resolver、effect、rule extension は `Role` から提供できる形で追加し、
+common engine に特定 role id の分岐を埋め込まない。
 
-## TypeScript Design Sketch
+Game Engine が受け取る Player 一覧は、ゲーム開始時に Role assignment と alive
+state を固定した game roster。Room membership history とは別物であり、開始後に
+membership row から game player を追加、補完しない。
 
-`Role` は class として設計する。
+## Team の所有関係
 
-この code block は実装完了コードではなく、責務と境界を固定するための設計スケッチ。
-実装の public surface を完全に列挙するものではない。
+Team は closed enum ではなく、Role が提供して `RoleRegistry` に登録する opaque
+な文字列 ID。Role は ID と localized presentation をまとめた definition を持つ。
 
 ```ts
-export type RoleId = string;
-export type PlayerId = string;
-export type PhaseInstanceId = string;
+export type Team = string;
 
-export enum Team {
-  Village = "village",
-  Werewolf = "werewolf",
-  Fox = "fox",
-  Neutral = "neutral",
-}
+export type RoleTeamDefinition = {
+  id: Team;
+  presentation: LocalizedText;
+};
+```
 
-export enum GameStatus {
-  AssigningRoles = "assigning_roles",
-  Playing = "playing",
-  Ended = "ended",
-}
+Registry は Team ID の重複自体を共有として許可するが、同じ ID の presentation が
+一致することを検証する。winner judgement は登録済み Team ID だけを参照し、view
+adapter は registry 由来の team catalog を使う。shared type、SQL、localization は
+Team ID の allowlist にならない。
 
-export enum GamePhase {
-  Night = "night",
-  Day = "day",
-  Voting = "voting",
-  Execution = "execution",
-}
+## Action の所有関係
 
-export enum DayDiscussionMode {
-  ReadyCheck = "ready_check",
-  OrderedSpeech = "ordered_speech",
-}
+`RoleActionDefinition` は、各 `Role` が通常の phase action を宣言するための template。
+Engine はこの定義と game state から、現在受け付ける `CurrentAction` を具体化する。
 
-export enum InitialInspectionPolicy {
-  Disabled = "disabled",
-  Enabled = "enabled",
-}
+`CurrentAction` は受付単位の runtime state。
 
-export enum CountGroup {
-  Werewolf = "werewolf",
-  NonWerewolf = "non_werewolf",
-  Excluded = "excluded",
-}
+- `id` は runtime record の識別子
+- `actionKey` は phase 内で action の意味を安定して識別する key
+- `ownerPlayerId` は player 固有 action の owner
+- `ownerRoleId` は role group action の owner
+- `resolverRoleId` は action の意味を解決する Role。core action では `null`
+- `allowedPlayerIds` はその action を閲覧・提出できる Player の集合
+- `target` は提出時に必要な target の形
 
-export enum InspectionView {
-  Human = "human",
-  Werewolf = "werewolf",
-  Unknown = "unknown",
-}
+`CurrentAction` 自体に `status` は持たせない。
+提出済みかどうかは、同じ `currentActionId` を参照する `PendingAction` の有無で表す。
+この分離により、受付対象と first-submit-wins の提出結果を別の state として扱える。
 
-export enum PlayerResult {
-  Win = "win",
-  Lose = "lose",
-  Draw = "draw",
-  Special = "special",
-}
-
-export enum GameActionKind {
-  Inspect = "inspect",
-  Attack = "attack",
-  Guard = "guard",
-  ReadyForFirstDay = "ready_for_first_day",
-  ReadyForVoting = "ready_for_voting",
-  EndSpeech = "end_speech",
-  Vote = "vote",
-  None = "none",
-}
+```ts
+export type ActionKind = string;
 
 export enum RoleTargetKind {
   None = "none",
   SinglePlayer = "single_player",
-  MultiplePlayers = "multiple_players",
 }
 
 export enum ActionScope {
@@ -93,38 +67,110 @@ export enum ActionScope {
   AllAlivePlayers = "all_alive_players",
 }
 
-export enum RoleGroupActionPolicy {
-  FirstSubmitWins = "first_submit_wins",
+export enum ActionTargetStateRequirement {
+  Alive = "alive",
+  Assigned = "assigned",
 }
 
-export enum SubmitPolicy {
-  FirstSubmitWins = "first_submit_wins",
-}
+export type RoleActionDefinition = {
+  kind: ActionKind;
+  roleGroupRoleId: RoleId | null;
+  target: RoleTargetKind;
+  targetStateRequirement: ActionTargetStateRequirement;
+};
 
-export enum CurrentActionStatus {
-  Open = "open",
-  Completed = "completed",
-}
+export type CurrentAction = {
+  actionKey: string;
+  actorStateRequirement: ActionActorStateRequirement;
+  allowedPlayerIds: readonly PlayerId[];
+  closesAt: string | null;
+  eligibleTargetPlayerIds: readonly PlayerId[];
+  id: string;
+  kind: ActionKind;
+  openedAt: string;
+  ownerPlayerId: PlayerId | null;
+  ownerRoleId: RoleId | null;
+  resolverRoleId: RoleId | null;
+  scope: ActionScope;
+  target: RoleTargetKind;
+  targetStateRequirement: ActionTargetStateRequirement;
+};
 
-export enum ResolveTiming {
-  Immediate = "immediate",
-  PhaseEnd = "phase_end",
-}
+export type PendingAction = {
+  currentActionId: string;
+  id: string;
+  kind: ActionKind;
+  submittedAt: string;
+  submitterPlayerId: PlayerId;
+  targetPlayerIds: readonly PlayerId[];
+};
+```
 
-export enum VoteResolutionKind {
-  ExecutionCandidate = "execution_candidate",
-  NoExecution = "no_execution",
-}
+Role 由来の `ActionKind` は、その Role module が所有する opaque な識別子。
+common enum、shared allowlist、adapter の `switch` には列挙しない。
+Database と API は識別子の文字列 shape だけを検証し、値を変換せずに保持する。
+core phase action の識別子は core rule 内で閉じてもよいが、それを Role action の
+completeness gate として使わない。
 
-export enum NoExecutionReason {
-  Tie = "tie",
-  NoVotes = "no_votes",
-}
+`resolverRoleId` は action の意味を持つ Role を示し、提出できる相手を表す
+`ownerPlayerId` / `ownerRoleId` とは独立する。Role action は `resolverRoleId` の
+`onActionResolved` / `onMissingAction` へ dispatch し、core action は `null` として
+core resolver へ渡す。これにより、同じ effect を持つ別 Role が独自の action kind を定義しても、
+common engine、persistence、view adapter の変更を必要としない。
 
+Role action の fallback label と submit label も Role module が所有する。
+View adapter は `resolverRoleId` と opaque action kind から `RoleRegistry` の presentation を解決し、
+API に渡す。Role metadata、option、message、night conversation の localized fallback も
+Role module が持ち、shared localization を role identifier の completeness gate にしない。
+
+`getActions()` を呼ぶ phase は Role 自身が判断する。現在の role action はすべて
+phase-end 解決かつ first-submit-wins であり、変更できない policy を定義 field として重複させない。
+`roleGroupRoleId` がある action は Role group 所有、ない action は各 Player 所有として具体化する。
+Role hook 向け `CurrentAction` view も `actorStateRequirement`、
+`eligibleTargetPlayerIds`、`targetStateRequirement` を保持する。未提出時の hook を含め、
+Role は common engine の識別子別分岐に頼らず、具体化済み action の完全な policy を参照できる。
+
+## Effect から開く Action
+
+通常の phase action は `Role.getActions()` から作る。
+一方、処刑や死亡などの解決結果に反応して追加 action を開く場合、Role hook は
+`GameEffectKind.CurrentAction` を返す。
+たとえば、処刑 effect の解決後に対象選択を要求する Role は、この経路で追加 action を開く。
+
+`GameEffectKind.CurrentAction` は永続化済みの `CurrentAction` そのものではなく、
+Engine に action の作成を要求する候補。
+Engine が effect resolution を通したあと、`actorPlayerId` / `actorRoleId` を runtime action の
+owner に変換する。
+`emitterRoleId` は effect を発行した Role、`resolverRoleId` は action を解決する Role、
+`actorPlayerId` / `actorRoleId` は提出権限を表す。これらを暗黙に同一視しない。
+
+effect resolution 後に有効な `CurrentAction` が具体化された場合、Engine は同じ
+user-visible phase の follow-up window を開く。follow-up は game end と core phase
+transition より先に submitted / missing まで解決する blocking action である。
+
+`ActionActorStateRequirement` は actor の有効性を指定する。
+
+- `Alive`: Role が割り当てられ、かつ生存中の actor だけが action を持てる
+- `Assigned`: Role の割り当てが残っていれば、死亡後でも action を持てる
+
+`Assigned` は、処刑後や死亡後にも提出を許可する Role action の明示的な policy に使う。
+これは actor の状態要件であり、`eligibleTargetPlayerIds` が表す target eligibility とは独立する。
+
+`ActionTargetStateRequirement` は target の状態要件を指定する。
+
+- `Alive`: materialization 時に生存する target だけを残し、提出時にも生存を再確認する
+- `Assigned`: fixed game roster に assignment があれば、死亡後も target にできる
+
+この値は Role action definition または `CurrentAction` effect から、materialized
+Engine action と `current_actions.target_state_requirement` へ引き継ぐ。これは現在の
+action window の受付 policy であり、解決結果を表す semantic history には保存しない。
+
+```ts
 export enum GameEffectKind {
   Death = "death",
   Protection = "protection",
   InspectionResult = "inspection_result",
+  CurrentAction = "current_action",
   PublicMessage = "public_message",
   PrivateMessage = "private_message",
 }
@@ -134,189 +180,32 @@ export enum GameEffectLayer {
   Death = "death",
   Information = "information",
   Message = "message",
+  Action = "action",
 }
 
-export enum GameEndReason {
-  WerewolfDominance = "werewolf_dominance",
-  WerewolvesEliminated = "werewolves_eliminated",
+export type DeathReason = string;
+
+export type EffectTag = string;
+
+export enum ActionActorStateRequirement {
+  Alive = "alive",
+  Assigned = "assigned",
 }
-
-export enum DeathReason {
-  Attack = "attack",
-  Execution = "execution",
-  Retaliation = "retaliation",
-  RuleEffect = "rule_effect",
-}
-
-export enum GameEventKind {
-  ActionSubmitted = "action_submitted",
-  ActionResolved = "action_resolved",
-  EffectApplied = "effect_applied",
-  PlayerDied = "player_died",
-  PhaseChanged = "phase_changed",
-  GameEnded = "game_ended",
-}
-
-export enum GameEventVisibility {
-  Public = "public",
-  Private = "private",
-  Internal = "internal",
-}
-
-export enum GuardConsecutiveTargetPolicy {
-  Allow = "allow",
-  DenySameTarget = "deny_same_target",
-}
-
-export enum VoteResultVisibility {
-  CountOnly = "count_only",
-  VoterToTarget = "voter_to_target",
-}
-
-export enum RoleSetupContributionKind {
-  WinnerJudgement = "winner_judgement",
-}
-
-export enum EffectTag {
-  Attack = "attack",
-  Execution = "execution",
-  Retaliation = "retaliation",
-  Guardable = "guardable",
-  Unpreventable = "unpreventable",
-}
-
-export type RoleActionDefinition = {
-  kind: GameActionKind;
-  phase: GamePhase;
-  target: RoleTargetKind;
-  required: boolean;
-  scope: ActionScope;
-  roleGroupRoleId: RoleId | null;
-  roleGroupPolicy: RoleGroupActionPolicy | null;
-  submitPolicy: SubmitPolicy;
-  resolveTiming: ResolveTiming;
-};
-
-export type CurrentAction = {
-  id: string;
-  kind: GameActionKind;
-  target: RoleTargetKind;
-  scope: ActionScope;
-  ownerPlayerId: PlayerId | null;
-  ownerRoleId: RoleId | null;
-  allowedPlayerIds: readonly PlayerId[];
-  status: CurrentActionStatus;
-  openedAt: string;
-  closesAt: string | null;
-};
-
-export type PendingAction = {
-  id: string;
-  currentActionId: string;
-  kind: GameActionKind;
-  submitterPlayerId: PlayerId;
-  targetPlayerIds: readonly PlayerId[];
-  submittedAt: string;
-};
-
-export type VoteRecord = {
-  voterPlayerId: PlayerId;
-  targetPlayerId: PlayerId;
-};
-
-export type VoteResolutionBase = {
-  acceptedVotes: readonly VoteRecord[];
-  voteCountsByTarget: Readonly<Record<PlayerId, number>>;
-};
-
-export type VoteResolution =
-  | (VoteResolutionBase & {
-      kind: VoteResolutionKind.ExecutionCandidate;
-      targetPlayerId: PlayerId;
-      voteCount: number;
-    })
-  | (VoteResolutionBase & {
-      kind: VoteResolutionKind.NoExecution;
-      reason: NoExecutionReason;
-      tiedPlayerIds: readonly PlayerId[];
-      maxVoteCount: number;
-    });
-
-export type RoleNightConversationDefinition = {
-  groupId: string;
-  labelKey: string;
-};
-
-export type NightConversationGroup = RoleNightConversationDefinition & {
-  roleIds: readonly RoleId[];
-};
-
-export type NightConversationMessageState = {
-  id: string;
-  nightNumber: number;
-  conversationGroupId: string;
-  senderPlayerId: PlayerId;
-  body: string;
-  createdAt: string;
-};
-
-export type WinnerJudgementContribution = {
-  id: string;
-  sourceRoleId: RoleId | null;
-  winnerTeam: Team;
-  priority: number;
-};
-
-export type RoleSetupContribution = {
-  kind: RoleSetupContributionKind.WinnerJudgement;
-  judgement: WinnerJudgementContribution;
-};
-
-export type ResolvedRoleSetup = {
-  activeRoleIds: readonly RoleId[];
-  contributions: readonly RoleSetupContribution[];
-  nightConversationGroups: readonly NightConversationGroup[];
-  winnerJudgements: readonly WinnerJudgementContribution[];
-};
-
-export type DaySpeechSlot = {
-  playerId: PlayerId;
-  round: number;
-  startsAt: string;
-  scheduledEndsAt: string;
-  endedAt: string | null;
-};
-
-export type DayState =
-  | {
-      mode: DayDiscussionMode.ReadyCheck;
-      readyPlayerIds: readonly PlayerId[];
-    }
-  | {
-      mode: DayDiscussionMode.OrderedSpeech;
-      speechSlots: readonly DaySpeechSlot[];
-      currentSpeechSlotIndex: number;
-    };
-
-export type FirstNightState = {
-  readyPlayerIds: readonly PlayerId[];
-};
-
-export type ExecutionState = {
-  targetPlayerId: PlayerId;
-  startsAt: string;
-  scheduledEndsAt: string;
-  endedAt: string | null;
-};
 
 export type GameEffectBase<K extends GameEffectKind> = {
+  emitterRoleId: RoleId;
   id: string;
   kind: K;
   layer: GameEffectLayer;
   priority: number;
-  emitterRoleId: RoleId;
   sourceActionId: string | null;
   tags: readonly EffectTag[];
+};
+
+export type GameEventPresentation = {
+  title: LocalizedText;
+  message: LocalizedText;
+  details: readonly GameEventPresentationDetail[];
 };
 
 export type GameEffect =
@@ -326,207 +215,127 @@ export type GameEffect =
     })
   | (GameEffectBase<GameEffectKind.Protection> & {
       playerId: PlayerId;
-      reason: string;
       prevents: readonly EffectTag[];
+      reason: string;
     })
   | (GameEffectBase<GameEffectKind.InspectionResult> & {
-      viewerId: PlayerId;
+      presentation: GameEventPresentation;
       targetId: PlayerId;
       view: InspectionView;
+      viewerId: PlayerId;
+    })
+  | (GameEffectBase<GameEffectKind.CurrentAction> & {
+      actionKind: ActionKind;
+      actionKey: string;
+      actorPlayerId: PlayerId | null;
+      actorRoleId: RoleId | null;
+      actorStateRequirement: ActionActorStateRequirement;
+      eligibleTargetPlayerIds: readonly PlayerId[];
+      resolverRoleId: RoleId;
+      target: RoleTargetKind;
+      targetStateRequirement: ActionTargetStateRequirement;
     })
   | (GameEffectBase<GameEffectKind.PublicMessage> & {
-      messageKey: string;
+      eventKind: string;
+      presentation: GameEventPresentation;
     })
   | (GameEffectBase<GameEffectKind.PrivateMessage> & {
+      eventKind: string;
       playerId: PlayerId;
-      messageKey: string;
+      presentation: GameEventPresentation;
     });
+```
 
-export type GameEndCandidate = {
-  reason: GameEndReason;
-  sourceRoleId: RoleId;
-};
+## History と Game State
 
-export type FinalOutcome = {
-  endReasons: readonly GameEndReason[];
-  winnerTeam: Team;
-  playerResultsByPlayerId: ReadonlyMap<PlayerId, PlayerResult>;
-};
+`GameEvent` の visibility は public、private、internal の3種類。
+private event の宛先は Player または Role で明示し、Team 単位の宛先 field は持たない。
+Role group の private information は `visibleToRoleIds` を使う。
 
-export type GameEvent = {
-  id: string;
-  kind: GameEventKind;
-  phase: GamePhase | null;
-  phaseInstanceId: PhaseInstanceId | null;
+永続層と phase Engine が参照する action history は arbitrary event payload ではなく、
+normalized な `resolved_actions` / `ResolvedActionHistoryEntry` として扱う。core と
+Role 由来のすべての current action が、提出の有無にかかわらず1件ずつ記録される。
+core action は nullable な `resolverRoleId` を `null` として保持する。
+各 entry は owning phase instance の `dayNumber` / `nightNumber` も持ち、snapshot
+boundary が phase/counter consistency と chronological order を検証してから Engine に渡す。
+
+Role hook の `ReadonlyGameState.resolvedActions` は、この完全な履歴から non-null
+resolver を持つ role-owned row だけを射影した `ResolvedRoleAction`。Role は自分が
+所有する opaque action の semantic history を参照し、core action を解釈しない。
+`currentActions` と対応する `pendingActions` は、明示された core action とその Role が
+所有する action だけを hook context に射影し、別 Role の opaque action state は渡さない。
+
+phase の時刻、day speech slot、execution timer などの persistence detail は、
+この domain state に重複して持たせない。
+`ReadonlyGameState` は Role と rule evaluation に必要な semantic state に限定する。
+
+```ts
+export type ResolvedRoleAction = {
+  actionKey: string;
   actorPlayerId: PlayerId | null;
+  actorRoleId: RoleId | null;
+  dayNumber: number;
+  id: string;
+  kind: ActionKind;
+  nightNumber: number;
+  phase: GamePhase;
+  phaseInstanceId: PhaseInstanceId;
+  resolutionStatus: "missing" | "submitted";
+  resolverRoleId: RoleId;
   targetPlayerIds: readonly PlayerId[];
-  visibility: GameEventVisibility;
-  visibleToPlayerIds: readonly PlayerId[];
-  visibleToFaction: Team | null;
-  visibleToRoleIds: readonly RoleId[];
-  payload: Readonly<Record<string, unknown>>;
 };
 
-export type ActionResolver = {
-  kind: GameActionKind;
-  validate(pendingAction: PendingAction, context: RoleContext): boolean;
-  collectEffects(pendingAction: PendingAction, context: RoleContext): readonly GameEffect[];
-};
-
-export type RuleOptions = {
-  dayDiscussionMode: DayDiscussionMode;
-  firstNightSeconds: number;
-  daySpeechSeconds: number;
-  dayReadyCheckSecondsPerPlayer: number;
-  firstDaySpeechRounds: number;
-  normalDaySpeechRounds: number;
-  initialInspectionPolicy: InitialInspectionPolicy;
-  guardConsecutiveTargetPolicy: GuardConsecutiveTargetPolicy;
-  nightSeconds: number;
-  votingSeconds: number;
-  executionLastWordsSeconds: number;
-  voteResultVisibility: VoteResultVisibility;
+export type ResolvedRoleSetup = {
+  activeRoleIds: readonly RoleId[];
+  contributions: readonly RoleSetupContribution[];
+  nightConversationGroups: readonly NightConversationGroup[];
 };
 
 export type ReadonlyGameState = {
-  status: GameStatus;
+  alivePlayerIds: readonly PlayerId[];
+  currentActions: readonly CurrentAction[];
+  finalOutcome: FinalOutcome | null;
+  nightNumber: number;
+  pendingActions: readonly PendingAction[];
   phase: GamePhase | null;
   phaseInstanceId: PhaseInstanceId | null;
-  dayNumber: number;
-  nightNumber: number;
-  phaseStartedAt: string | null;
-  phaseEndsAt: string | null;
-  firstNightState: FirstNightState | null;
-  dayState: DayState | null;
-  executionState: ExecutionState | null;
+  resolvedActions: readonly ResolvedRoleAction[];
   resolvedRoleSetup: ResolvedRoleSetup;
-  nightConversationMessages: readonly NightConversationMessageState[];
-  alivePlayerIds: readonly PlayerId[];
   roleByPlayerId: ReadonlyMap<PlayerId, RoleId>;
-  currentActions: readonly CurrentAction[];
-  pendingActions: readonly PendingAction[];
-  events: readonly GameEvent[];
-  finalOutcome: FinalOutcome | null;
   ruleOptions: RuleOptions;
+  status: GameStatus;
+  nightConversationMessages: readonly NightConversationMessageState[];
 };
-
-export type RoleContext = {
-  state: ReadonlyGameState;
-  roles: RoleRegistry;
-};
-
-export type PlayerRoleContext = RoleContext & {
-  playerId: PlayerId;
-};
-
-export type InspectionContext = RoleContext & {
-  viewerId: PlayerId;
-  targetId: PlayerId;
-};
-
-export type AttackContext = RoleContext & {
-  attackerIds: readonly PlayerId[];
-  targetId: PlayerId;
-};
-
-export type ExecutionContext = RoleContext & {
-  targetId: PlayerId;
-};
-
-export type WinnerJudgementContext = RoleContext & {
-  endReasons: readonly GameEndReason[];
-};
-
-export type PlayerResultContext = PlayerRoleContext & {
-  endReasons: readonly GameEndReason[];
-  winnerTeam: Team;
-};
-
-export type RoleRegistry = {
-  get(roleId: RoleId): Role;
-  getActiveRoles(state: ReadonlyGameState): readonly Role[];
-};
-
-export abstract class Role {
-  abstract readonly id: RoleId;
-  abstract readonly name: string;
-  abstract readonly team: Team;
-  abstract readonly description: string;
-
-  readonly required = false;
-  readonly minCount = 0;
-  readonly maxCount: number | null = null;
-  readonly incompatibleRoleIds: readonly RoleId[] = [];
-
-  countAs(_context: PlayerRoleContext): CountGroup {
-    return CountGroup.NonWerewolf;
-  }
-
-  seenAs(_context: InspectionContext): InspectionView {
-    return InspectionView.Human;
-  }
-
-  getActions(_context: PlayerRoleContext): readonly RoleActionDefinition[] {
-    return [];
-  }
-
-  getSetupContributions(_context: RoleContext): readonly RoleSetupContribution[] {
-    return [];
-  }
-
-  onInspected(_context: InspectionContext): readonly GameEffect[] {
-    return [];
-  }
-
-  onAttacked(context: AttackContext): readonly GameEffect[] {
-    return [
-      {
-        id: "effect_death_attacked",
-        kind: GameEffectKind.Death,
-        layer: GameEffectLayer.Death,
-        priority: 100,
-        emitterRoleId: this.id,
-        sourceActionId: null,
-        tags: [EffectTag.Attack, EffectTag.Guardable],
-        playerId: context.targetId,
-        reason: DeathReason.Attack,
-      },
-    ];
-  }
-
-  onExecuted(context: ExecutionContext): readonly GameEffect[] {
-    return [
-      {
-        id: "effect_death_executed",
-        kind: GameEffectKind.Death,
-        layer: GameEffectLayer.Death,
-        priority: 100,
-        emitterRoleId: this.id,
-        sourceActionId: null,
-        tags: [EffectTag.Execution, EffectTag.Unpreventable],
-        playerId: context.targetId,
-        reason: DeathReason.Execution,
-      },
-    ];
-  }
-
-  onMissingAction(_currentAction: CurrentAction, _context: RoleContext): readonly GameEffect[] {
-    return [];
-  }
-
-  checkEndCondition(_context: RoleContext): GameEndCandidate | null {
-    return null;
-  }
-
-  evaluateWinnerJudgement(
-    _judgement: WinnerJudgementContribution,
-    _context: WinnerJudgementContext,
-  ): boolean {
-    return false;
-  }
-
-  evaluateResult(_context: PlayerResultContext): PlayerResult | null {
-    return null;
-  }
-}
 ```
+
+`resolvedRoleSetup.contributions` は setup contribution の単一の保存先。winner
+judgement を別 field に複製しない。`activeRoleIds` は contribution と runtime hook
+の有効範囲を固定し、`nightConversationGroups` は Role の静的 opt-in を解決した
+group を固定する。
+
+winner judgement の identity は `(sourceRoleId, id)`。`id` は Role-local であり、
+異なる Role が同じ値を使える。Team ID と同様に、common code が judgement ID の
+global enum や allowlist を持たない。
+
+`DeathReason` と `EffectTag` も open identifier。core は generic な再利用可能値を
+定義できるが、Role 固有の値は owning Role module に閉じる。shared sketch は Role
+固有 reason や tag を列挙せず、永続層は文字列 shape だけを検証する。
+
+## Role と Engine の境界
+
+`Role` は metadata、target resolver、setup contribution、effect hook、終了条件、勝敗評価を所有する。
+現在の代表的な extension point は次のとおり。
+
+- `getActions` と `getEligibleTargets`
+- `getSetupContributions` と `validateRuleSet`
+- `onInspected`、informational-only な `onFirstNightStarted`、`onAttacked`、`onExecuted`
+- `onExecutionResolved`、`onDeathResolved`、`onActionResolved`
+- `onMissingAction`
+- `checkEndCondition`、`evaluateWinnerJudgement`、`evaluateResult`
+
+Role hook は状態を直接変更せず、`GameEffect` または end candidate を返す。
+end candidate の reason は owning Role だけが解釈する opaque な識別子とし、
+`sourceRoleId` に必ずその Role 自身を指定する。winner judgement の id と評価も
+contribution を出した Role が所有し、Engine は別 Role の candidate を混ぜずに dispatch する。
+Engine は generic な phase progression、effect ordering、conflict resolution、action materialization を
+担当する。新しい Role の追加は、原則として Role class の追加と `RoleRegistry` への登録だけで完結させる。

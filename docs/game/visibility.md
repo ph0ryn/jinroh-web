@@ -28,6 +28,15 @@
 
 そのため、サーバーは相手に見せてよい情報だけを view として切り出して返す。
 
+Database の `app_read_room_runtime_snapshot` は、この view 自体ではない。
+service-role application server だけが読める authoritative runtime aggregate であり、
+role assignment、pending action、その他の秘密状態を含み得る。Application server が認証済み
+Account に合わせて以下の view へ投影するまで、Browser へ返してはならない。
+この aggregate も無制限な row dump ではなく、exact key を持つ明示的な v1
+projection とする。通常の browser-facing read は engine history を要求せず、
+`resolvedActions` を空のまま読む。完全な履歴を opt in するのは phase resolver
+だけであり、それでも raw aggregate を Browser へ返してよいことにはならない。
+
 View の分離。
 
 ```text
@@ -37,8 +46,8 @@ public game view
 self private view
   自分の役職、自分の action 候補、自分宛ての結果だけ
 
-faction private view
-  特定の陣営、役職、または Player group だけが見てよい情報だけ
+role private view
+  resolved group の Role を持つ Player だけが見てよい情報だけ
 
 internal game state
   サーバーとDB内部だけが持つ完全な状態
@@ -59,19 +68,18 @@ internal game state
 - v1 の Werewolf night conversation は狂人に見せない
 - internal game state をそのまま browser に返さない
 
-`Team` は勝敗や標準結果判定の分類として使う。
+`Team` は Role が definition を提供し、`RoleRegistry` に登録する opaque ID。
+勝敗や標準結果判定の分類として使う。
 秘密情報の閲覧権限や role group action の提出権限は、`Team` だけでは決めない。
 夜会話や襲撃 action のように「実際の人狼だけ」が対象になるものは、
 Role ID または Player が持つ Role から対象者を切り出す。
 
 `GameEvent.visibility` は view 生成時の入力として使う。
 `public` event は public game view に含められる。
-`private` event は `visibleToPlayerIds`、`visibleToFaction`、`visibleToRoleIds` に一致する
-view にだけ含める。
+`private` event は `visibleToPlayerIds` または `visibleToRoleIds` に一致する view にだけ含める。
 `internal` event は browser に返さない。
 
-Werewolf night conversation の view は、`visibleToFaction: Team.Werewolf` だけで
-公開範囲を決めない。
+Werewolf night conversation の view は Team だけで公開範囲を決めない。
 狂人が同じ team を持つため、resolved group の Role ID で切り出す。
 
 ## Realtime Delivery
@@ -90,4 +98,4 @@ Browser は通知を受け取った後、Account token を使って Next.js API 
 public game view、self private view、または group private view を読み直す。
 
 夜会話の通知は対象 group の Role を持つ Player だけが購読できる private topic に送る。
-`Team.Werewolf` の claim だけで購読を許可しない。
+人狼側の Team ID claim だけで購読を許可しない。

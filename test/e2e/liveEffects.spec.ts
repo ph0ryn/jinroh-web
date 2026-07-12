@@ -165,7 +165,13 @@ test("role, phase, vote, death, and victory effects play once in game order", as
     const seat = page.locator(`[data-live-player-id="${player.id}"]`);
 
     await expect(seat).toHaveAttribute("data-live-role-id", player.revealedRoleId);
-    await expect(seat).toContainText(getLocalizedRole(enLocalization, player.revealedRoleId).name);
+    await expect(seat).toContainText(
+      getLocalizedRole(
+        enLocalization,
+        "en",
+        endedSummary.roleCatalog.find((role) => role.id === player.revealedRoleId),
+      ).name,
+    );
   }
 
   await expect(victoryEffect).toHaveAttribute("data-effect-victory-particles", "none");

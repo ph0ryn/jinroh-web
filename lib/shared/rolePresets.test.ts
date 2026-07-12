@@ -15,7 +15,7 @@ describe("role presets", () => {
   it("defines presets only for six, seven, and nine players", () => {
     expect(getRolePresetsForPlayerCount(6, roleIds)).toHaveLength(1);
     expect(getRolePresetsForPlayerCount(7, roleIds)).toHaveLength(2);
-    expect(getRolePresetsForPlayerCount(9, roleIds)).toHaveLength(2);
+    expect(getRolePresetsForPlayerCount(9, roleIds)).toHaveLength(1);
 
     for (const playerCount of [3, 4, 5, 8, 10]) {
       expect(getRolePresetsForPlayerCount(playerCount, roleIds)).toEqual([]);
@@ -52,14 +52,6 @@ describe("role presets", () => {
         madman: 1,
         seer: 1,
         spiritist: 1,
-        villager: 3,
-        werewolf: 2,
-      }),
-      expect.objectContaining({
-        guard: 1,
-        hunter: 1,
-        madman: 1,
-        seer: 1,
         villager: 3,
         werewolf: 2,
       }),

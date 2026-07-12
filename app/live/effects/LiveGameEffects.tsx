@@ -13,12 +13,13 @@ import { VictoryCrestAscendEffect } from "./VictoryCrestAscendEffect";
 import { VoteVerdictLedgerEffect } from "./VoteVerdictLedgerEffect";
 
 import type { LiveEffectCue } from "./liveEffectCues";
-import type { Localization } from "@/lib/i18n/localization";
+import type { Locale, Localization } from "@/lib/i18n/localization";
 import type { GamePhase, PlayerResult, RoomSummary } from "@/lib/shared/game";
 import type { RefObject, ReactNode } from "react";
 
 type LiveGameEffectsProps = {
   readonly activeCue: LiveEffectCue | null;
+  readonly locale: Locale;
   readonly onComplete: (cueId: string) => void;
   readonly shellRef: RefObject<HTMLElement | null>;
   readonly summary: RoomSummary | null;
@@ -27,6 +28,7 @@ type LiveGameEffectsProps = {
 
 export function LiveGameEffects({
   activeCue,
+  locale,
   onComplete,
   shellRef,
   summary,
@@ -50,7 +52,9 @@ export function LiveGameEffects({
   }, [activeCueId, handleComplete, shellRef]);
 
   const announcement =
-    activeCue === null || summary === null ? "" : getEffectAnnouncement(activeCue, summary, t);
+    activeCue === null || summary === null
+      ? ""
+      : getEffectAnnouncement(activeCue, summary, locale, t);
   let effect: ReactNode = null;
 
   if (activeCue !== null && summary !== null) {
@@ -60,7 +64,11 @@ export function LiveGameEffects({
           <RoleTarotFlipEffect
             cue={activeCue}
             onComplete={handleComplete}
-            role={getLocalizedRole(t, activeCue.roleId)}
+            role={getLocalizedRole(
+              t,
+              locale,
+              summary.roleCatalog.find((role) => role.id === activeCue.roleId),
+            )}
             t={t}
           />
         );
@@ -105,7 +113,7 @@ export function LiveGameEffects({
         break;
       }
       case "victory": {
-        const winner = formatWinner(activeCue.winnerTeam, t);
+        const winner = formatWinner(activeCue.winnerTeam, summary.teamCatalog, locale, t);
 
         effect = (
           <VictoryCrestAscendEffect
@@ -138,10 +146,21 @@ export function LiveGameEffects({
   );
 }
 
-function getEffectAnnouncement(cue: LiveEffectCue, summary: RoomSummary, t: Localization): string {
+function getEffectAnnouncement(
+  cue: LiveEffectCue,
+  summary: RoomSummary,
+  locale: Locale,
+  t: Localization,
+): string {
   switch (cue.kind) {
     case "role":
-      return t.live.effects.role.identity(getLocalizedRole(t, cue.roleId).name);
+      return t.live.effects.role.identity(
+        getLocalizedRole(
+          t,
+          locale,
+          summary.roleCatalog.find((role) => role.id === cue.roleId),
+        ).name,
+      );
     case "phase":
       return getPhaseEffectTitle(cue.phase, t);
     case "death":
@@ -149,7 +168,9 @@ function getEffectAnnouncement(cue: LiveEffectCue, summary: RoomSummary, t: Loca
     case "vote":
       return getVoteAnnouncement(cue, summary, t);
     case "victory": {
-      const title = t.live.effects.victory.title(formatWinner(cue.winnerTeam, t));
+      const title = t.live.effects.victory.title(
+        formatWinner(cue.winnerTeam, summary.teamCatalog, locale, t),
+      );
       const playerResult = getPlayerResult(cue.playerResult, t);
 
       return t.live.effects.victory.announcement(title, playerResult);

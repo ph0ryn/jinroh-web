@@ -22,7 +22,8 @@ Phase 1 のマイルストーンでは、匿名の待機 Room 基盤から実ゲ
 - 開始されなかったルームのクリーンアップ
 - 役職割り当て
 - First night / Night / Day / Voting / Execution / Result の進行
-- Werewolf / Villager / Madman / Seer / Guard / Fox を開始時に選択できる役職
+- Werewolf / Villager / Madman / Seer / Guard / Spiritist / Hunter / Fox を
+  開始時に選択できる役職
 - 夜 action、投票、処刑、勝敗判定
 - role-private night conversation
 - 秘密情報を切り出した public / self private / role private view
@@ -46,8 +47,8 @@ Phase 1 のマイルストーンでは、匿名の待機 Room 基盤から実ゲ
 - 期限切れの待機 Room を終了する
 - ルーム状態が変わったときにルームメンバーへ通知する
 - RuleSet を固定し、役職を割り当てる
-- game state、role assignment、player state、current action、pending action、
-  event history を DB に保存する
+- game state、phase instance history、role assignment、player state、current action、
+  pending action、normalized resolved action history、event history を DB に保存する
 - First night から Result まで phase を進行する
 - 役職ごとの夜 action と core action を受け付ける
 - stale `phaseInstanceId` / `revision` の送信を拒否する
@@ -99,8 +100,13 @@ Application server は Next.js アプリケーションとして実装し、Verc
 Browser 向け UI と HTTP API は同じ Next.js プロジェクトに置く。
 
 HTTP API は Next.js の server-side runtime で動作し、Account token 認証、
-Room / Player の認可、Supabase への通常読み書きを担当する。
+Room / Player の認可、transaction RPC による書き込みと単一 snapshot RPC による読み取りを
+担当する。
 Browser から Supabase の base table を直接読ませない。
+単一 snapshot RPC が返すのは service-role application server 専用の runtime
+aggregate であり、browser-facing view ではない。Application server は認証済み
+Account に応じて public / self private / role private view へ投影し、raw snapshot をそのまま
+Browser に返さない。
 
 データベースを信頼できる唯一の情報源とする。
 
@@ -122,8 +128,8 @@ Account は、ブラウザに紐づく匿名 identity である。
 - アプリは必要になったときに Account を自動作成する。
 - Account はアカウントトークンを通じて、リロード後に戻ってこられる。
 - Account は同時に最大 1 つの Room だけを現在の Room として持つ。
-- 現在の Room は DB の `accounts.current_room_id` を正本とし、Browser の保存値や
-  Player の接続状態から推測しない。
+- 現在の Room は DB の active membership、すなわち `players.left_at is null` を正本とし、
+  Browser の保存値や一時的な切断状態から推測しない。
 - `disconnected` でも現在の Room を維持する。
 - 完了したゲームの `ended` Room は、明示的に退出するまで現在の Room として維持する。
 - 開始前に終了した Room は Account の現在の Room から解除する。
@@ -248,8 +254,9 @@ left
 - `disconnected`: Room との接続が一時的に途絶えている
 - `left`: 意図的にルームから退出した
 
-Player の状態は Room 内の参加履歴と接続状態を表す。
-Account が現在どの Room に入室しているかの正本ではない。
+Player の `left_at` は Room 内の参加履歴と active membership を表し、
+Account が現在どの Room に入室しているかの正本になる。
+`disconnected_at` から導出する接続状態は一時的な通信状態だけを表し、membership を変更しない。
 
 ### Host
 
@@ -398,6 +405,8 @@ Room を開いている Browser は heartbeat を送る。
 - `player_private` と `role_private` topic は短命 grant と一緒に返す。
 - 夜会話などの secret view 更新は room topic へ通知せず、対象 group の
   private topic へ `private_view_changed` だけを送る。
+- viewer が受け取る snapshot revision は、その viewer に見える public、player-private、
+  role-private revision だけから構成し、他 group の secret view 更新時刻を漏らさない。
 
 代表的な通知理由:
 
@@ -427,10 +436,12 @@ game_ended
 - Room events
 - RuleSet snapshot
 - GameState
-- Role assignments
-- Player alive / death state
+- Game phase instances
+- Fixed game-roster Role assignments
+- Fixed game-roster Player alive / death state
 - Current actions
 - Pending actions
+- Resolved actions, including submitted and missing core and role-action resolutions
 - Game events and visibility targets
 - Night conversation messages
 - Day speech slots
@@ -586,6 +597,7 @@ Next.js API から再読み込みする。
 - トークンを URL に含めない
 - トークンや Authorization ヘッダーをログに出力しない
 - サーバー専用のデータベース認証情報をブラウザコードに公開しない
+- service-role snapshot RPC が返す raw runtime aggregate を Browser に返さない
 - リアルタイムメッセージに秘密情報を含めない
 - 表示名を HTML として描画しない
 - Browser は Next.js API だけで状態取得・操作する
@@ -609,20 +621,23 @@ Next.js API から再読み込みする。
 - ゲーム中は退出できず、終了後は退出できる。
 - 新しい Player は Room 開始後に参加できない。
 - 既存の Player は Room 開始後に再参加してもよい。
+- game roster は開始時の Player、Role assignment、alive state で固定し、
+  開始後の membership history から再計算しない。
 - Player の表示名は Room 内で固定される。
 - 表示名 preference は Account ではなく browser local storage に保存する。
 - 同じ Account が同時に現在の Room として持てるのは 1 Room だけである。
 - リアルタイムメッセージは状態変更の成功後に送信する。
 - Realtime payload は invalidation 用の reason と safe room identifier だけを持つ。
 - 初期対応人数は 3 から 10 人であり、Room 作成時に開始人数を選ぶ。
-- 開始時に選択できる Role は Werewolf / Villager / Madman / Seer / Guard / Fox である。
+- 開始時に選択できる Role は Werewolf / Villager / Madman / Seer / Guard /
+  Spiritist / Hunter / Fox である。
 - RuleSet はゲーム開始時に固定する。
 - First night は user-visible phase として `night` を使い、`nightNumber === 1`
   で通常夜と区別する。
 - Normal night は action が揃っても固定時間が終わるまで進めない。
 - Voting 中は投票 detail を public view に出さない。
 - final outcome と player results はゲーム終了時に一度だけ固定する。
-- Werewolf night conversation は `Team.Werewolf` ではなく WerewolfRole の
+- Werewolf night conversation は人狼側の Team ID ではなく WerewolfRole の
   group membership で閲覧対象を決める。
 - スケジュールされたクリーンアップが存在しても、リクエスト時の待機期限切れ
   確認は必要である。

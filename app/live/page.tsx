@@ -1426,7 +1426,7 @@ export default function LivePage() {
       {roomSummary !== null && roomBoundSurfaceStatus !== null ? (
         <LiveRoomLayout
           controls={roomBoundSurface}
-          table={<LiveRoundTable summary={roomSummary} t={t} />}
+          table={<LiveRoundTable locale={locale} summary={roomSummary} t={t} />}
           tableLabel={t.live.aria.roundTable}
           title={getLivePageTitle(roomSummary, t)}
           transitionItem={roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined}
@@ -1473,6 +1473,7 @@ export default function LivePage() {
         <StartSettingsDialog
           defaultRoleCounts={roomSummary.defaultRoleCounts}
           isOpen={isStartSettingsOpen}
+          locale={locale}
           playerCount={roomSummary.targetPlayerCount}
           roleCatalog={roomSummary.roleCatalog}
           settings={startRuleSetSettings}
@@ -1514,6 +1515,7 @@ export default function LivePage() {
 
       <LiveGameEffects
         activeCue={activeCue}
+        locale={locale}
         shellRef={liveShellRef}
         summary={roomSummary}
         t={t}

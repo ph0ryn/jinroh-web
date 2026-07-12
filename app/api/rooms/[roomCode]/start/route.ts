@@ -1,8 +1,8 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
-import { getRoleIds } from "@/lib/server/game/roles";
+import { getRoleCatalog, getRoleIds } from "@/lib/server/game/roles";
 import { startRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
-import { type RoleId, type RuleSetInput } from "@/lib/shared/game";
+import { roomApiErrorResponse } from "@/lib/server/roomApiError";
 import {
   isValidRuleSetNumber,
   RULE_SET_NUMBER_FIELDS,
@@ -10,17 +10,14 @@ import {
   type RuleSetNumberField,
 } from "@/lib/shared/ruleSetConstraints";
 
+import type { RoomRouteContext } from "@/lib/server/roomRoute";
+import type { RoleId, RuleSetInput } from "@/lib/shared/game";
+
 type StartBody = {
   ruleSet?: RuleSetInput | null;
 };
 
-type RouteContext = {
-  params: Promise<{
-    roomCode: string;
-  }>;
-};
-
-export async function POST(request: Request, context: RouteContext): Promise<Response> {
+export async function POST(request: Request, context: RoomRouteContext): Promise<Response> {
   const auth = await requireAccount(request);
 
   if ("response" in auth) {
@@ -38,8 +35,8 @@ export async function POST(request: Request, context: RouteContext): Promise<Res
 
   try {
     return jsonOk(await startRoom(auth.account, roomCode, parsedRuleSet.ruleSet));
-  } catch {
-    return jsonError("conflict", "Start failed.", 409);
+  } catch (error) {
+    return roomApiErrorResponse(error) ?? jsonError("conflict", "Start failed.", 409);
   }
 }
 
@@ -54,9 +51,29 @@ function parseRuleSetInput(
     return { response: jsonError("bad_request", "ruleSet is invalid.", 400) };
   }
 
-  const roleCounts: Partial<Record<RoleId, number>> = {};
+  const expectedKeys = [
+    ...RULE_SET_NUMBER_FIELDS,
+    "dayMode",
+    "roleCounts",
+    "roleOptions",
+    "voteResultVisibility",
+  ];
 
-  for (const roleId of getRoleIds()) {
+  if (
+    Object.keys(value).length !== expectedKeys.length ||
+    Object.keys(value).some((key) => !expectedKeys.includes(key))
+  ) {
+    return { response: jsonError("bad_request", "ruleSet is invalid.", 400) };
+  }
+
+  const roleCounts: Partial<Record<RoleId, number>> = {};
+  const roleIds = getRoleIds();
+
+  if (Object.keys(value["roleCounts"]).some((roleId) => !roleIds.includes(roleId))) {
+    return { response: jsonError("bad_request", "roleCounts contains an unknown role.", 400) };
+  }
+
+  for (const roleId of roleIds) {
     const rawCount = value["roleCounts"][roleId];
 
     if (rawCount !== undefined) {
@@ -74,16 +91,6 @@ function parseRuleSetInput(
     return { response: jsonError("bad_request", "dayMode is invalid.", 400) };
   }
 
-  if (!isGuardPolicy(value["guardConsecutiveTargetPolicy"])) {
-    return {
-      response: jsonError("bad_request", "guardConsecutiveTargetPolicy is invalid.", 400),
-    };
-  }
-
-  if (!isInspectionPolicy(value["initialInspectionPolicy"])) {
-    return { response: jsonError("bad_request", "initialInspectionPolicy is invalid.", 400) };
-  }
-
   if (!isVoteVisibility(value["voteResultVisibility"])) {
     return { response: jsonError("bad_request", "voteResultVisibility is invalid.", 400) };
   }
@@ -94,6 +101,12 @@ function parseRuleSetInput(
     return parsedTimings;
   }
 
+  const roleOptions = parseRoleOptions(value["roleOptions"]);
+
+  if (roleOptions === null) {
+    return { response: jsonError("bad_request", "roleOptions is invalid.", 400) };
+  }
+
   return {
     ruleSet: {
       dayMode: value["dayMode"],
@@ -102,11 +115,10 @@ function parseRuleSetInput(
       executionLastWordsSeconds: parsedTimings.timings.executionLastWordsSeconds,
       firstDaySpeechRounds: parsedTimings.timings.firstDaySpeechRounds,
       firstNightSeconds: parsedTimings.timings.firstNightSeconds,
-      guardConsecutiveTargetPolicy: value["guardConsecutiveTargetPolicy"],
-      initialInspectionPolicy: value["initialInspectionPolicy"],
       nightSeconds: parsedTimings.timings.nightSeconds,
       normalDaySpeechRounds: parsedTimings.timings.normalDaySpeechRounds,
       roleCounts,
+      roleOptions,
       voteResultVisibility: value["voteResultVisibility"],
       votingSeconds: parsedTimings.timings.votingSeconds,
     },
@@ -140,21 +152,51 @@ function parseRuleTimingFields(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isDayMode(value: unknown): value is RuleSetInput["dayMode"] {
   return value === "ready_check" || value === "ordered_speech";
 }
 
-function isGuardPolicy(value: unknown): value is RuleSetInput["guardConsecutiveTargetPolicy"] {
-  return value === "allow" || value === "deny";
-}
-
-function isInspectionPolicy(value: unknown): value is RuleSetInput["initialInspectionPolicy"] {
-  return value === "enabled" || value === "disabled";
-}
-
 function isVoteVisibility(value: unknown): value is RuleSetInput["voteResultVisibility"] {
   return value === "count_only" || value === "voter_to_target";
+}
+
+function parseRoleOptions(value: unknown): RuleSetInput["roleOptions"] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const catalog = getRoleCatalog();
+  const parsed: RuleSetInput["roleOptions"] = {};
+
+  for (const [roleId, rawOptions] of Object.entries(value)) {
+    const role = catalog.find((candidate) => candidate.id === roleId);
+
+    if (role === undefined || role.specificOptions.length === 0 || !isRecord(rawOptions)) {
+      return null;
+    }
+
+    const definitions = role.specificOptions;
+    const optionValues: Record<string, string> = {};
+
+    for (const [optionKey, rawValue] of Object.entries(rawOptions)) {
+      const definition = definitions.find((candidate) => candidate.key === optionKey);
+
+      if (
+        definition === undefined ||
+        typeof rawValue !== "string" ||
+        !definition.choices.some((choice) => choice.value === rawValue)
+      ) {
+        return null;
+      }
+
+      optionValues[optionKey] = rawValue;
+    }
+
+    parsed[roleId] = optionValues;
+  }
+
+  return parsed;
 }

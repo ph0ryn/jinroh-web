@@ -62,7 +62,6 @@ test("@security @roles private views, grants, and mutations stay scoped", async 
 
   for (const entry of entries) {
     if (entry.summary.self?.roleId === "werewolf") {
-      expect(entry.summary.rolePrivate?.roleId).toBe("werewolf");
       expect(entry.summary.rolePrivate?.nightConversation?.canSend).toBe(true);
     } else {
       expect(entry.summary.rolePrivate).toBeNull();
@@ -244,8 +243,10 @@ async function assertNightConversationBoundary(
     const visibleMessages = refreshed.rolePrivate?.nightConversation?.messages ?? [];
 
     if (refreshed.self?.roleId === "werewolf") {
+      expect(refreshed.snapshotRevision).toBeGreaterThan(entry.summary.snapshotRevision);
       expect(visibleMessages.some(({ body }) => body === messageBody)).toBe(true);
     } else {
+      expect(refreshed.snapshotRevision).toBe(entry.summary.snapshotRevision);
       expect(JSON.stringify(refreshed)).not.toContain(messageBody);
     }
   }

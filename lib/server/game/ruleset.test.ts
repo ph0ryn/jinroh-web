@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_RULE_OPTIONS, normalizeRuleSetInput, validateRuleSet } from "./ruleset";
-import { InitialInspectionPolicy } from "./types";
+import {
+  DEFAULT_RULE_OPTIONS,
+  normalizeRuleSetInput,
+  parseResolvedRoleSetup,
+  validateRuleSet,
+} from "./ruleset";
 
 import type { RoleCounts } from "./types";
 
 describe("validateRuleSet", () => {
+  it("normalizes registered role option defaults without common option fields", () => {
+    const ruleSet = normalizeRuleSetInput({ options: { roleOptions: {} } }, 6);
+
+    expect(ruleSet.options.roleOptions).toEqual({
+      guard: { consecutive_target: "deny" },
+      seer: { initial_inspection: "enabled" },
+    });
+  });
+
   it("accepts a valid starter setup and resolves fixed setup contributions", () => {
     const ruleSet = normalizeRuleSetInput(
       {
@@ -38,7 +51,7 @@ describe("validateRuleSet", () => {
     expect(result.resolvedRoleSetup.nightConversationGroups).toEqual([
       {
         groupId: "werewolf",
-        labelKey: "nightConversation.werewolf",
+        label: { en: "Werewolf council", ja: "人狼の密談" },
         roleIds: ["werewolf"],
       },
     ]);
@@ -131,7 +144,10 @@ describe("validateRuleSet", () => {
       {
         options: {
           ...DEFAULT_RULE_OPTIONS,
-          initialInspectionPolicy: InitialInspectionPolicy.Enabled,
+          roleOptions: {
+            ...DEFAULT_RULE_OPTIONS.roleOptions,
+            seer: { initial_inspection: "enabled" },
+          },
         },
         roleCounts: {
           seer: 1,
@@ -152,5 +168,123 @@ describe("validateRuleSet", () => {
     expect(result.issues.map((issue) => issue.code)).toContain(
       "role:seer:no_initial_inspection_candidate",
     );
+  });
+
+  it("rejects an invalid value through its owning role option definition", () => {
+    const ruleSet = normalizeRuleSetInput(
+      {
+        roleCounts: {
+          guard: 1,
+          seer: 1,
+          villager: 1,
+          werewolf: 1,
+        },
+      },
+      4,
+    );
+    const result = validateRuleSet(
+      {
+        ...ruleSet,
+        options: {
+          ...ruleSet.options,
+          roleOptions: {
+            ...ruleSet.options.roleOptions,
+            guard: { consecutive_target: "unsupported" },
+          },
+        },
+      },
+      4,
+    );
+
+    expect(result).toMatchObject({
+      issues: [expect.objectContaining({ code: "invalid_option", roleId: "guard" })],
+      ok: false,
+    });
+  });
+});
+
+describe("parseResolvedRoleSetup", () => {
+  const baseSetup = {
+    activeRoleIds: ["werewolf", "villager"],
+    contributions: [],
+    nightConversationGroups: [
+      {
+        groupId: "werewolf",
+        label: { en: "Werewolf council", ja: "人狼の密談" },
+        roleIds: ["werewolf"],
+      },
+    ],
+  };
+
+  it("accepts one conversation group per participating role", () => {
+    expect(parseResolvedRoleSetup(baseSetup)).toEqual(baseSetup);
+  });
+
+  it("rejects a role assigned to multiple conversation groups", () => {
+    expect(
+      parseResolvedRoleSetup({
+        ...baseSetup,
+        nightConversationGroups: [
+          ...baseSetup.nightConversationGroups,
+          {
+            groupId: "other_werewolf_group",
+            label: { en: "Other", ja: "その他" },
+            roleIds: ["werewolf"],
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects duplicate conversation group IDs", () => {
+    expect(
+      parseResolvedRoleSetup({
+        ...baseSetup,
+        nightConversationGroups: [
+          ...baseSetup.nightConversationGroups,
+          {
+            groupId: "werewolf",
+            label: { en: "Other", ja: "その他" },
+            roleIds: ["villager"],
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
+  it("scopes opaque judgement identifiers to their source role", () => {
+    const sharedIdContributions = [
+      {
+        judgement: {
+          id: "survives",
+          priority: 10,
+          sourceRoleId: "werewolf",
+          winnerTeam: "werewolf",
+        },
+        kind: "winner_judgement",
+      },
+      {
+        judgement: {
+          id: "survives",
+          priority: 20,
+          sourceRoleId: "fox",
+          winnerTeam: "fox",
+        },
+        kind: "winner_judgement",
+      },
+    ];
+    const setup = {
+      ...baseSetup,
+      activeRoleIds: ["werewolf", "fox", "villager"],
+      contributions: sharedIdContributions,
+    };
+
+    expect(parseResolvedRoleSetup(setup)).toEqual(setup);
+    expect(
+      parseResolvedRoleSetup({
+        ...setup,
+        contributions: [...sharedIdContributions, sharedIdContributions[0]],
+      }),
+    ).toBeNull();
   });
 });
