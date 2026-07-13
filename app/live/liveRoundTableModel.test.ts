@@ -165,6 +165,17 @@ describe("getLiveRoundTableSeats", () => {
       expect(seats.every(({ x, y }) => x >= 0 && x <= 100 && y >= 0 && y <= 100)).toBe(true);
     },
   );
+
+  it("keeps eight comfortable seats inside the compact table edge", () => {
+    const seats = getLiveRoundTableSeats({
+      currentPlayerId: null,
+      players: [makePlayer("host")],
+      status: "waiting",
+      targetPlayerCount: 8,
+    });
+
+    expect(seats.every(({ x, y }) => x >= 11 && x <= 89 && y >= 11 && y <= 89)).toBe(true);
+  });
 });
 
 function makePlayer(id: string, overrides: Partial<PublicPlayer> = {}): PublicPlayer {

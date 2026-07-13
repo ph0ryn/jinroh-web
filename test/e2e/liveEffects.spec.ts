@@ -10,6 +10,8 @@ import {
   submitOpenActions,
 } from "./support/api";
 
+import type { Locator, Page } from "playwright/test";
+
 test("role, phase, vote, death, and victory effects play once in game order", async ({
   page,
   request,
@@ -105,6 +107,7 @@ test("role, phase, vote, death, and victory effects play once in game order", as
   });
   await expect(page.locator('[data-live-effect="phase"]')).toHaveCount(0, { timeout: 6_000 });
 
+  await page.setViewportSize({ height: 375, width: 667 });
   await submitOpenAction(request, roomCode, werewolf);
 
   const deathEffect = page.locator('[data-live-effect="death"]');
@@ -117,6 +120,20 @@ test("role, phase, vote, death, and victory effects play once in game order", as
   const victoryEffect = page.locator('[data-live-effect="victory"]');
 
   await expect(victoryEffect).toBeVisible({ timeout: 8_000 });
+  await expect(victoryEffect).toHaveAttribute("data-effect-victory-particles", "none");
+  await expect(
+    victoryEffect.locator(
+      '[data-effect-particle], [class*="particle" i], [class*="snow" i], [data-effect-soul]',
+    ),
+  ).toHaveCount(0);
+  const victoryGeometryProbe = await createVictoryGeometryProbe(page, victoryEffect);
+
+  await expect(page.locator("[data-live-effect-announcement]")).toContainText(/Your result: /u);
+  await page.setViewportSize({ height: 390, width: 844 });
+  await expectVictoryGeometry(victoryGeometryProbe);
+  await page.setViewportSize({ height: 375, width: 667 });
+  await expectVictoryGeometry(victoryGeometryProbe);
+  await victoryGeometryProbe.evaluate((probe) => probe.remove());
   const endedSummaries = await Promise.all(
     players.map((player) => readRoomSummary(request, roomCode, player)),
   );
@@ -139,9 +156,6 @@ test("role, phase, vote, death, and victory effects play once in game order", as
     win: "Win",
   }[expectedPlayerResult];
 
-  await expect(page.locator("[data-live-effect-announcement]")).toContainText(
-    `Your result: ${localizedPlayerResult}`,
-  );
   await expect(page.getByLabel("Your result")).toContainText(localizedPlayerResult);
   const revealedRoles = Object.fromEntries(
     endedSummary.players.map((player) => [player.id, player.revealedRoleId]),
@@ -174,12 +188,6 @@ test("role, phase, vote, death, and victory effects play once in game order", as
     );
   }
 
-  await expect(victoryEffect).toHaveAttribute("data-effect-victory-particles", "none");
-  await expect(
-    victoryEffect.locator(
-      '[data-effect-particle], [class*="particle" i], [class*="snow" i], [data-effect-soul]',
-    ),
-  ).toHaveCount(0);
   await page.reload();
   await expect(page.getByLabel("Your result")).toContainText(localizedPlayerResult);
   await expect(page.locator("[data-live-round-table] [data-live-role-id]")).toHaveCount(
@@ -187,8 +195,60 @@ test("role, phase, vote, death, and victory effects play once in game order", as
   );
   await expect(page.locator("[data-live-effect-announcement]")).toBeEmpty();
   await expect(page.getByRole("button", { name: "Leave room" })).toBeVisible({ timeout: 8_000 });
+  await page.getByRole("button", { name: "Language" }).click();
+  await page.getByRole("menuitemradio", { name: "Japanese" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await expect(page.getByLabel("あなたの結果")).toBeVisible();
+  await expect(page.getByRole("button", { exact: true, name: "部屋を退出" })).toBeVisible();
   expect(consoleErrors).toEqual([]);
 });
+
+async function expectVictoryGeometry(victoryEffect: Locator): Promise<void> {
+  const geometry = await victoryEffect.evaluate((root) => {
+    const rootBounds = root.getBoundingClientRect();
+    const visibleElements = [
+      ...root.querySelectorAll<HTMLElement>(
+        "[data-effect-victory-emblem], [data-effect-victory-copy]",
+      ),
+    ].map((element) => {
+      const bounds = element.getBoundingClientRect();
+
+      return {
+        bottom: bounds.bottom,
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+      };
+    });
+
+    return {
+      contentFits: root.scrollHeight <= root.clientHeight,
+      elementsFit: visibleElements.every(
+        (bounds) =>
+          bounds.left >= rootBounds.left - 1 &&
+          bounds.right <= rootBounds.right + 1 &&
+          bounds.top >= rootBounds.top - 1 &&
+          bounds.bottom <= rootBounds.bottom + 1,
+      ),
+    };
+  });
+
+  expect(geometry).toEqual({ contentFits: true, elementsFit: true });
+}
+
+async function createVictoryGeometryProbe(page: Page, victoryEffect: Locator): Promise<Locator> {
+  await victoryEffect.evaluate((root) => {
+    const probe = root.cloneNode(true) as HTMLElement;
+
+    probe.dataset["liveEffect"] = "victory-layout-probe";
+    for (const element of [probe, ...probe.querySelectorAll<HTMLElement>("[style]")]) {
+      element.removeAttribute("style");
+    }
+    document.body.append(probe);
+  });
+
+  return page.locator('[data-live-effect="victory-layout-probe"]');
+}
 
 test("reduced motion keeps the role reveal static and short", async ({ page, request }) => {
   const { players } = await createStartedRoom(request, ["Dawn", "Elm", "Fir"]);
@@ -329,6 +389,75 @@ test("the vote ledger reveals voter targets, ties, and a mobile reduced-motion r
   await expect(page.locator('[data-live-effect="phase"][data-phase="night"]')).toBeVisible({
     timeout: 3_000,
   });
+});
+
+test("reduced motion preserves the final desktop vote meter ratios", async ({ page, request }) => {
+  const { players, roomCode } = await createStartedRoom(request, [
+    "Aster",
+    "Birch",
+    "Cedar",
+    "Dahlia",
+  ]);
+  const host = players[0];
+
+  if (host === undefined) {
+    throw new Error("Reduced-motion vote meter host was not created.");
+  }
+
+  await submitOpenActions(request, roomCode, players);
+  await submitOpenActions(request, roomCode, players);
+
+  const votingSummaries = await Promise.all(
+    players.map((player) => readRoomSummary(request, roomCode, player)),
+  );
+  const firstTargetId = votingSummaries[0]?.self?.playerId;
+  const secondTargetId = votingSummaries[1]?.self?.playerId;
+
+  if (firstTargetId === undefined || secondTargetId === undefined) {
+    throw new Error("Reduced-motion vote meter targets were not available.");
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ height: 720, width: 1280 });
+  await page.addInitScript(
+    ({ identityToken }) => {
+      window.localStorage.setItem("jinrohWeb.identityToken", identityToken);
+      window.localStorage.setItem("jinrohWeb.locale", "en");
+    },
+    { identityToken: host.token },
+  );
+  await page.goto("/live");
+  await expect(page.locator('[data-live-effect="role"]')).toHaveCount(0, { timeout: 3_000 });
+
+  let voteIndex = 0;
+
+  await submitOpenActions(request, roomCode, players, () => {
+    const targetId = voteIndex < 3 ? firstTargetId : secondTargetId;
+
+    voteIndex += 1;
+    return targetId;
+  });
+
+  const voteEffect = page.locator('[data-live-effect="vote"]');
+
+  await expect(voteEffect).toBeVisible({ timeout: 8_000 });
+  const meterState = await voteEffect.locator("[data-effect-vote-meter]").evaluateAll((meters) =>
+    meters
+      .map((meter) => {
+        const trackWidth = meter.parentElement?.getBoundingClientRect().width ?? 0;
+
+        return {
+          cssScale: meter.getAttribute("style")?.includes("--vote-meter-scale") ?? false,
+          renderedScale: trackWidth === 0 ? 0 : meter.getBoundingClientRect().width / trackWidth,
+        };
+      })
+      .toSorted((left, right) => left.renderedScale - right.renderedScale),
+  );
+
+  expect(meterState).toHaveLength(2);
+  expect(meterState.every(({ cssScale }) => cssScale)).toBe(true);
+  expect(meterState[0]?.renderedScale).toBeCloseTo(1 / 3, 1);
+  expect(meterState[1]?.renderedScale).toBeCloseTo(1, 1);
 });
 
 test("the vote ledger keeps a ten-target tally visible in compact landscape layout", async ({

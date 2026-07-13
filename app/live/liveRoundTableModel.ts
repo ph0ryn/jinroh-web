@@ -53,6 +53,8 @@ function getSeatPosition(index: number, slotCount: number): Pick<LiveRoundTableS
     radius = 38;
   } else if (slotCount <= 6) {
     radius = 40;
+  } else if (slotCount <= 8) {
+    radius = 39;
   }
 
   const angle = Math.PI / 2 + (index / slotCount) * Math.PI * 2;

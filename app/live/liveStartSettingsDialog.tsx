@@ -483,7 +483,11 @@ function StartRuleSetPanel({
               <article className="liveSettingsCard">
                 <h4>{t.live.settings.timers.commonTitle}</h4>
                 <p>{t.live.settings.timers.commonBody}</p>
-                <div className="liveTimingGrid common" aria-label={t.live.aria.commonPhaseTiming}>
+                <div
+                  className="liveTimingGrid common"
+                  aria-label={t.live.aria.commonPhaseTiming}
+                  role="group"
+                >
                   <RuleSetNumberControl
                     field="firstNightSeconds"
                     label={t.live.settings.timers.firstNight}
@@ -526,6 +530,7 @@ function StartRuleSetPanel({
                   <div
                     className="liveTimingGrid day"
                     aria-label={t.live.settings.timers.orderedSpeechTiming}
+                    role="group"
                   >
                     <RuleSetNumberControl
                       field="daySpeechSeconds"
@@ -550,6 +555,7 @@ function StartRuleSetPanel({
                   <div
                     className="liveTimingGrid day"
                     aria-label={t.live.settings.timers.readyCheckTiming}
+                    role="group"
                   >
                     <RuleSetNumberControl
                       field="dayReadyCheckSecondsPerPlayer"
@@ -616,7 +622,11 @@ function StartRuleSetPanel({
                   </span>
                 </div>
 
-                <div className="liveRolePresetGrid" aria-label={t.live.aria.rolePresets}>
+                <div
+                  className="liveRolePresetGrid"
+                  aria-label={t.live.aria.rolePresets}
+                  role="group"
+                >
                   {rolePresets.map((preset) => {
                     const isSelected = selectedRolePreset?.id === preset.id;
                     const localizedPreset = getLocalizedRolePreset(t, preset.id);
@@ -645,6 +655,7 @@ function StartRuleSetPanel({
                         <span
                           className="liveRolePresetChips"
                           aria-label={t.live.settings.roles.presetRoleMix(localizedPreset.name)}
+                          role="group"
                         >
                           {presetRoleEntries.map(({ count, role }) => {
                             const localizedRole = getLocalizedRole(t, locale, role);
@@ -683,7 +694,7 @@ function StartRuleSetPanel({
                   {t.live.settings.roles.assigned}
                 </span>
               </div>
-              <div className="liveRoleGrid" aria-label={t.live.aria.roleCounts}>
+              <div className="liveRoleGrid" aria-label={t.live.aria.roleCounts} role="group">
                 {roleCounts === null ? (
                   <div className="liveSettingsEmptyOptions">
                     <strong>{t.live.settings.roles.mixAppearsAt(MIN_ROOM_PLAYERS)}</strong>
@@ -724,6 +735,7 @@ function StartRuleSetPanel({
                         <div
                           className="liveRoleCounter"
                           aria-label={t.live.settings.roles.count(roleName)}
+                          role="group"
                         >
                           <button
                             type="button"

@@ -115,7 +115,7 @@ test("rapid settings tab changes settle latest and preserve every draft field", 
 });
 
 test("cancel discards settings drafts while apply commits them", async ({ page, request }) => {
-  const host = await createWaitingRoom(request);
+  const host = await createWaitingRoom(request, 5);
 
   await openWaitingRoomAsPlayer(page, host.token);
 
@@ -126,12 +126,48 @@ test("cancel discards settings drafts while apply commits them", async ({ page, 
   let dialog = page.getByRole("dialog", { name: "Game settings" });
 
   await selectDayMode(dialog, "Ordered speech");
+  await dialog.getByRole("tab", { name: "Roles" }).click();
+  let initialInspection = dialog.getByRole("group", {
+    name: "Receive an inspection result on the first night",
+  });
+  const optionGeometry = await initialInspection.getByRole("button").evaluateAll((buttons) => {
+    const groupBounds = buttons[0]?.parentElement?.getBoundingClientRect();
+
+    return buttons.map((button) => {
+      const bounds = button.getBoundingClientRect();
+
+      return {
+        height: bounds.height,
+        insideGroup:
+          groupBounds !== undefined &&
+          bounds.left >= groupBounds.left - 1 &&
+          bounds.right <= groupBounds.right + 1,
+      };
+    });
+  });
+
+  expect(optionGeometry.every(({ height, insideGroup }) => height >= 44 && insideGroup)).toBe(true);
+  await initialInspection.getByRole("button", { name: "Disabled" }).click();
+  await expect(initialInspection.getByRole("button", { name: "Disabled" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await dialog.getByRole("button", { exact: true, name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0, { timeout: 2_000 });
 
   await settingsButton.click();
   dialog = page.getByRole("dialog", { name: "Game settings" });
   await expect(dialog.getByRole("radio", { name: /Ready check/u })).toBeChecked();
+  await dialog.getByRole("tab", { name: "Roles" }).click();
+  initialInspection = dialog.getByRole("group", {
+    name: "Receive an inspection result on the first night",
+  });
+  await expect(initialInspection.getByRole("button", { name: "Enabled" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await initialInspection.getByRole("button", { name: "Disabled" }).click();
+  await dialog.getByRole("tab", { name: "General" }).click();
   await selectDayMode(dialog, "Ordered speech");
   await dialog.getByRole("button", { exact: true, name: "Apply settings" }).click();
   await expect(dialog).toHaveCount(0, { timeout: 2_000 });
@@ -139,6 +175,14 @@ test("cancel discards settings drafts while apply commits them", async ({ page, 
   await settingsButton.click();
   dialog = page.getByRole("dialog", { name: "Game settings" });
   await expect(dialog.getByRole("radio", { name: /Ordered speech/u })).toBeChecked();
+  await dialog.getByRole("tab", { name: "Roles" }).click();
+  initialInspection = dialog.getByRole("group", {
+    name: "Receive an inspection result on the first night",
+  });
+  await expect(initialInspection.getByRole("button", { name: "Disabled" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("reduced motion settles settings tabs without markers or transient styles", async ({
@@ -192,11 +236,12 @@ test("mobile tab navigation reveals the selection and cleans up when the dialog 
 
 async function createWaitingRoom(
   request: APIRequestContext,
+  targetPlayerCount = 3,
 ): Promise<Awaited<ReturnType<typeof createApiPlayer>>> {
   const host = await createApiPlayer(request, "host", "Aster");
 
   await apiFetch(request, "/api/rooms", {
-    body: { displayName: host.displayName, targetPlayerCount: 3 },
+    body: { displayName: host.displayName, targetPlayerCount },
     method: "POST",
     token: host.token,
   });

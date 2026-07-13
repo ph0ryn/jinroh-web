@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "./i18nProvider";
 
 import type { Locale } from "@/lib/i18n/localization";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 const languageOptions: readonly Locale[] = ["en", "ja"];
 
@@ -14,6 +15,20 @@ export function LanguageSwitcher({ className = "" }: { readonly className?: stri
   const [isOpen, setIsOpen] = useState(false);
   const menuId = useId();
   const switcherRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef(new Map<Locale, HTMLButtonElement>());
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      optionRefs.current.get(locale)?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isOpen, locale]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -31,6 +46,7 @@ export function LanguageSwitcher({ className = "" }: { readonly className?: stri
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setIsOpen(false);
+        window.requestAnimationFrame(() => toggleRef.current?.focus());
       }
     }
 
@@ -46,6 +62,38 @@ export function LanguageSwitcher({ className = "" }: { readonly className?: stri
   function handleLocaleSelect(nextLocale: Locale) {
     setLocale(nextLocale);
     setIsOpen(false);
+    window.requestAnimationFrame(() => toggleRef.current?.focus());
+  }
+
+  function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const currentIndex = languageOptions.findIndex(
+      (option) => optionRefs.current.get(option) === document.activeElement,
+    );
+    let nextIndex: number | null = null;
+
+    if (event.key === "ArrowDown") {
+      nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % languageOptions.length;
+    } else if (event.key === "ArrowUp") {
+      nextIndex =
+        currentIndex < 0
+          ? languageOptions.length - 1
+          : (currentIndex - 1 + languageOptions.length) % languageOptions.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = languageOptions.length - 1;
+    }
+
+    if (nextIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    const nextOption = languageOptions[nextIndex];
+
+    if (nextOption !== undefined) {
+      optionRefs.current.get(nextOption)?.focus();
+    }
   }
 
   return (
@@ -56,6 +104,7 @@ export function LanguageSwitcher({ className = "" }: { readonly className?: stri
           id={menuId}
           role="menu"
           aria-label={t.common.language.ariaLabel}
+          onKeyDown={handleMenuKeyDown}
         >
           {languageOptions.map((option) => {
             const isActive = locale === option;
@@ -65,7 +114,15 @@ export function LanguageSwitcher({ className = "" }: { readonly className?: stri
                 aria-checked={isActive}
                 className={isActive ? "active" : undefined}
                 key={option}
+                ref={(element) => {
+                  if (element === null) {
+                    optionRefs.current.delete(option);
+                  } else {
+                    optionRefs.current.set(option, element);
+                  }
+                }}
                 role="menuitemradio"
+                tabIndex={isActive ? 0 : -1}
                 type="button"
                 onClick={() => handleLocaleSelect(option)}
               >
@@ -84,6 +141,7 @@ export function LanguageSwitcher({ className = "" }: { readonly className?: stri
         aria-haspopup="menu"
         aria-label={t.common.language.ariaLabel}
         className="languageSwitcherToggle"
+        ref={toggleRef}
         type="button"
         onClick={() => setIsOpen((nextIsOpen) => !nextIsOpen)}
       >

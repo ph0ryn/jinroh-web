@@ -573,7 +573,7 @@ export const enLocalization = {
       notJoinable: "That room can no longer be joined. You are still in your current room.",
       readyToJoin: "Ready to join a room.",
       synced: (roomCode: string) => `Room ${roomCode} updated.`,
-      syncFailed: "Could not load the latest room information. Select Refresh if nothing changes.",
+      syncFailed: "Could not load the latest room information. Retrying automatically.",
       switchForbidden: (roomCode: string) =>
         `Room ${roomCode} is in progress. You cannot leave or switch rooms during the game.`,
       switchForbiddenGeneric: "You cannot leave or switch rooms while the game is in progress.",

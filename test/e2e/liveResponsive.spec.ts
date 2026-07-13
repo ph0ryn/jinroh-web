@@ -80,6 +80,62 @@ test("entry keeps the page fixed and combines portrait mode selection with its p
   await expectFixedDocument(page);
 });
 
+test("an invite URL opens the prefilled join panel on portrait layouts", async ({
+  page,
+  request,
+}) => {
+  const { roomCode } = await createWaitingRoom(request);
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("jinrohWeb.displayName", "Invited player");
+    window.localStorage.setItem("jinrohWeb.locale", "en");
+  });
+  await page.goto(`/live?roomCode=${roomCode}`);
+
+  const entry = page.locator("[data-live-entry-mode]");
+  const createPanel = page.locator('[data-live-entry-panel="create"]');
+  const joinPanel = page.locator('[data-live-entry-panel="join"]');
+
+  await expect(entry).toHaveAttribute("data-live-entry-mode", "join");
+  await expect(createPanel).toBeHidden();
+  await expect(joinPanel).toBeVisible();
+  await expect(page.getByRole("button", { exact: true, name: "Join with code" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  for (const [index, digit] of roomCode.split("").entries()) {
+    await expect(page.getByRole("textbox", { name: `Room code digit ${index + 1}` })).toHaveValue(
+      digit,
+    );
+  }
+
+  await expect(page.getByRole("button", { exact: true, name: "Join room" })).toBeEnabled();
+  await expect(page).toHaveURL(new RegExp(`/live\\?roomCode=${roomCode}$`, "u"));
+
+  await page.setViewportSize({ height: 390, width: 844 });
+  await expect(createPanel).toBeVisible();
+  await expect(joinPanel).toBeVisible();
+  await page.setViewportSize({ height: 375, width: 667 });
+  const roomCodeCellGeometry = await page
+    .getByRole("textbox", { name: /Room code digit/u })
+    .evaluateAll((cells) =>
+      cells.map((cell) => {
+        const bounds = cell.getBoundingClientRect();
+
+        return { height: bounds.height, top: Math.round(bounds.top), width: bounds.width };
+      }),
+    );
+
+  expect(roomCodeCellGeometry).toHaveLength(6);
+  expect(roomCodeCellGeometry.every(({ height, width }) => height >= 44 && width >= 44)).toBe(true);
+  expect(new Set(roomCodeCellGeometry.map(({ top }) => top)).size).toBe(2);
+  await page.setViewportSize({ height: 844, width: 390 });
+  await expect(entry).toHaveAttribute("data-live-entry-mode", "join");
+  await expect(joinPanel).toBeVisible();
+});
+
 test("waiting room satisfies the blocking responsive viewport matrix", async ({
   page,
   request,
@@ -169,6 +225,14 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
           button.closest("[data-live-controls-utilities]") === null,
       ),
     ).toBe(true);
+
+    const languageButton = page.getByRole("button", { exact: true, name: "Language" });
+    const languageBox = await languageButton.boundingBox();
+
+    await expect(languageButton).toBeVisible();
+    expect(languageBox?.width).toBeGreaterThanOrEqual(44);
+    expect(languageBox?.height).toBeGreaterThanOrEqual(44);
+    expect(rectanglesOverlap(languageBox, settingsBox)).toBe(false);
 
     if (viewport.mode === "tablet-landscape-desktop" && viewport.height >= 600) {
       const invitePanelBox = await page.locator(".liveInviteDetailsPanel").boundingBox();
@@ -263,6 +327,29 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
     } else {
       expect(geometry.table.right).toBeLessThanOrEqual(geometry.controls.left + 1);
     }
+  }
+});
+
+test("eight-seat waiting table stays inside narrow portrait viewports", async ({
+  page,
+  request,
+}) => {
+  const { host } = await createWaitingRoom(request, 8);
+
+  await openRoomAsPlayer(page, host.token);
+
+  for (const viewport of [
+    { height: 568, width: 320 },
+    { height: 844, width: 390 },
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator("[data-live-seat-state]")).toHaveCount(8);
+    const geometry = await readRoomGeometry(page);
+
+    expect(geometry.tableInsideViewport).toBe(true);
+    expect(geometry.seatsOutsideViewport).toEqual([]);
+    expect(geometry.overlappingSeatPairs).toEqual([]);
+    await expectFixedDocument(page);
   }
 });
 
@@ -457,6 +544,57 @@ test("safe-area tokens constrain the room and settings keeps only its body scrol
   });
 });
 
+test("short phone landscape keeps settings content and footer reachable", async ({
+  page,
+  request,
+}) => {
+  const { host } = await createWaitingRoom(request);
+
+  await page.setViewportSize({ height: 375, width: 667 });
+  await openRoomAsPlayer(page, host.token);
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Game settings" });
+  const closeButton = dialog.getByRole("button", { name: "Close settings" });
+  const cancelButton = dialog.getByRole("button", { name: "Cancel" });
+  const applyButton = dialog.getByRole("button", { name: "Apply settings" });
+
+  await expect(dialog).toBeVisible();
+  await expect(closeButton).toBeVisible();
+  await expect(cancelButton).toBeVisible();
+  await expect(applyButton).toBeVisible();
+
+  const geometry = await dialog.evaluate((root) => {
+    const body = root.querySelector<HTMLElement>(".liveSettingsBody");
+    const footer = root.querySelector<HTMLElement>(".liveSettingsFooter");
+
+    if (body === null || footer === null) {
+      throw new Error("Settings scroll regions were not rendered.");
+    }
+
+    const dialogBounds = root.getBoundingClientRect();
+    const bodyBounds = body.getBoundingClientRect();
+    const footerBounds = footer.getBoundingClientRect();
+
+    return {
+      bodyCanScroll: body.scrollHeight > body.clientHeight,
+      bodyHeight: bodyBounds.height,
+      dialogBottom: dialogBounds.bottom,
+      dialogOverflow: getComputedStyle(root).overflow,
+      footerBottom: footerBounds.bottom,
+      footerInsideDialog: footerBounds.bottom <= dialogBounds.bottom + 1,
+      footerInsideViewport: footerBounds.bottom <= window.innerHeight + 1,
+    };
+  });
+
+  expect(geometry.bodyCanScroll).toBe(true);
+  expect(geometry.bodyHeight).toBeGreaterThan(80);
+  expect(geometry.dialogOverflow).toBe("hidden");
+  expect(geometry.footerInsideDialog).toBe(true);
+  expect(geometry.footerInsideViewport).toBe(true);
+  await expectFixedDocument(page);
+});
+
 test("waiting room visual baselines cover the four layout modes", async ({ page, request }) => {
   const { host } = await createWaitingRoom(request);
 
@@ -483,13 +621,16 @@ test("waiting room visual baselines cover the four layout modes", async ({ page,
   }
 });
 
-async function createWaitingRoom(request: APIRequestContext): Promise<{
+async function createWaitingRoom(
+  request: APIRequestContext,
+  targetPlayerCount = 6,
+): Promise<{
   readonly host: { readonly token: string };
   readonly roomCode: string;
 }> {
   const host = await createApiPlayer(request, "host", "Responsive host");
   const room = await apiFetch<{ code: string }>(request, "/api/rooms", {
-    body: { displayName: host.displayName, targetPlayerCount: 6 },
+    body: { displayName: host.displayName, targetPlayerCount },
     method: "POST",
     token: host.token,
   });

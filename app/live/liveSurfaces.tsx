@@ -3,6 +3,7 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState } from "react";
 
+import { LanguageSwitcher } from "@/app/languageSwitcher";
 import {
   getLocalizedActionProgressLabel,
   getLocalizedRole,
@@ -98,6 +99,7 @@ type LiveEndedSurfaceProps = {
 
 type LiveEntrySurfaceProps = {
   readonly displayName: string;
+  readonly initialEntryMode: LiveEntryMode;
   readonly isBusy: boolean;
   readonly pendingAction: SetupPendingAction;
   readonly roomCodeInput: string;
@@ -180,6 +182,7 @@ function LivePopupDialog({
 
 export function LiveEntrySurface({
   displayName,
+  initialEntryMode,
   isBusy,
   pendingAction,
   roomCodeInput,
@@ -191,7 +194,7 @@ export function LiveEntrySurface({
   onRoomCodeChange,
   onTargetPlayerCountChange,
 }: LiveEntrySurfaceProps) {
-  const [entryMode, setEntryMode] = useState<LiveEntryMode>("create");
+  const [entryMode, setEntryMode] = useState<LiveEntryMode>(initialEntryMode);
   const roomCodeInputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const roomCodeDigits = Array.from({ length: 6 }, (unusedValue, index) => {
     void unusedValue;
@@ -413,7 +416,11 @@ export function LiveEntrySurface({
             >
               <div className="liveSetupField">
                 <span id="live-room-code-label">{t.live.setup.roomCode}</span>
-                <div className="liveSetupCodeGrid" aria-labelledby="live-room-code-label">
+                <div
+                  className="liveSetupCodeGrid"
+                  aria-labelledby="live-room-code-label"
+                  role="group"
+                >
                   {roomCodeDigits.map((digit, index) => (
                     <input
                       aria-label={t.live.setup.roomCodeDigit(index + 1)}
@@ -570,7 +577,7 @@ export function RoomInviteTools({
   const didCopyCurrentRoom = copiedRoomCode === summary.code;
 
   return (
-    <div className="liveInviteTools" aria-label={t.live.aria.roomInviteTools}>
+    <div className="liveInviteTools" aria-label={t.live.aria.roomInviteTools} role="group">
       <div className="liveInviteInlineContent">
         <RoomInviteContent
           didCopyCurrentRoom={didCopyCurrentRoom}
@@ -712,6 +719,7 @@ function CompactRoomInviteSummary({
       aria-label={t.live.aria.roomInviteTools}
       className="livePanel liveCompactInviteSummary"
       data-live-compact-invite
+      role="group"
     >
       <div className="liveCompactInviteHeader">
         <RoomInviteCode summary={summary} t={t} />
@@ -781,6 +789,7 @@ export function LiveWaitingSurface({
                     <span aria-hidden="true">⚙</span>
                   </button>
                 ) : null}
+                <LanguageSwitcher className="liveEmbeddedLanguageSwitcher" />
               </div>
             </div>
             <div className="liveWaitingPanel">
@@ -1000,7 +1009,7 @@ export function LivePlayingSurface({
         }
         surface="playing"
         utilities={
-          <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
+          <div className="livePopupActions" aria-label={t.live.aria.popupPanels} role="group">
             {nightConversation === null ? null : (
               <button className="secondaryButton" type="button" onClick={onOpenNightConversation}>
                 {t.live.buttons.nightChat}
@@ -1010,6 +1019,7 @@ export function LivePlayingSurface({
               {t.live.buttons.publicLog}
               <em>{publicEventCount}</em>
             </button>
+            <LanguageSwitcher className="liveEmbeddedLanguageSwitcher" />
           </div>
         }
       />
@@ -1088,7 +1098,11 @@ export function LiveEndedSurface({
               <strong>{t.live.effects.victory.title(winner)}</strong>
             </div>
             {selfResult === null ? null : (
-              <div className="livePlayPhaseCard" aria-label={t.live.effects.victory.resultLabel}>
+              <div
+                className="livePlayPhaseCard"
+                aria-label={t.live.effects.victory.resultLabel}
+                role="group"
+              >
                 <div>
                   <span>{t.live.effects.victory.resultLabel}</span>
                   <strong>{t.game.playerResult[selfResult]}</strong>
@@ -1099,11 +1113,12 @@ export function LiveEndedSurface({
         }
         surface="ended"
         utilities={
-          <div className="livePopupActions" aria-label={t.live.aria.popupPanels}>
+          <div className="livePopupActions" aria-label={t.live.aria.popupPanels} role="group">
             <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
               {t.live.buttons.publicLog}
               <em>{publicEventCount}</em>
             </button>
+            <LanguageSwitcher className="liveEmbeddedLanguageSwitcher" />
           </div>
         }
       />
@@ -1218,7 +1233,7 @@ function NightConversationPanel({
     trimmedDraft.length <= conversation.maxMessageLength;
 
   return (
-    <div className="liveNightChatPanel" aria-label={t.live.aria.nightConversation}>
+    <div className="liveNightChatPanel" aria-label={t.live.aria.nightConversation} role="region">
       <div className="liveNightChatHeader">
         <strong>{conversation.label[locale]}</strong>
         <em>{conversation.readOnly ? t.live.nightConversation.readOnly : t.game.phase.night}</em>

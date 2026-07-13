@@ -9,6 +9,43 @@ type BrowserPlayer = {
   readonly page: Page;
 };
 
+test("the language menu supports keyboard navigation and restores focus", async ({ page }) => {
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("jinrohWeb.locale", "en");
+  });
+  await page.goto("/live");
+
+  const toggle = page.getByRole("button", { name: "Language" });
+
+  await toggle.focus();
+  await toggle.press("Enter");
+
+  const menu = page.getByRole("menu", { name: "Language" });
+  const englishOption = menu.getByRole("menuitemradio", { name: "English" });
+  const japaneseOption = menu.getByRole("menuitemradio", { name: "Japanese" });
+
+  await expect(menu).toBeVisible();
+  const menuBounds = await menu.boundingBox();
+
+  expect(menuBounds?.y).toBeGreaterThanOrEqual(0);
+  expect((menuBounds?.x ?? 0) + (menuBounds?.width ?? 0)).toBeLessThanOrEqual(390);
+  await expect(englishOption).toBeFocused();
+  await englishOption.press("ArrowDown");
+  await expect(japaneseOption).toBeFocused();
+  await japaneseOption.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(toggle).toBeFocused();
+
+  await toggle.press("Enter");
+  await expect(englishOption).toBeFocused();
+  await englishOption.press("ArrowDown");
+  await japaneseOption.press("Enter");
+
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await expect(page.getByRole("button", { name: "言語" })).toBeFocused();
+});
+
 test("players can create, join, start, and finish first night through the UI", async ({
   browser,
 }) => {

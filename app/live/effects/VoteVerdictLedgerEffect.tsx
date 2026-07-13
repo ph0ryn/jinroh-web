@@ -55,7 +55,10 @@ export function VoteVerdictLedgerEffect({
         counters.forEach(setCounterToFinalValue);
         timeline
           .set(root, { autoAlpha: 0 })
-          .set([panel, ...rows, ...meters, footer, seal], { clearProps: "all" })
+          .set([panel, ...rows, footer, seal], { clearProps: "all" })
+          .set(meters, {
+            clearProps: "transform,transformOrigin,opacity,visibility",
+          })
           .to(root, { autoAlpha: 1, duration: 0.16, ease: "power1.out" })
           .to(root, { autoAlpha: 0, duration: 0.16, ease: "power1.in" }, "+=1.25");
 

@@ -30,7 +30,7 @@
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 48px;
   position: relative;
   z-index: 1;

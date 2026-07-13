@@ -560,7 +560,7 @@ export const jaLocalization = {
       notJoinable: "参加先の部屋には参加できません。現在の部屋にはそのまま残っています。",
       readyToJoin: "部屋に参加できます。",
       synced: (roomCode: string) => `部屋 ${roomCode} を更新しました。`,
-      syncFailed: "最新の部屋情報を取得できませんでした。表示が変わらない場合は更新してください。",
+      syncFailed: "最新の部屋情報を取得できませんでした。自動的に再試行します。",
       switchForbidden: (roomCode: string) =>
         `部屋 ${roomCode} はゲーム中です。ゲーム中は退出も部屋の切り替えもできません。`,
       switchForbiddenGeneric: "ゲーム中は退出も部屋の切り替えもできません。",

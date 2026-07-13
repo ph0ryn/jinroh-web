@@ -1438,10 +1438,12 @@ export default function LivePage() {
               <h1>{getLivePageTitle(roomSummary, t)}</h1>
               <p>{roomStatusLabel}</p>
             </div>
+            <LanguageSwitcher className="liveEmbeddedLanguageSwitcher liveEntryLanguageSwitcher" />
           </section>
           {isRoomEntryAvailable ? (
             <LiveEntrySurface
               displayName={displayName}
+              initialEntryMode={invitationRoomCode === null ? "create" : "join"}
               isBusy={isBusy}
               pendingAction={setupPendingAction}
               roomCodeInput={roomCodeInput}
@@ -1466,8 +1468,6 @@ export default function LivePage() {
           )}
         </>
       )}
-
-      <LanguageSwitcher />
 
       {canConfigureStartSettings ? (
         <StartSettingsDialog
