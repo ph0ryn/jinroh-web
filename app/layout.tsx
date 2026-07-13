@@ -6,8 +6,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 const siteDescription =
-  "Jinroh Web manages shared room and game state for in-person or voice-call werewolf games.";
-const siteTitle = "Jinroh Web";
+  "Jinroh Web keeps the hidden work of werewolf games in sync, so the conversation can stay at the table.";
+const siteTitle = "Jinroh Web — Keep the tension at the table";
 const siteUrl = getSiteUrl();
 
 export const metadata: Metadata = {
