@@ -28,7 +28,7 @@ export function getLiveMood(summary: RoomSummary | null): LiveMood {
 
 export function getLivePageTitle(summary: RoomSummary | null, t: Localization): string {
   if (summary === null) {
-    return t.live.page.roomSetup;
+    return t.live.page.roomEntry;
   }
 
   if (summary.status === "waiting") {
@@ -194,11 +194,7 @@ export function getActionButtonLabel(
   return action.presentation[locale].submitLabel;
 }
 
-export function formatRoomStatus(summary: RoomSummary | null, t: Localization): string {
-  if (summary === null) {
-    return t.live.roomStatus.noRoom;
-  }
-
+export function formatRoomStatus(summary: RoomSummary, t: Localization): string {
   if (summary.game?.status === "ended") {
     return t.home.panel.ended;
   }

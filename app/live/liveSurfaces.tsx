@@ -3,7 +3,6 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState } from "react";
 
-import { LanguageSwitcher } from "@/app/languageSwitcher";
 import {
   getLocalizedActionProgressLabel,
   getLocalizedRole,
@@ -789,7 +788,6 @@ export function LiveWaitingSurface({
                     <span aria-hidden="true">⚙</span>
                   </button>
                 ) : null}
-                <LanguageSwitcher className="liveEmbeddedLanguageSwitcher" />
               </div>
             </div>
             <div className="liveWaitingPanel">
@@ -1019,7 +1017,6 @@ export function LivePlayingSurface({
               {t.live.buttons.publicLog}
               <em>{publicEventCount}</em>
             </button>
-            <LanguageSwitcher className="liveEmbeddedLanguageSwitcher" />
           </div>
         }
       />
@@ -1118,7 +1115,6 @@ export function LiveEndedSurface({
               {t.live.buttons.publicLog}
               <em>{publicEventCount}</em>
             </button>
-            <LanguageSwitcher className="liveEmbeddedLanguageSwitcher" />
           </div>
         }
       />

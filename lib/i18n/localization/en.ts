@@ -539,7 +539,7 @@ export const enLocalization = {
     page: {
       result: "Result",
       room: (roomCode: string) => `Room ${roomCode}`,
-      roomSetup: "Room setup",
+      roomEntry: "Enter room",
     },
     player: {
       yourRole: "Your role",
@@ -579,7 +579,6 @@ export const enLocalization = {
       switchForbiddenGeneric: "You cannot leave or switch rooms while the game is in progress.",
     },
     roomStatus: {
-      noRoom: "No room",
       status: {
         ended: "Ended",
         playing: "Playing",

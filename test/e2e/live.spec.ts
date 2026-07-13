@@ -67,6 +67,7 @@ test("players can create, join, start, and finish first night through the UI", a
 
     await expect(inviteCode).toHaveText(/^\d{6}$/u);
     await expect(roundTable).toBeVisible();
+    await expect(host.page.locator(".languageSwitcher")).toHaveCount(0);
     await expect(roundTable.locator('[data-live-seat-state="occupied"]')).toHaveCount(1);
     await expect(roundTable.locator('[data-live-seat-state="empty"]')).toHaveCount(2);
     const roomCode = (await inviteCode.textContent())?.trim();

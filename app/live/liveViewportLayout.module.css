@@ -19,6 +19,8 @@
 }
 
 .entryShell {
+  --live-entry-max-width: 1180px;
+
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -27,13 +29,16 @@
 }
 
 .entryHeader {
-  align-items: center;
+  align-items: start;
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(0, 1fr) auto;
+  justify-self: center;
   min-height: 48px;
+  padding-inline-end: 60px;
   position: relative;
-  z-index: 1;
+  width: min(100%, var(--live-entry-max-width));
+  z-index: 3;
 }
 
 .entrySurface {

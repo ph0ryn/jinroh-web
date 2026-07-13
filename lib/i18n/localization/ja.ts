@@ -522,7 +522,7 @@ export const jaLocalization = {
     page: {
       result: "結果",
       room: (roomCode: string) => `部屋 ${roomCode}`,
-      roomSetup: "部屋準備",
+      roomEntry: "入室",
     },
     player: {
       yourRole: "あなたの役職",
@@ -566,7 +566,6 @@ export const jaLocalization = {
       switchForbiddenGeneric: "ゲーム中は退出も部屋の切り替えもできません。",
     },
     roomStatus: {
-      noRoom: "部屋なし",
       status: {
         ended: "終了",
         playing: "進行中",

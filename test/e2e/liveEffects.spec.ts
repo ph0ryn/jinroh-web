@@ -195,11 +195,7 @@ test("role, phase, vote, death, and victory effects play once in game order", as
   );
   await expect(page.locator("[data-live-effect-announcement]")).toBeEmpty();
   await expect(page.getByRole("button", { name: "Leave room" })).toBeVisible({ timeout: 8_000 });
-  await page.getByRole("button", { name: "Language" }).click();
-  await page.getByRole("menuitemradio", { name: "Japanese" }).click();
-  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
-  await expect(page.getByLabel("あなたの結果")).toBeVisible();
-  await expect(page.getByRole("button", { exact: true, name: "部屋を退出" })).toBeVisible();
+  await expect(page.locator(".languageSwitcher")).toHaveCount(0);
   expect(consoleErrors).toEqual([]);
 });
 

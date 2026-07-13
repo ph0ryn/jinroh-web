@@ -1293,7 +1293,6 @@ export default function LivePage() {
 
   const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
   const selfActions = isCurrentRoomParticipant ? (roomSummary.self?.actions ?? []) : [];
-  const roomStatusLabel = formatRoomStatus(roomSummary, t);
   const canConfigureStartSettings =
     isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "waiting";
   const canLeaveRoom =
@@ -1364,7 +1363,7 @@ export default function LivePage() {
         copiedRoomCode={copiedInviteRoomCode}
         isBusy={isBusy}
         isSettingsOpen={isStartSettingsOpen}
-        roomStatusLabel={roomStatusLabel}
+        roomStatusLabel={formatRoomStatus(roomSummary, t)}
         roomUrl={roomInviteUrl}
         summary={roomSummary}
         t={t}
@@ -1433,12 +1432,19 @@ export default function LivePage() {
         />
       ) : (
         <>
-          <section className={`liveHero ${liveViewportStyles["entryHeader"]}`}>
-            <div className="liveHeroTitle">
-              <h1>{getLivePageTitle(roomSummary, t)}</h1>
-              <p>{roomStatusLabel}</p>
+          <section
+            className={`liveHero ${liveViewportStyles["entryHeader"]}`}
+            data-live-entry-header
+          >
+            <div className="liveHeroTitle liveEntryBrand">
+              <h1>Jinroh Web</h1>
             </div>
-            <LanguageSwitcher className="liveEmbeddedLanguageSwitcher liveEntryLanguageSwitcher" />
+            <div className="liveHeroTitle liveEntryStatus">
+              <h2>{getLivePageTitle(roomSummary, t)}</h2>
+            </div>
+            {isRoomEntryAvailable ? (
+              <LanguageSwitcher className="liveEmbeddedLanguageSwitcher liveEntryLanguageSwitcher" />
+            ) : null}
           </section>
           {isRoomEntryAvailable ? (
             <LiveEntrySurface
@@ -1458,8 +1464,7 @@ export default function LivePage() {
           ) : (
             <section className="livePanel liveRoomPanel" aria-label={t.live.aria.roomState}>
               <div className="livePanelHeading">
-                <span>{t.live.page.roomSetup}</span>
-                <strong>{roomStatusLabel}</strong>
+                <span>{t.live.page.roomEntry}</span>
               </div>
               <div className="liveEmptyState compact" role="status">
                 <strong>{t.live.room.checkingCurrent}</strong>

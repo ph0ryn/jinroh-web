@@ -159,6 +159,12 @@ a {
   top: calc(100% + 8px);
 }
 
+.liveEntryLanguageSwitcher {
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  position: absolute;
+}
+
 .languageSwitcherMenu button {
   align-items: center;
   background: transparent;
@@ -1528,6 +1534,28 @@ a {
   text-align: right;
 }
 
+.liveHeroTitle.liveEntryBrand {
+  justify-self: start;
+  min-width: 0;
+  text-align: left;
+}
+
+.liveEntryBrand h1 {
+  letter-spacing: -0.035em;
+}
+
+.liveHeroTitle.liveEntryStatus {
+  justify-self: end;
+  text-align: right;
+}
+
+.liveEntryStatus h2 {
+  font-size: clamp(0.78rem, 1.1vw, 0.92rem);
+  line-height: 1.15;
+  margin: 0;
+  white-space: nowrap;
+}
+
 .liveKicker {
   color: var(--live-accent);
   font-size: 0.8rem;
@@ -1553,7 +1581,7 @@ a {
   align-self: center;
   display: grid;
   gap: 18px;
-  width: min(100%, 1180px);
+  width: min(100%, var(--live-entry-max-width));
 }
 
 .liveSetupActionGrid {
@@ -1930,14 +1958,6 @@ a {
 .livePopupActions > button {
   min-width: 0;
   justify-content: space-between;
-}
-
-.livePopupActions:has(.liveEmbeddedLanguageSwitcher) {
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)) 48px;
-}
-
-.livePopupActions .liveEmbeddedLanguageSwitcher {
-  grid-column: -2 / -1;
 }
 
 .livePopupActions em {

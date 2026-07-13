@@ -80,6 +80,36 @@ test("entry keeps the page fixed and combines portrait mode selection with its p
   await expectFixedDocument(page);
 });
 
+test("entry language control stays pinned to the header top-right in every layout", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("jinrohWeb.locale", "en");
+  });
+  await page.goto("/live");
+
+  const entryHeader = page.locator("[data-live-entry-header]");
+
+  await expect(entryHeader.locator("h1")).toHaveText("Jinroh Web");
+  await expect(entryHeader.locator(".liveEntryStatus h2")).toHaveText("Enter room");
+
+  for (const viewport of VIEWPORT_CASES) {
+    await page.setViewportSize(viewport);
+    await expectEntryLanguageControlPinned(page);
+    await expectFixedDocument(page);
+  }
+
+  for (const viewport of [
+    { height: 568, width: 320 },
+    { height: 375, width: 667 },
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await page.getByRole("button", { name: "Language" }).click();
+    await expectLanguageMenuWithinViewport(page);
+    await page.keyboard.press("Escape");
+  }
+});
+
 test("an invite URL opens the prefilled join panel on portrait layouts", async ({
   page,
   request,
@@ -226,13 +256,7 @@ test("waiting room satisfies the blocking responsive viewport matrix", async ({
       ),
     ).toBe(true);
 
-    const languageButton = page.getByRole("button", { exact: true, name: "Language" });
-    const languageBox = await languageButton.boundingBox();
-
-    await expect(languageButton).toBeVisible();
-    expect(languageBox?.width).toBeGreaterThanOrEqual(44);
-    expect(languageBox?.height).toBeGreaterThanOrEqual(44);
-    expect(rectanglesOverlap(languageBox, settingsBox)).toBe(false);
+    await expect(page.locator(".languageSwitcher")).toHaveCount(0);
 
     if (viewport.mode === "tablet-landscape-desktop" && viewport.height >= 600) {
       const invitePanelBox = await page.locator(".liveInviteDetailsPanel").boundingBox();
@@ -481,6 +505,7 @@ test("playing keeps phase, primary action, and utilities visible on phone layout
     expect(visibility).toEqual({ primary: true, status: true, utilities: true });
     await expect(page.locator("[data-live-action-submit]")).toBeVisible();
     await expect(page.getByRole("button", { name: "Public log" })).toBeVisible();
+    await expect(page.locator(".languageSwitcher")).toHaveCount(0);
     await expectFixedDocument(page);
   }
 });
@@ -665,6 +690,91 @@ async function expectFixedDocument(page: Page): Promise<void> {
   expect(geometry.scrollY).toBe(0);
   expect(geometry.overflowX).toBeLessThanOrEqual(1);
   expect(geometry.overflowY).toBeLessThanOrEqual(1);
+}
+
+async function expectEntryLanguageControlPinned(page: Page): Promise<void> {
+  const geometry = await page.locator("[data-live-entry-header]").evaluate((header) => {
+    const control = header.querySelector<HTMLElement>(".liveEntryLanguageSwitcher");
+    const status = header.querySelector<HTMLElement>(".liveEntryStatus");
+    const title = header.querySelector<HTMLElement>(".liveEntryBrand");
+    const surface = document.querySelector<HTMLElement>(".liveEntrySurface");
+
+    if (control === null || status === null || title === null || surface === null) {
+      throw new Error("Entry header controls were not rendered.");
+    }
+
+    const headerBounds = header.getBoundingClientRect();
+    const controlBounds = control.getBoundingClientRect();
+    const statusBounds = status.getBoundingClientRect();
+    const surfaceBounds = surface.getBoundingClientRect();
+    const titleBounds = title.getBoundingClientRect();
+
+    return {
+      controlInsideHeader:
+        controlBounds.top >= headerBounds.top - 1 && controlBounds.right <= headerBounds.right + 1,
+      leftWidthDelta: Math.abs(headerBounds.left - surfaceBounds.left),
+      rightDelta: Math.abs(headerBounds.right - controlBounds.right),
+      rightWidthDelta: Math.abs(headerBounds.right - surfaceBounds.right),
+      statusOverlapsControl: !(
+        statusBounds.right <= controlBounds.left ||
+        controlBounds.right <= statusBounds.left ||
+        statusBounds.bottom <= controlBounds.top ||
+        controlBounds.bottom <= statusBounds.top
+      ),
+      titleOverlapsStatus: !(
+        titleBounds.right <= statusBounds.left ||
+        statusBounds.right <= titleBounds.left ||
+        titleBounds.bottom <= statusBounds.top ||
+        statusBounds.bottom <= titleBounds.top
+      ),
+      titleInset: Math.abs(titleBounds.left - headerBounds.left),
+      titleOverlapsControl: !(
+        titleBounds.right <= controlBounds.left ||
+        controlBounds.right <= titleBounds.left ||
+        titleBounds.bottom <= controlBounds.top ||
+        controlBounds.bottom <= titleBounds.top
+      ),
+      topDelta: Math.abs(headerBounds.top - controlBounds.top),
+    };
+  });
+
+  expect(geometry.controlInsideHeader).toBe(true);
+  expect(geometry.leftWidthDelta).toBeLessThanOrEqual(1);
+  expect(geometry.rightDelta).toBeLessThanOrEqual(1);
+  expect(geometry.rightWidthDelta).toBeLessThanOrEqual(1);
+  expect(geometry.statusOverlapsControl).toBe(false);
+  expect(geometry.titleInset).toBeLessThanOrEqual(1);
+  expect(geometry.titleOverlapsControl).toBe(false);
+  expect(geometry.titleOverlapsStatus).toBe(false);
+  expect(geometry.topDelta).toBeLessThanOrEqual(1);
+}
+
+async function expectLanguageMenuWithinViewport(page: Page): Promise<void> {
+  const menu = page.getByRole("menu", { name: "Language" });
+
+  await expect(menu).toBeVisible();
+  const geometry = await menu.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+
+    return {
+      bottom: bounds.bottom,
+      left: bounds.left,
+      menuIsTopmost:
+        document
+          .elementFromPoint(bounds.left + bounds.width / 2, bounds.top + 8)
+          ?.closest(".languageSwitcherMenu") === element,
+      right: bounds.right,
+      top: bounds.top,
+      viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.menuIsTopmost).toBe(true);
+  expect(geometry.top).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
+  expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewportHeight);
 }
 
 function rectanglesOverlap(
