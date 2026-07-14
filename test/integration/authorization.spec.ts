@@ -74,16 +74,14 @@ test("maintenance cleanup requires its dedicated server credential", async ({ re
   expect(missing).toMatchObject({ body: { error: { code: "unauthorized" } }, status: 401 });
   expect(wrong).toMatchObject({ body: { error: { code: "unauthorized" } }, status: 401 });
 
-  if (process.env["E2E_BASE_URL"] === undefined) {
-    const authorized = await readJsonResponse<{ readonly expiredRooms: number }>(request, path, {
-      body: { limit: 1 },
-      method: "POST",
-      token: "jinroh-e2e-maintenance-secret-32-bytes-minimum",
-    });
+  const authorized = await readJsonResponse<{ readonly expiredRooms: number }>(request, path, {
+    body: { limit: 1 },
+    method: "POST",
+    token: "jinroh-e2e-maintenance-secret-32-bytes-minimum",
+  });
 
-    expect(authorized.status).toBe(200);
-    expect(authorized.body.expiredRooms).toBeGreaterThanOrEqual(0);
-  }
+  expect(authorized.status).toBe(200);
+  expect(authorized.body.expiredRooms).toBeGreaterThanOrEqual(0);
 });
 
 test("room mutations enforce membership, host ownership, and the accepted game revision", async ({

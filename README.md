@@ -229,15 +229,9 @@ Deployment order:
 3. Configure the production environment variables in the host.
 4. Build with `pnpm run build`.
 5. Deploy the app.
-6. Run focused smoke checks against an isolated disposable preview when needed.
-   The repository integration and browser suites write test data, so they must
-   never target production. Remote writes require an explicit opt-in:
-
-```sh
-E2E_BASE_URL=https://isolated-preview.example \
-E2E_ALLOW_REMOTE_WRITES=1 \
-pnpm run test:browser
-```
+6. Run focused smoke checks against the local test stack when needed. The
+   repository integration and browser suites write test data, so do not run
+   them against production data.
 
 If using scheduled cleanup, call `/api/maintenance/expire-waiting-rooms` from a
 trusted cron job with `Authorization: Bearer <MAINTENANCE_SECRET>`. The secret
@@ -262,14 +256,14 @@ and presentation helpers. Database tests require the local Supabase stack;
 
 Playwright has separate `integration` and `browser` projects under
 `test/integration/` and `test/browser/`. Both use one reproducible local
-lifecycle through Playwright's `webServer`: read and validate the loopback-only
-Supabase environment, reset the database, build the application, start
-`next start`, and stop it after the run. Run `pnpm run test:all` for unit,
-pgTAP, integration, and browser coverage with one Playwright server lifecycle.
+lifecycle through Playwright's `webServer`: reset the database, build the
+application, start `next start`, and stop it after the run. Run
+`pnpm run test:all` for unit, pgTAP, integration, and browser coverage with one
+Playwright server lifecycle.
 Local Playwright commands share and reset the same database, so do not run them
 concurrently.
 
-See `test/README.md` for fixture, remote-preview, and assertion guidance.
+See `test/README.md` for fixture and assertion guidance.
 
 ## Architecture
 

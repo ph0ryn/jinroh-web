@@ -385,10 +385,10 @@ composite phase integrity, complete submitted/missing core and role-action
 history, RPC privileges, fixed `search_path` values, and authenticated Realtime
 RLS behavior.
 
-The E2E server obtains its database URL and keys from `supabase status -o json`,
-requires a literal loopback API URL, and injects those values into both build and
-runtime. It does not inherit `.env.local`, which prevents accidental resets or
-writes against a remote project.
+The Playwright server is local-only: it resets the local database, builds the
+application, and starts `next start` on `127.0.0.1:3010`. The application uses
+the documented `.env.local` values. The authorization fixture reads only the
+public Realtime URL and anon key from `supabase status -o json`.
 
 ## Change checklist
 

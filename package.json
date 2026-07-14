@@ -16,7 +16,7 @@
     "precommit": "pnpm run fix && eslint",
     "start": "next start",
     "test": "pnpm run test:unit",
-    "test:all": "pnpm run test:unit && E2E_RUN_DATABASE_TESTS=1 playwright test",
+    "test:all": "pnpm run test:unit && pnpm run test:db && playwright test",
     "test:browser": "playwright test --project=browser",
     "test:db": "supabase test db",
     "test:integration": "playwright test --project=integration",

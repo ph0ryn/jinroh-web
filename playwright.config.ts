@@ -1,33 +1,14 @@
+import { execFileSync } from "node:child_process";
+
 import { defineConfig } from "playwright/test";
 
-import { readLocalTestEnvironment } from "./test/fixtures/environment";
-
-const externalBaseUrl = readExternalBaseUrl();
-const port = readPort();
-const localBaseUrl = `http://127.0.0.1:${port}`;
-const shouldRunDatabaseTests = process.env["E2E_RUN_DATABASE_TESTS"] === "1";
-const isListCommand = process.argv.includes("--list");
-const localEnvironment =
-  externalBaseUrl === undefined && !isListCommand
-    ? {
-        ...readLocalTestEnvironment(),
-        MAINTENANCE_SECRET:
-          process.env["MAINTENANCE_SECRET"] ?? "jinroh-e2e-maintenance-secret-32-bytes-minimum",
-        NEXT_TELEMETRY_DISABLED: "1",
-      }
-    : undefined;
+const localBaseUrl = "http://127.0.0.1:3010";
+const localSupabaseEnvironment = readLocalSupabaseEnvironment();
 const localServerCommand = [
   "pnpm run db:reset",
-  ...(shouldRunDatabaseTests ? ["pnpm run test:db"] : []),
   "pnpm run build",
-  `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
+  "pnpm exec next start --hostname 127.0.0.1 --port 3010",
 ].join(" && ");
-
-if (externalBaseUrl !== undefined && shouldRunDatabaseTests) {
-  throw new Error(
-    "test:all includes local database checks and cannot target a remote preview. Run test:integration or test:browser explicitly for an isolated remote preview.",
-  );
-}
 
 export default defineConfig({
   expect: {
@@ -51,52 +32,50 @@ export default defineConfig({
   testDir: "./test",
   timeout: 60_000,
   use: {
-    baseURL: externalBaseUrl ?? localBaseUrl,
+    baseURL: localBaseUrl,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "retain-on-failure",
   },
-  webServer:
-    externalBaseUrl === undefined
-      ? {
-          command: localServerCommand,
-          env: localEnvironment,
-          gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
-          reuseExistingServer: false,
-          timeout: 420_000,
-          url: `${localBaseUrl}/live`,
-        }
-      : undefined,
+  webServer: {
+    command: localServerCommand,
+    env: {
+      ...localSupabaseEnvironment,
+      MAINTENANCE_SECRET:
+        process.env["MAINTENANCE_SECRET"] ?? "jinroh-e2e-maintenance-secret-32-bytes-minimum",
+      NEXT_TELEMETRY_DISABLED: "1",
+    },
+    gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
+    reuseExistingServer: false,
+    timeout: 420_000,
+    url: `${localBaseUrl}/live`,
+  },
   workers: 1,
 });
 
-function readExternalBaseUrl(): string | undefined {
-  const value = process.env["E2E_BASE_URL"]?.trim();
+function readLocalSupabaseEnvironment() {
+  const status = JSON.parse(
+    execFileSync("pnpm", ["exec", "supabase", "status", "-o", "json"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    }),
+  ) as Record<string, unknown>;
+  const apiUrl = readStatusValue(status, "API_URL");
 
-  if (value === undefined || value === "") {
-    return undefined;
-  }
-
-  if (process.env["E2E_ALLOW_REMOTE_WRITES"] !== "1") {
-    throw new Error(
-      "Remote E2E writes are disabled. Set E2E_ALLOW_REMOTE_WRITES=1 only for an isolated preview environment.",
-    );
-  }
-
-  const url = new URL(value);
-
-  if (!["http:", "https:"].includes(url.protocol) || url.href !== `${url.origin}/`) {
-    throw new Error("E2E_BASE_URL must be an HTTP origin without credentials or a path.");
-  }
-
-  return url.origin;
+  return {
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: readStatusValue(status, "ANON_KEY"),
+    NEXT_PUBLIC_SUPABASE_URL: apiUrl,
+    SUPABASE_JWT_SECRET: readStatusValue(status, "JWT_SECRET"),
+    SUPABASE_SERVICE_ROLE_KEY: readStatusValue(status, "SERVICE_ROLE_KEY"),
+    SUPABASE_URL: apiUrl,
+  };
 }
 
-function readPort(): number {
-  const value = Number(process.env["E2E_PORT"] ?? 3010);
+function readStatusValue(status: Record<string, unknown>, key: string): string {
+  const value = status[key];
 
-  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
-    throw new Error("E2E_PORT must be an integer between 1 and 65535.");
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Local Supabase status did not provide ${key}.`);
   }
 
   return value;

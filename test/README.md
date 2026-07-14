@@ -32,33 +32,16 @@ pnpm run test:all
 expects the local Supabase stack and current migrations to be ready.
 
 `test:integration` and `test:browser` run the corresponding Playwright project.
-For local runs, the configuration reads `supabase status -o json`, rejects a
-non-loopback Supabase API URL, and passes the local credentials to Playwright's
-`webServer`. The server command resets Supabase, builds the application, starts
-`next start`, and is stopped by Playwright when the run finishes. Override the
-application port with `E2E_PORT` when another service uses 3010.
+For local runs, Playwright's `webServer` resets Supabase, builds the application,
+starts `next start` on port 3010, and stops it when the run finishes.
 
-`test:all` runs Vitest and then invokes Playwright once for both projects. Its
-local `webServer` lifecycle resets Supabase, runs pgTAP, builds once, and starts
-one application server for the Playwright run.
+`test:all` runs Vitest, pgTAP, and then invokes Playwright once for both projects.
+Its local `webServer` lifecycle resets Supabase, builds once, and starts one
+application server for the Playwright run.
 
 Local Playwright commands reset and write to the same Supabase stack. Do not run
 them concurrently, and do not use a local database that contains data you need
 to preserve.
-
-## Remote previews
-
-The Playwright suites create identities and rooms. They refuse every remote
-base URL unless destructive writes are explicitly authorized:
-
-```sh
-E2E_BASE_URL=https://isolated-preview.example \
-E2E_ALLOW_REMOTE_WRITES=1 \
-pnpm run test:browser
-```
-
-Use only an isolated disposable preview. Never point these suites at production.
-Remote runs do not reset a database, build the application, or start a server.
 
 ## Assertion boundaries
 

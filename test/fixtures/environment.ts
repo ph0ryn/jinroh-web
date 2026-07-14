@@ -1,24 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { isIP } from "node:net";
 
-const E2E_ACCOUNT_TOKEN_HASH_SECRET = "amlucm9oLWUyZS1hY2NvdW50LXRva2VuLXNlY3JldCE=";
-
 export async function getPublicSupabaseEnvironment(): Promise<{
   readonly anonKey: string;
   readonly url: string;
 }> {
-  if (process.env["E2E_BASE_URL"]?.trim()) {
-    const url = process.env["NEXT_PUBLIC_SUPABASE_URL"];
-    const anonKey = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
-
-    if (url === undefined || anonKey === undefined) {
-      throw new Error("Remote public Supabase test environment is not configured.");
-    }
-
-    return { anonKey, url };
-  }
-
-  const localEnvironment = readLocalTestEnvironment();
+  const localEnvironment = readLocalSupabasePublicEnvironment();
 
   return {
     anonKey: localEnvironment.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -26,7 +13,7 @@ export async function getPublicSupabaseEnvironment(): Promise<{
   };
 }
 
-export function readLocalTestEnvironment() {
+function readLocalSupabasePublicEnvironment() {
   const status: unknown = JSON.parse(
     execFileSync("pnpm", ["exec", "supabase", "status", "-o", "json"], {
       encoding: "utf8",
@@ -50,12 +37,8 @@ export function readLocalTestEnvironment() {
   }
 
   return {
-    ACCOUNT_TOKEN_HASH_SECRET: E2E_ACCOUNT_TOKEN_HASH_SECRET,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
     NEXT_PUBLIC_SUPABASE_URL: apiUrl,
-    SUPABASE_JWT_SECRET: readRequiredStatusValue(status, "JWT_SECRET"),
-    SUPABASE_SERVICE_ROLE_KEY: readRequiredStatusValue(status, "SERVICE_ROLE_KEY"),
-    SUPABASE_URL: apiUrl,
   };
 }
 
