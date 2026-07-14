@@ -387,8 +387,8 @@ RLS behavior.
 
 The Playwright server is local-only: it resets the local database, builds the
 application, and starts `next start` on `127.0.0.1:3010`. The application uses
-the documented `.env.local` values. The authorization fixture reads only the
-public Realtime URL and anon key from `supabase status -o json`.
+the documented `.env.local` values. Playwright tests exercise the application
+through its HTTP and browser boundaries.
 
 ## Change checklist
 
