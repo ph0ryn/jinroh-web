@@ -16,7 +16,7 @@
     "postinstall": "git config core.hooksPath .githooks",
     "lint": "eslint && oxlint --type-aware --type-check",
     "lint:db": "supabase db lint --local",
-    "precommit": "pnpm run fix && eslint",
+    "precommit": "pnpm run fix && eslint && pnpm run test:unit",
     "start": "next start",
     "test": "pnpm run --aggregate-output /^test:/",
     "test:e2e": "pnpm run db:reset && pnpm run db:test && playwright test",
