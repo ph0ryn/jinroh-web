@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import {
   isActionKey,
   isActionKind,
@@ -582,9 +584,10 @@ function assignRoles(players: readonly EnginePlayer[], ruleSet: RuleSet): RoleAs
   const roleDeck = getRoleIds().flatMap((roleId) =>
     Array.from({ length: ruleSet.roleCounts[roleId] ?? 0 }, () => roleId),
   );
-  const shuffledRoleDeck = stableShuffle(roleDeck, players.map((player) => player.id).join(":"));
+  const shuffledRoleDeck = secureShuffleRoleDeck(roleDeck);
+  const canonicalPlayers = players.toSorted((left, right) => compareIds(left.id, right.id));
 
-  return players.map((player, index) => {
+  return canonicalPlayers.map((player, index) => {
     const roleId = shuffledRoleDeck[index];
 
     if (roleId === undefined) {
@@ -596,6 +599,33 @@ function assignRoles(players: readonly EnginePlayer[], ruleSet: RuleSet): RoleAs
       roleId,
     };
   });
+}
+
+function secureShuffleRoleDeck(roleDeck: readonly RoleId[]): RoleId[] {
+  const shuffledRoleDeck = [...roleDeck];
+
+  for (let currentIndex = shuffledRoleDeck.length - 1; currentIndex > 0; currentIndex -= 1) {
+    const swapIndex = randomInt(currentIndex + 1);
+    const currentRoleId = shuffledRoleDeck[currentIndex];
+    const swapRoleId = shuffledRoleDeck[swapIndex];
+
+    if (currentRoleId === undefined || swapRoleId === undefined) {
+      throw new Error("Role deck does not match player count.");
+    }
+
+    shuffledRoleDeck[currentIndex] = swapRoleId;
+    shuffledRoleDeck[swapIndex] = currentRoleId;
+  }
+
+  return shuffledRoleDeck;
+}
+
+function compareIds(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+
+  return left < right ? -1 : 1;
 }
 
 function stableShuffle<Item>(items: readonly Item[], salt: string): Item[] {

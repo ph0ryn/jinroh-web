@@ -338,6 +338,10 @@ Room が開始されるとき:
 - joined Player 数は Room の目標参加人数と一致しなければならない
 - Room は `playing` に変わる
 - RuleSet と role assignment が固定される
+- role assignment は application server の暗号学的に安全で偏りのない乱数を使い、
+  Player の参加順に依存する偏りを持たない
+- 開始 transaction が失敗した場合は role assignment を一切保存せず、再試行では現在の固定候補
+  roster に対して新しい assignment を生成する
 - GameState が First night として開始する
 - game-started event が記録される
 - 状態が変わったことをルームメンバーへ通知する

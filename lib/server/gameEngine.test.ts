@@ -1,4 +1,17 @@
+import { randomInt } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("node:crypto", async (importOriginal) => {
+  const original = await importOriginal<
+    Record<string, unknown> & { randomInt: typeof randomInt }
+  >();
+
+  return {
+    ...original,
+    randomInt: vi.fn(original.randomInt),
+  };
+});
 
 import { roleRegistry } from "./game/roles";
 import {
@@ -123,6 +136,93 @@ describe("game engine", () => {
       "Unsupported first-night-started effect",
     );
     spy.mockRestore();
+  });
+
+  it("uses secure Fisher-Yates draws and ignores the input player order", () => {
+    const secureRandomIntMock = vi.mocked(randomInt);
+    const originalImplementation = secureRandomIntMock.getMockImplementation();
+    const draws = [1, 3, 0, 2, 1, 0, 1, 3, 0, 2, 1, 0];
+    const maxExclusiveValues: number[] = [];
+
+    secureRandomIntMock.mockImplementation((maxExclusive) => {
+      const draw = draws.shift();
+
+      if (draw === undefined || draw >= maxExclusive) {
+        throw new Error("Invalid test entropy.");
+      }
+
+      maxExclusiveValues.push(maxExclusive);
+      return draw;
+    });
+
+    try {
+      const firstResult = startGame(PLAYERS, makeDefaultRuleSetForPlayers(PLAYERS.length));
+      const reversedResult = startGame(
+        [...PLAYERS].reverse(),
+        makeDefaultRuleSetForPlayers(PLAYERS.length),
+      );
+
+      expect(firstResult.ok).toBe(true);
+      expect(reversedResult.ok).toBe(true);
+
+      if (firstResult.ok && reversedResult.ok) {
+        expect(reversedResult.assignments).toEqual(firstResult.assignments);
+        expect(firstResult.assignments.map((assignment) => assignment.playerId)).toEqual([
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+        ]);
+      }
+
+      expect(maxExclusiveValues).toEqual([6, 5, 4, 3, 2, 4, 6, 5, 4, 3, 2, 4]);
+    } finally {
+      if (originalImplementation === undefined) {
+        secureRandomIntMock.mockReset();
+      } else {
+        secureRandomIntMock.mockImplementation(originalImplementation);
+      }
+    }
+  });
+
+  it("does not derive repeatable assignments from player ids", () => {
+    const secureRandomIntMock = vi.mocked(randomInt);
+    const originalImplementation = secureRandomIntMock.getMockImplementation();
+
+    try {
+      secureRandomIntMock.mockImplementation(() => 0);
+      const firstResult = startGame(PLAYERS, makeDefaultRuleSetForPlayers(PLAYERS.length));
+
+      secureRandomIntMock.mockImplementation((maxExclusive) => maxExclusive - 1);
+      const secondResult = startGame(PLAYERS, makeDefaultRuleSetForPlayers(PLAYERS.length));
+
+      expect(firstResult.ok).toBe(true);
+      expect(secondResult.ok).toBe(true);
+
+      if (firstResult.ok && secondResult.ok) {
+        expect(secondResult.assignments).not.toEqual(firstResult.assignments);
+        expect(
+          firstResult.assignments.reduce<Record<string, number>>((counts, assignment) => {
+            counts[assignment.roleId] = (counts[assignment.roleId] ?? 0) + 1;
+            return counts;
+          }, {}),
+        ).toEqual(
+          Object.fromEntries(
+            Object.entries(firstResult.ruleSet.roleCounts).filter(
+              ([, count]) => count !== undefined && count > 0,
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (originalImplementation === undefined) {
+        secureRandomIntMock.mockReset();
+      } else {
+        secureRandomIntMock.mockImplementation(originalImplementation);
+      }
+    }
   });
 
   it("creates role-scoped werewolf attack but excludes madman from attack owners", () => {
