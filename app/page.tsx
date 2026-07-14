@@ -1,13 +1,11 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import styles from "./landingPage.module.css";
 
 import type { ReactNode } from "react";
 
-type IconName = "play" | "wolf";
-
 type IconProps = {
-  readonly name: IconName;
   readonly size?: number;
 };
 
@@ -20,7 +18,7 @@ export default function Page() {
       <header className={styles["header"]}>
         <Link className={styles["brand"]} href="/" aria-label="Jinroh Web home">
           <span className={styles["brandMark"]}>
-            <Icon name="wolf" size={20} />
+            <Image alt="" aria-hidden="true" height={32} src="/images/jinroh-mark.png" width={32} />
           </span>
           <span className={styles["brandName"]}>
             <strong>Jinroh</strong>
@@ -44,7 +42,7 @@ export default function Page() {
           </p>
           <Link className={styles["playButton"]} href="/live" aria-label="Play Jinroh Web">
             <span className={styles["playButtonCore"]}>
-              <Icon name="play" size={24} />
+              <PlayIcon size={24} />
             </span>
             <span>PLAY</span>
           </Link>
@@ -65,26 +63,10 @@ export default function Page() {
   );
 }
 
-function Icon({ name, size = 24 }: IconProps): ReactNode {
+function PlayIcon({ size = 24 }: IconProps): ReactNode {
   return (
     <svg aria-hidden="true" fill="none" height={size} viewBox="0 0 24 24" width={size}>
-      {getIconContent(name)}
+      <path d="m9 6 9 6-9 6V6Z" fill="currentColor" stroke="none" />
     </svg>
   );
-}
-
-function getIconContent(name: IconName): ReactNode {
-  switch (name) {
-    case "play":
-      return <path d="m9 6 9 6-9 6V6Z" fill="currentColor" stroke="none" />;
-    case "wolf":
-      return (
-        <>
-          <path d="m5 4 4 2 3-3 3 3 4-2-1 7c-.3 4-3 7-6 9-3-2-5.7-5-6-9L5 4Z" />
-          <path d="m9 12 1.5 1M15 12l-1.5 1M10 16h4" />
-        </>
-      );
-    default:
-      return null;
-  }
 }

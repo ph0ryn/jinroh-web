@@ -71,7 +71,11 @@
   width: 39px;
 }
 
-.brandMark svg,
+.brandMark img,
+.playButtonCore svg {
+  display: block;
+}
+
 .playButtonCore svg {
   stroke: currentColor;
   stroke-linecap: round;
