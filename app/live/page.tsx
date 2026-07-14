@@ -1452,7 +1452,7 @@ export default function LivePage() {
           {isRoomEntryAvailable ? (
             <LiveEntrySurface
               displayName={displayName}
-              initialEntryMode={invitationRoomCode === null ? "create" : "join"}
+              initialEntryMode="join"
               isBusy={isBusy}
               pendingAction={setupPendingAction}
               roomCodeInput={roomCodeInput}

@@ -46,6 +46,27 @@ test("the language menu supports keyboard navigation and restores focus", async 
   await expect(page.getByRole("button", { name: "言語" })).toBeFocused();
 });
 
+test("room entry defaults to joining and lists joining before creation", async ({ page }) => {
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("jinrohWeb.locale", "en");
+  });
+  await page.goto("/live");
+
+  const entrySurface = page.locator("[data-live-entry-mode]");
+  const entryModeButtons = page
+    .getByRole("group", {
+      name: "Choose how to enter a room",
+    })
+    .getByRole("button");
+
+  await expect(entrySurface).toHaveAttribute("data-live-entry-mode", "join");
+  await expect(entryModeButtons).toHaveText(["Join with code", "Create a room"]);
+  await expect(entryModeButtons.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-live-entry-panel="join"]')).toBeVisible();
+  await expect(page.locator('[data-live-entry-panel="create"]')).toBeHidden();
+});
+
 test("players can create, join, start, and finish first night through the UI", async ({
   browser,
 }) => {

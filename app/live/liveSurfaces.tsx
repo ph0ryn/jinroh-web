@@ -336,14 +336,6 @@ export function LiveEntrySurface({
             role="group"
           >
             <button
-              aria-pressed={entryMode === "create"}
-              className={entryMode === "create" ? liveViewportStyles["entryModeActive"] : undefined}
-              type="button"
-              onClick={() => setEntryMode("create")}
-            >
-              {t.live.setup.createTitle}
-            </button>
-            <button
               aria-pressed={entryMode === "join"}
               className={entryMode === "join" ? liveViewportStyles["entryModeActive"] : undefined}
               type="button"
@@ -351,52 +343,15 @@ export function LiveEntrySurface({
             >
               {t.live.setup.joinTitle}
             </button>
-          </div>
-
-          <article className="liveSetupPanel" data-live-entry-panel="create">
-            <div className="liveSetupPanelHeader">
-              <div>
-                <p className="liveSetupPanelKicker">{t.live.setup.host}</p>
-                <h3>{t.live.setup.createPanelTitle}</h3>
-              </div>
-              <div className="liveSetupPanelIcon" aria-hidden="true">
-                +
-              </div>
-            </div>
-            <form
-              className="liveSetupPanelBody"
-              aria-busy={pendingAction === "create"}
-              onSubmit={handleCreateSubmit}
+            <button
+              aria-pressed={entryMode === "create"}
+              className={entryMode === "create" ? liveViewportStyles["entryModeActive"] : undefined}
+              type="button"
+              onClick={() => setEntryMode("create")}
             >
-              <label className="liveSetupField">
-                {t.live.setup.players}
-                <select
-                  disabled={isBusy}
-                  value={targetPlayerCount}
-                  onChange={(event) => onTargetPlayerCountChange(Number(event.target.value))}
-                  onKeyDown={handleCreateFieldKeyDown}
-                >
-                  {PLAYER_COUNT_OPTIONS.map((playerCount) => (
-                    <option key={playerCount} value={playerCount}>
-                      {playerCount}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="liveSetupHint">{t.live.setup.createHint}</p>
-              <div className="liveSetupButtonRow">
-                <button
-                  className="liveSetupButton liveSetupButtonPrimary"
-                  type="submit"
-                  disabled={isBusy}
-                >
-                  {pendingAction === "create"
-                    ? t.live.buttons.creatingRoom
-                    : t.live.buttons.createRoom}
-                </button>
-              </div>
-            </form>
-          </article>
+              {t.live.setup.createTitle}
+            </button>
+          </div>
 
           <article className="liveSetupPanel" data-live-entry-panel="join">
             <div className="liveSetupPanelHeader">
@@ -460,6 +415,51 @@ export function LiveEntrySurface({
                   disabled={isJoinDisabled}
                 >
                   {pendingAction === "join" ? t.live.buttons.joiningRoom : t.live.buttons.joinRoom}
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <article className="liveSetupPanel" data-live-entry-panel="create">
+            <div className="liveSetupPanelHeader">
+              <div>
+                <p className="liveSetupPanelKicker">{t.live.setup.host}</p>
+                <h3>{t.live.setup.createPanelTitle}</h3>
+              </div>
+              <div className="liveSetupPanelIcon" aria-hidden="true">
+                +
+              </div>
+            </div>
+            <form
+              className="liveSetupPanelBody"
+              aria-busy={pendingAction === "create"}
+              onSubmit={handleCreateSubmit}
+            >
+              <label className="liveSetupField">
+                {t.live.setup.players}
+                <select
+                  disabled={isBusy}
+                  value={targetPlayerCount}
+                  onChange={(event) => onTargetPlayerCountChange(Number(event.target.value))}
+                  onKeyDown={handleCreateFieldKeyDown}
+                >
+                  {PLAYER_COUNT_OPTIONS.map((playerCount) => (
+                    <option key={playerCount} value={playerCount}>
+                      {playerCount}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="liveSetupHint">{t.live.setup.createHint}</p>
+              <div className="liveSetupButtonRow">
+                <button
+                  className="liveSetupButton liveSetupButtonPrimary"
+                  type="submit"
+                  disabled={isBusy}
+                >
+                  {pendingAction === "create"
+                    ? t.live.buttons.creatingRoom
+                    : t.live.buttons.createRoom}
                 </button>
               </div>
             </form>
