@@ -153,8 +153,15 @@ Role assignment は、ゲーム開始時に実行する。
 
 - 開始時の Player 集合を固定 game roster とし、開始後に membership history から
   assignment や alive state を追加、削除、補完しない
-- Role assignment は Player ID を基準に行う
+- Role assignment は Player ID で正規化した固定 roster を基準に行い、呼び出し元の配列順や
+  join 順に依存させない
+- Role deck は application server の暗号学的乱数を使った unbiased Fisher-Yates shuffle で
+  並べ替え、Player ID や Account ID から疑似乱数 seed を導出しない
 - Account ID は使わない
+- assignment、乱数、seed 相当の内部状態を public response、Realtime、event payload、log に
+  含めない
+- Room 開始 transaction が失敗した場合は assignment を保存しない。再試行では最新の固定候補
+  roster に対して新しく shuffle し、transaction が成功した最初の assignment だけを固定する
 - ゲーム終了前の割り当て結果は各 Player にのみ秘密情報として見せる
 - game status と Room status がともに `ended` になる前は、公開 room state に他人の役職を
   含めない

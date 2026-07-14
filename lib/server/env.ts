@@ -1,12 +1,17 @@
 import "server-only";
+import {
+  readApplicationServerEnvironment,
+  readMaintenanceSecret,
+  readSupabaseJwtSecret,
+  validateServerEnvironment,
+} from "./serverEnvironment.mjs";
 
 type ServerEnv = {
   accountTokenHashSecret: Uint8Array;
+  rateLimitTrustedClientIpHeader: string | null;
   supabaseServiceRoleKey: string;
   supabaseUrl: string;
 };
-
-const STANDARD_BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
 let cachedEnv: ServerEnv | null = null;
 
@@ -15,59 +20,19 @@ export function getServerEnv(): ServerEnv {
     return cachedEnv;
   }
 
-  const supabaseUrl = readRequiredEnv("SUPABASE_URL");
-  const supabaseServiceRoleKey = readRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const secretText = readRequiredEnv("ACCOUNT_TOKEN_HASH_SECRET");
-  const decodedSecret = decodeStandardBase64HmacKey(secretText);
-
-  cachedEnv = {
-    accountTokenHashSecret: decodedSecret,
-    supabaseServiceRoleKey,
-    supabaseUrl,
-  };
+  cachedEnv = readApplicationServerEnvironment(process.env);
 
   return cachedEnv;
 }
 
+export function validateServerEnv(): void {
+  validateServerEnvironment(process.env);
+}
+
 export function getSupabaseJwtSecret(): string {
-  return readRequiredEnv("SUPABASE_JWT_SECRET");
+  return readSupabaseJwtSecret(process.env);
 }
 
 export function getMaintenanceSecret(): string {
-  const maintenanceSecret = readRequiredEnv("MAINTENANCE_SECRET");
-
-  if (Buffer.byteLength(maintenanceSecret, "utf8") < 32) {
-    throw new Error("MAINTENANCE_SECRET must contain at least 32 bytes.");
-  }
-
-  return maintenanceSecret;
-}
-
-function readRequiredEnv(key: string): string {
-  const value = process.env[key];
-
-  if (value === undefined || value.trim() === "") {
-    throw new Error(`${key} is required.`);
-  }
-
-  return value;
-}
-
-function decodeStandardBase64HmacKey(secretText: string): Uint8Array {
-  if (
-    secretText.length % 4 !== 0 ||
-    !STANDARD_BASE64_PATTERN.test(secretText) ||
-    secretText.includes("-") ||
-    secretText.includes("_")
-  ) {
-    throw new Error("ACCOUNT_TOKEN_HASH_SECRET must be standard base64.");
-  }
-
-  const decodedSecret = Buffer.from(secretText, "base64");
-
-  if (decodedSecret.byteLength !== 32 || decodedSecret.toString("base64") !== secretText) {
-    throw new Error("ACCOUNT_TOKEN_HASH_SECRET must decode to exactly 32 bytes.");
-  }
-
-  return decodedSecret;
+  return readMaintenanceSecret(process.env);
 }

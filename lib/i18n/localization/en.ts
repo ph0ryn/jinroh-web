@@ -4,6 +4,10 @@ export const enLocalization = {
       bad_request: "The request could not be accepted.",
       conflict: "The room state changed. Refresh and try again.",
       not_found: "The room could not be found.",
+      rate_limited: (retryAfterSeconds: number | null) =>
+        retryAfterSeconds === null
+          ? "Too many attempts. Wait before trying again."
+          : `Too many attempts. Try again in ${retryAfterSeconds} seconds.`,
       server_error: "Something went wrong. Try again in a moment.",
       unauthorized: "Your saved seat expired. Create a room or join again.",
       unknown: "The request failed.",
@@ -604,6 +608,11 @@ export const enLocalization = {
       roomCodeDigit: (index: number) => `Room code digit ${index}`,
       useIdentityHint: "Other players will see this name during the game.",
       yourSeat: "Your seat",
+    },
+    storageUnavailable: {
+      body: "Jinroh Web cannot safely keep your anonymous seat because this browser is blocking local storage. Enable site storage or leave private browsing, then reload this page.",
+      kicker: "Browser setup",
+      title: "Browser storage is required",
     },
     settings: {
       dayMode: {

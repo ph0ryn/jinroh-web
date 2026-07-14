@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import {
   isActionKey,
   isActionKind,
@@ -582,9 +584,10 @@ function assignRoles(players: readonly EnginePlayer[], ruleSet: RuleSet): RoleAs
   const roleDeck = getRoleIds().flatMap((roleId) =>
     Array.from({ length: ruleSet.roleCounts[roleId] ?? 0 }, () => roleId),
   );
-  const shuffledRoleDeck = stableShuffle(roleDeck, players.map((player) => player.id).join(":"));
+  const shuffledRoleDeck = secureShuffleRoleDeck(roleDeck);
+  const canonicalPlayers = players.toSorted((left, right) => compareIds(left.id, right.id));
 
-  return players.map((player, index) => {
+  return canonicalPlayers.map((player, index) => {
     const roleId = shuffledRoleDeck[index];
 
     if (roleId === undefined) {
@@ -598,25 +601,31 @@ function assignRoles(players: readonly EnginePlayer[], ruleSet: RuleSet): RoleAs
   });
 }
 
-function stableShuffle<Item>(items: readonly Item[], salt: string): Item[] {
-  return [...items]
-    .map((item, index) => ({
-      item,
-      sortKey: hashString(`${salt}:${index}:${String(item)}`),
-    }))
-    .sort((left, right) => left.sortKey - right.sortKey)
-    .map(({ item }) => item);
-}
+function secureShuffleRoleDeck(roleDeck: readonly RoleId[]): RoleId[] {
+  const shuffledRoleDeck = [...roleDeck];
 
-function hashString(value: string): number {
-  let hash = 2166136261;
+  for (let currentIndex = shuffledRoleDeck.length - 1; currentIndex > 0; currentIndex -= 1) {
+    const swapIndex = randomInt(currentIndex + 1);
+    const currentRoleId = shuffledRoleDeck[currentIndex];
+    const swapRoleId = shuffledRoleDeck[swapIndex];
 
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+    if (currentRoleId === undefined || swapRoleId === undefined) {
+      throw new Error("Role deck does not match player count.");
+    }
+
+    shuffledRoleDeck[currentIndex] = swapRoleId;
+    shuffledRoleDeck[swapIndex] = currentRoleId;
   }
 
-  return hash >>> 0;
+  return shuffledRoleDeck;
+}
+
+function compareIds(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+
+  return left < right ? -1 : 1;
 }
 
 function normalizeEngineRuleSet(ruleSetInput: RuleSetInput | null, playerCount: number): RuleSet {
@@ -1409,10 +1418,12 @@ function createOrderedSpeechSlots(
   dayNumber: number,
   ruleSet: RuleSet,
 ): OrderedSpeechSlot[] {
-  const orderedPlayerIds = stableShuffle(
-    alivePlayers.map((player) => player.playerId),
-    `speech:${dayNumber}:${alivePlayers.map((player) => player.playerId).join(":")}`,
-  );
+  const fixedPlayerIds = alivePlayers.map((player) => player.playerId);
+  const startIndex = fixedPlayerIds.length === 0 ? 0 : randomInt(fixedPlayerIds.length);
+  const orderedPlayerIds = [
+    ...fixedPlayerIds.slice(startIndex),
+    ...fixedPlayerIds.slice(0, startIndex),
+  ];
   const rounds = dayNumber === 1 ? ruleSet.firstDaySpeechRounds : ruleSet.normalDaySpeechRounds;
 
   return [...Array(rounds).keys()].flatMap((roundIndex) =>

@@ -158,11 +158,14 @@
 - Playing 中の phase は night、day、voting、execution のいずれかになる
 - Room ごとに open な phase instance は最大1件で、current game state は
   その instance の phase、counter、開始時刻、deadline と一致する
+- application server は phase duration 秒を渡し、DB transaction の時計から開始時刻と
+  deadline を一緒に固定する
 - Day は ready check と ordered speech のどちらかで進行できる
 - ready check day は全生存 Player の ready action で Voting に進む
 - ready check day は最大で Day 開始時点の生存人数 x
   `dayReadyCheckSecondsPerPlayer` で Voting に進む
-- ordered speech day はランダム開始位置の発言順を一度だけ作る
+- ordered speech day は固定 game roster の Player 順を保ち、暗号学的乱数で選んだ開始位置から
+  cyclic rotation した発言順を一度だけ作る
 - ordered speech day は最初の Day に `firstDaySpeechRounds`、それ以降は
   `normalDaySpeechRounds` を使う
 - ordered speech day の発言時間はデフォルト90秒になる

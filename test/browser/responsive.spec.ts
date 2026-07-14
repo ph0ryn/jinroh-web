@@ -4,6 +4,31 @@ import { expect, test } from "../fixtures/test";
 
 import type { Page } from "playwright/test";
 
+test("short landscape landing keeps the header separate and play reachable", async ({ page }) => {
+  await page.setViewportSize({ height: 375, width: 667 });
+  await page.goto("/");
+
+  const header = page.locator("header");
+  const brand = header.getByRole("link", { name: "Jinroh Web home", exact: true });
+  const status = header.locator(":scope > span");
+  const playLink = page.getByRole("link", { name: "Play Jinroh Web", exact: true });
+  const [brandBounds, statusBounds] = await Promise.all([
+    brand.boundingBox(),
+    status.boundingBox(),
+  ]);
+
+  expect(brandBounds).not.toBeNull();
+  expect(statusBounds).not.toBeNull();
+  expect(rectanglesIntersect(requireBounds(brandBounds), requireBounds(statusBounds))).toBe(false);
+  await expect(playLink).toBeVisible();
+  await expectNoHorizontalDocumentOverflow(page);
+
+  await page.setViewportSize({ height: 188, width: 334 });
+  await playLink.scrollIntoViewIfNeeded();
+  await expect(playLink).toBeVisible();
+  await expectNoHorizontalDocumentOverflow(page);
+});
+
 test("the 320px entry surface remains operable without document overflow", async ({
   live,
   page,
@@ -116,4 +141,35 @@ async function expectNoDocumentOverflow(page: Page): Promise<void> {
   expect(overflow.scrollY).toBe(0);
   expect(overflow.overflowX).toBeLessThanOrEqual(1);
   expect(overflow.overflowY).toBeLessThanOrEqual(1);
+}
+
+async function expectNoHorizontalDocumentOverflow(page: Page): Promise<void> {
+  const overflow = await readDocumentOverflow(page);
+
+  expect(overflow.scrollX).toBe(0);
+  expect(overflow.overflowX).toBeLessThanOrEqual(1);
+}
+
+type Bounds = {
+  readonly height: number;
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
+};
+
+function requireBounds(bounds: Bounds | null): Bounds {
+  if (bounds === null) {
+    throw new Error("Expected a visible element with layout bounds.");
+  }
+
+  return bounds;
+}
+
+function rectanglesIntersect(first: Bounds, second: Bounds): boolean {
+  return !(
+    first.x + first.width <= second.x ||
+    second.x + second.width <= first.x ||
+    first.y + first.height <= second.y ||
+    second.y + second.height <= first.y
+  );
 }

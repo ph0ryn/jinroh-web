@@ -390,6 +390,148 @@ begin
 end;
 $$;
 
+create function public.app_consume_rate_limits(p_rules jsonb)
+returns table (allowed boolean, retry_after_seconds integer)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_allowed boolean := true;
+  v_available_tokens numeric;
+  v_cleanup_now timestamptz := clock_timestamp();
+  v_now timestamptz;
+  v_retry_after_seconds integer := 0;
+  v_rule record;
+begin
+  if p_rules is null
+    or jsonb_typeof(p_rules) <> 'array'
+    or jsonb_array_length(p_rules) < 1
+    or jsonb_array_length(p_rules) > 12
+  then
+    raise exception using errcode = '22023', message = 'invalid_rate_limit_rules';
+  end if;
+
+  if (
+    select count(*) <> count(distinct rules.value ->> 'key')
+    from jsonb_array_elements(p_rules) as rules(value)
+  ) then
+    raise exception using errcode = '22023', message = 'duplicate_rate_limit_rule';
+  end if;
+
+  delete from private.rate_limit_buckets as buckets
+  using (
+    select expired.ctid
+    from private.rate_limit_buckets as expired
+    where expired.expires_at <= v_cleanup_now
+    order by expired.expires_at, expired.bucket_key
+    limit 50
+    for update skip locked
+  ) as cleanup_candidates
+  where buckets.ctid = cleanup_candidates.ctid;
+
+  for v_rule in
+    select
+      rules.value ->> 'key' as bucket_key,
+      (rules.value ->> 'capacity')::integer as capacity,
+      (rules.value ->> 'refillSeconds')::integer as refill_seconds
+    from jsonb_array_elements(p_rules) as rules(value)
+    order by rules.value ->> 'key'
+  loop
+    if v_rule.bucket_key is null
+      or v_rule.bucket_key !~ '^[A-Za-z0-9_-]{43}$'
+      or v_rule.capacity is null
+      or v_rule.capacity < 1
+      or v_rule.capacity > 10000
+      or v_rule.refill_seconds is null
+      or v_rule.refill_seconds < 1
+      or v_rule.refill_seconds > 604800
+    then
+      raise exception using errcode = '22023', message = 'invalid_rate_limit_rule';
+    end if;
+
+    insert into private.rate_limit_buckets (
+      bucket_key,
+      tokens,
+      updated_at,
+      expires_at
+    )
+    values (
+      v_rule.bucket_key,
+      v_rule.capacity,
+      v_cleanup_now,
+      v_cleanup_now + make_interval(secs => v_rule.refill_seconds * 2)
+    )
+    on conflict (bucket_key) do nothing;
+
+    perform buckets.bucket_key
+    from private.rate_limit_buckets as buckets
+    where buckets.bucket_key = v_rule.bucket_key
+    for update;
+  end loop;
+
+  -- A transaction may wait while acquiring a bucket lock. Fix the decision
+  -- timestamp only after every lock is held so updated_at never moves backward.
+  v_now := clock_timestamp();
+
+  for v_rule in
+    select
+      rules.value ->> 'key' as bucket_key,
+      (rules.value ->> 'capacity')::integer as capacity,
+      (rules.value ->> 'refillSeconds')::integer as refill_seconds
+    from jsonb_array_elements(p_rules) as rules(value)
+    order by rules.value ->> 'key'
+  loop
+    select least(
+      v_rule.capacity::numeric,
+      buckets.tokens
+        + greatest(extract(epoch from (v_now - buckets.updated_at)), 0)
+          * v_rule.capacity::numeric
+          / v_rule.refill_seconds::numeric
+    )
+    into v_available_tokens
+    from private.rate_limit_buckets as buckets
+    where buckets.bucket_key = v_rule.bucket_key;
+
+    if v_available_tokens < 1 then
+      v_allowed := false;
+      v_retry_after_seconds := greatest(
+        v_retry_after_seconds,
+        ceil(
+          (1 - v_available_tokens)
+          * v_rule.refill_seconds::numeric
+          / v_rule.capacity::numeric
+        )::integer,
+        1
+      );
+    end if;
+  end loop;
+
+  for v_rule in
+    select
+      rules.value ->> 'key' as bucket_key,
+      (rules.value ->> 'capacity')::integer as capacity,
+      (rules.value ->> 'refillSeconds')::integer as refill_seconds
+    from jsonb_array_elements(p_rules) as rules(value)
+    order by rules.value ->> 'key'
+  loop
+    update private.rate_limit_buckets as buckets
+    set tokens = least(
+          v_rule.capacity::numeric,
+          buckets.tokens
+            + greatest(extract(epoch from (v_now - buckets.updated_at)), 0)
+              * v_rule.capacity::numeric
+              / v_rule.refill_seconds::numeric
+        ) - case when v_allowed then 1 else 0 end,
+        updated_at = v_now,
+        expires_at = v_now + make_interval(secs => v_rule.refill_seconds * 2)
+    where buckets.bucket_key = v_rule.bucket_key;
+  end loop;
+
+  return query select v_allowed, v_retry_after_seconds;
+end;
+$$;
+
 create function public.app_authenticate_account(p_token_hash text)
 returns table (account_id bigint)
 language plpgsql
@@ -419,6 +561,55 @@ begin
     );
 
   return query select v_account_id;
+end;
+$$;
+
+create function public.app_classify_room_lookup(
+  p_account_id bigint,
+  p_room_code text
+)
+returns table (access_kind text)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_room_id bigint;
+begin
+  select rooms.id
+  into v_room_id
+  from public.rooms as rooms
+  where rooms.public_room_code = btrim(p_room_code)
+  order by
+    exists (
+      select 1
+      from public.players as players
+      where players.room_id = rooms.id
+        and players.account_id = p_account_id
+        and players.left_at is null
+    ) desc,
+    case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
+    rooms.created_at desc,
+    rooms.id desc
+  limit 1;
+
+  if not found then
+    return query select 'not_found'::text;
+    return;
+  end if;
+
+  if exists (
+    select 1
+    from public.players as players
+    where players.room_id = v_room_id
+      and players.account_id = p_account_id
+      and players.left_at is null
+  ) then
+    return query select 'member'::text;
+  else
+    return query select 'outsider'::text;
+  end if;
 end;
 $$;
 
@@ -1837,7 +2028,11 @@ $$;
 
 revoke all on function public.app_create_identity(text, text)
   from public, anon, authenticated;
+revoke all on function public.app_consume_rate_limits(jsonb)
+  from public, anon, authenticated;
 revoke all on function public.app_authenticate_account(text)
+  from public, anon, authenticated;
+revoke all on function public.app_classify_room_lookup(bigint, text)
   from public, anon, authenticated;
 revoke all on function public.app_create_room(bigint, text, integer, timestamptz)
   from public, anon, authenticated;
@@ -1866,7 +2061,9 @@ revoke all on function public.app_read_room_runtime_snapshot(bigint, bigint, tex
   from public, anon, authenticated;
 
 grant execute on function public.app_create_identity(text, text) to service_role;
+grant execute on function public.app_consume_rate_limits(jsonb) to service_role;
 grant execute on function public.app_authenticate_account(text) to service_role;
+grant execute on function public.app_classify_room_lookup(bigint, text) to service_role;
 grant execute on function public.app_create_room(bigint, text, integer, timestamptz)
   to service_role;
 grant execute on function public.app_join_room(bigint, text, text) to service_role;

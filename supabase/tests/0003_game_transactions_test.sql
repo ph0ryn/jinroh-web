@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(89);
+select plan(91);
 
 create temporary table test_game_accounts (
   label text primary key,
@@ -112,8 +112,7 @@ select
   rooms.public_room_code as room_code,
   gen_random_uuid() as night_phase_instance_id,
   gen_random_uuid() as day_phase_instance_id,
-  statement_timestamp() + interval '1 hour' as night_phase_ends_at,
-  statement_timestamp() + interval '2 hours' as day_phase_ends_at
+  statement_timestamp() + interval '1 hour' as night_phase_ends_at
 from public.rooms as rooms
 where rooms.id = (select room_id from test_game_calls where label = 'room_create');
 
@@ -267,7 +266,7 @@ as $$
     fixture.room_code,
     p_expected_player_ids,
     fixture.night_phase_instance_id,
-    fixture.night_phase_ends_at,
+    30,
     '{"villager":2,"werewolf":1}'::jsonb,
     p_options,
     p_resolved_role_setup,
@@ -561,6 +560,11 @@ from pg_temp.test_start_game(
   pg_temp.test_start_events()
 ) as started;
 
+update test_game_fixture as fixture
+set night_phase_ends_at = states.phase_ends_at
+from public.game_states as states
+where states.room_id = fixture.room_id;
+
 select is(
   (select notification_reason from test_game_calls where label = 'game_start'),
   'game_started',
@@ -584,6 +588,16 @@ select is(
   ),
   '(playing,playing,night,0,1,1,0)',
   'game start persists one coherent initial game state'
+);
+
+select is(
+  (
+    select extract(epoch from (phase_ends_at - phase_started_at))
+    from public.game_states
+    where room_id = (select room_id from test_game_fixture)
+  ),
+  30::numeric,
+  'game start derives the exact phase deadline from the database transaction clock'
 );
 
 select ok(
@@ -1380,7 +1394,7 @@ select is(
       '[]'::jsonb,
       'day',
       (select day_phase_instance_id from test_game_fixture),
-      (select day_phase_ends_at from test_game_fixture),
+      270,
       1,
       1,
       '[]'::jsonb,
@@ -1413,7 +1427,7 @@ select throws_ok(
       '[]'::jsonb,
       'day',
       gen_random_uuid(),
-      (select day_phase_ends_at from test_game_fixture),
+      270,
       99,
       99,
       '[]'::jsonb,
@@ -1439,7 +1453,7 @@ select throws_ok(
       '[]'::jsonb,
       'night',
       gen_random_uuid(),
-      (select night_phase_ends_at from test_game_fixture),
+      180,
       0,
       1,
       '[]'::jsonb,
@@ -1469,7 +1483,7 @@ from public.app_resolve_phase(
   '[]'::jsonb,
   'day',
   (select day_phase_instance_id from test_game_fixture),
-  (select day_phase_ends_at from test_game_fixture),
+  270,
   1,
   1,
   jsonb_build_array(
@@ -1524,6 +1538,16 @@ select is(
   ),
   '(day,1,1,2,0)',
   'phase resolution atomically installs the next phase revision'
+);
+
+select is(
+  (
+    select extract(epoch from (phase_ends_at - phase_started_at))
+    from public.game_states
+    where room_id = (select room_id from test_game_fixture)
+  ),
+  270::numeric,
+  'phase resolution derives the exact next deadline from the database transaction clock'
 );
 
 select is(
@@ -2011,9 +2035,7 @@ select
   rooms.id as room_id,
   rooms.public_room_code as room_code,
   gen_random_uuid() as night_phase_instance_id,
-  gen_random_uuid() as follow_up_phase_instance_id,
-  statement_timestamp() + interval '1 hour' as night_phase_ends_at,
-  statement_timestamp() + interval '2 hours' as follow_up_phase_ends_at
+  gen_random_uuid() as follow_up_phase_instance_id
 from public.rooms as rooms
 where rooms.id = (select room_id from test_post_death_room_create);
 
@@ -2030,7 +2052,7 @@ cross join lateral public.app_start_room(
       and players.left_at is null
   ),
   fixture.night_phase_instance_id,
-  fixture.night_phase_ends_at,
+  30,
   '{"avenger":1,"villager":1,"werewolf":1}'::jsonb,
   pg_temp.test_options(),
   jsonb_build_object(
@@ -2118,7 +2140,7 @@ cross join lateral public.app_resolve_phase(
   '[]'::jsonb,
   'night',
   fixture.follow_up_phase_instance_id,
-  fixture.follow_up_phase_ends_at,
+  180,
   0,
   1,
   jsonb_build_array(
@@ -2309,8 +2331,7 @@ create temporary table test_private_revision_fixture as
 select
   rooms.id as room_id,
   rooms.public_room_code as room_code,
-  gen_random_uuid() as phase_instance_id,
-  statement_timestamp() + interval '1 hour' as phase_ends_at
+  gen_random_uuid() as phase_instance_id
 from public.rooms as rooms
 where rooms.id = (
   select room_id
@@ -2396,7 +2417,7 @@ cross join lateral public.app_start_room(
     from test_private_revision_accounts
   ),
   fixture.phase_instance_id,
-  fixture.phase_ends_at,
+  30,
   '{"madman":1,"villager":1,"werewolf":2}'::jsonb,
   pg_temp.test_options(),
   pg_temp.test_private_resolved_role_setup(),

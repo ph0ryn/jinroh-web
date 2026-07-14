@@ -6,6 +6,7 @@ allowBuilds:
 
 catalog:
   '@gsap/react': ^2.1.2
+  '@next/env': ^16.2.10
   '@stylistic/eslint-plugin': ^5.10.0
   '@supabase/supabase-js': ^2.110.0
   '@types/node': ^26.1.0
@@ -35,5 +36,10 @@ catalogMode: strict
 enablePrePostScripts: true
 
 minimumReleaseAge: 2880
+
+# Keep the transitive build dependency above the patched security floor until
+# Next.js no longer resolves PostCSS below 8.5.10.
+overrides:
+  postcss: 8.5.16
 
 shellEmulator: true

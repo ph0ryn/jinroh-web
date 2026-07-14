@@ -8,6 +8,7 @@ export type ApiErrorCode =
   | "current_room_exists"
   | "forbidden"
   | "not_found"
+  | "rate_limited"
   | "room_expired"
   | "room_full"
   | "room_not_found"

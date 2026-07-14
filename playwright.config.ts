@@ -2,8 +2,9 @@ import { defineConfig } from "playwright/test";
 
 const localBaseUrl = "http://127.0.0.1:3010";
 const localServerCommand = [
+  "export RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER=x-test-client-ip",
   "pnpm run build",
-  "pnpm exec next start --hostname 127.0.0.1 --port 3010",
+  "pnpm run start --hostname 127.0.0.1 --port 3010",
 ].join(" && ");
 
 export default defineConfig({
@@ -29,6 +30,7 @@ export default defineConfig({
   timeout: 60_000,
   use: {
     baseURL: localBaseUrl,
+    extraHTTPHeaders: { "x-test-client-ip": "192.0.2.254" },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "retain-on-failure",

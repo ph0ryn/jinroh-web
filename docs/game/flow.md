@@ -287,7 +287,8 @@ First night が終わったら、`status` は `playing` のまま、`phase` は 
 
 Night の基本ルール。
 
-- phase 開始時に終了予定時刻を決める
+- application server は phase の duration 秒だけを transaction へ渡し、DB は同じ
+  transaction の `clock_timestamp()` を開始時刻の正本として終了予定時刻を決める
 - Role ごとの night current action を作る
 - 夜会話 group の対象 Player には night conversation を表示できる
 - 受理済み pending action は current action ごとに固定する
@@ -360,7 +361,8 @@ ready for voting slot
 基本ルール。
 
 - Day 開始時点の生存 Player から発言順を作る
-- 開始位置はランダムに決める
+- 固定 game roster における Player 順を保ち、開始位置だけを application server の
+  暗号学的乱数で決めて cyclic rotation する。Player 全体を shuffle しない
 - 全周分の発言 plan を一度だけ永続化し、その Day の間固定する
 - 1人あたりの発言時間は `daySpeechSeconds`
 - `daySpeechSeconds` のデフォルトは90秒
@@ -370,7 +372,8 @@ ready for voting slot
 - 後続 slot の発言者が死亡済みなら、その slot を飛ばして次の生存者へ進む
 - すべての発言 slot が終わったら Voting に移行する
 
-発言順のランダム開始位置は、Day 開始時に一度だけ決める。
+発言順のランダム開始位置は、Day 開始時に一度だけ決める。全員が開始位置から固定順に
+1周するため、どの開始位置でも隣接関係と1周あたりの発言回数は変わらない。
 再接続、再描画、Realtime 再送で順番を作り直さない。
 同じ Day 内で発言 slot や Role action window が切り替わって phase instance が
 更新されても、全 slot を含む元の plan を次の instance へそのまま保存する。

@@ -186,7 +186,10 @@ export async function createBrowserPlayer(
   browser: Browser,
   player: ApiPlayer,
 ): Promise<BrowserPlayer> {
-  const context = await browser.newContext({ viewport: { height: 720, width: 1280 } });
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "x-test-client-ip": "192.0.2.253" },
+    viewport: { height: 720, width: 1280 },
+  });
   const page = await context.newPage();
   const live = new LivePage(page);
 

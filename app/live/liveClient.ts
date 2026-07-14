@@ -24,15 +24,27 @@ type RealtimeInvalidationPayload = {
 
 type RealtimeSubscriptionSnapshot = Pick<RealtimeSubscription, "scope" | "topic">;
 
+const STORAGE_PROBE_KEY = "jinrohWeb.__storageProbe";
+const STORAGE_PROBE_VALUE = "available";
+
 class ApiRequestError extends Error {
   readonly code: string;
+  readonly retryAfterSeconds: number | null;
   readonly status: number;
 
-  constructor(message: string, status: number, code: string) {
+  constructor(message: string, status: number, code: string, retryAfterSeconds: number | null) {
     super(message);
     this.name = "ApiRequestError";
     this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
     this.status = status;
+  }
+}
+
+export class BrowserStorageUnavailableError extends Error {
+  constructor() {
+    super("Browser storage is unavailable.");
+    this.name = "BrowserStorageUnavailableError";
   }
 }
 
@@ -58,7 +70,12 @@ export async function apiFetch<Body>(path: string, options: RequestOptions): Pro
   if (!response.ok) {
     const apiError = extractApiError(json, response.status);
 
-    throw new ApiRequestError(apiError.message, response.status, apiError.code);
+    throw new ApiRequestError(
+      apiError.message,
+      response.status,
+      apiError.code,
+      parseRetryAfterSeconds(response.headers.get("retry-after")),
+    );
   }
 
   return json as Body;
@@ -74,6 +91,12 @@ export function isApiRequestErrorCode(error: unknown, code: string): boolean {
 
 export function isUnauthorizedRequestError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status === 401;
+}
+
+export function isBrowserStorageUnavailableError(
+  error: unknown,
+): error is BrowserStorageUnavailableError {
+  return error instanceof BrowserStorageUnavailableError;
 }
 
 export async function writeClipboardText(text: string): Promise<boolean> {
@@ -165,18 +188,66 @@ export function readStorage(key: string): string | null {
     return null;
   }
 
-  return window.localStorage.getItem(key);
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    throw new BrowserStorageUnavailableError();
+  }
 }
 
 export function writeStorage(key: string, value: string): void {
-  if (typeof window !== "undefined") {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
     window.localStorage.setItem(key, value);
+  } catch {
+    throw new BrowserStorageUnavailableError();
   }
 }
 
 export function removeStorage(key: string): void {
-  if (typeof window !== "undefined") {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
     window.localStorage.removeItem(key);
+  } catch {
+    throw new BrowserStorageUnavailableError();
+  }
+}
+
+export function verifyBrowserStorageAccess(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const previousValue = window.localStorage.getItem(STORAGE_PROBE_KEY);
+
+    window.localStorage.setItem(STORAGE_PROBE_KEY, STORAGE_PROBE_VALUE);
+
+    if (window.localStorage.getItem(STORAGE_PROBE_KEY) !== STORAGE_PROBE_VALUE) {
+      return false;
+    }
+
+    window.localStorage.removeItem(STORAGE_PROBE_KEY);
+
+    if (previousValue !== null) {
+      window.localStorage.setItem(STORAGE_PROBE_KEY, previousValue);
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function assertBrowserStorageAccess(): void {
+  if (!verifyBrowserStorageAccess()) {
+    throw new BrowserStorageUnavailableError();
   }
 }
 
@@ -225,6 +296,8 @@ function formatApiError(error: ApiRequestError, t: Localization): string {
       return t.live.room.currentExists;
     case "not_found":
       return t.api.errors.not_found;
+    case "rate_limited":
+      return t.api.errors.rate_limited(error.retryAfterSeconds);
     case "room_expired":
       return t.live.room.expired;
     case "room_full":
@@ -242,6 +315,16 @@ function formatApiError(error: ApiRequestError, t: Localization): string {
     default:
       return t.api.errors.unknown;
   }
+}
+
+function parseRetryAfterSeconds(value: string | null): number | null {
+  if (value === null || !/^\d+$/u.test(value)) {
+    return null;
+  }
+
+  const seconds = Number(value);
+
+  return Number.isSafeInteger(seconds) && seconds >= 1 ? seconds : null;
 }
 
 function parseUnknownJson(value: string): unknown {

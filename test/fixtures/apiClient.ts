@@ -7,6 +7,9 @@ export type ApiPlayer = {
   readonly token: string;
 };
 
+let nextTestClientAddress = 1;
+const testClientAddresses = new Map<string, string>();
+
 type ApiRequestOptions = {
   readonly body?: unknown;
   readonly method?: "GET" | "POST";
@@ -18,9 +21,18 @@ export async function apiFetch<Body>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<Body> {
+  const headers: Record<string, string> =
+    options.token === undefined ? {} : { authorization: `Bearer ${options.token}` };
+  const testClientAddress =
+    options.token === undefined ? undefined : testClientAddresses.get(options.token);
+
+  if (testClientAddress !== undefined) {
+    headers["x-test-client-ip"] = testClientAddress;
+  }
+
   const response = await request.fetch(path, {
     data: options.body,
-    headers: options.token === undefined ? undefined : { authorization: `Bearer ${options.token}` },
+    headers,
     method: options.method ?? "GET",
   });
 
@@ -38,7 +50,18 @@ export async function createApiPlayer(
   label: string,
   displayName: string,
 ): Promise<ApiPlayer> {
-  const identity = await apiFetch<{ token: string }>(request, "/api/identity", { method: "POST" });
+  const testClientAddress = nextTestClientIpAddress();
+  const response = await request.post("/api/identity", {
+    headers: { "x-test-client-ip": testClientAddress },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`POST /api/identity failed (${response.status()}): ${await response.text()}`);
+  }
+
+  const identity = (await response.json()) as { token: string };
+
+  testClientAddresses.set(identity.token, testClientAddress);
 
   return { displayName, label, token: identity.token };
 }
@@ -68,11 +91,30 @@ export async function readJsonResponse<Body>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<{ readonly body: Body; readonly status: number }> {
+  const headers: Record<string, string> =
+    options.token === undefined ? {} : { authorization: `Bearer ${options.token}` };
+  const testClientAddress =
+    options.token === undefined ? undefined : testClientAddresses.get(options.token);
+
+  if (testClientAddress !== undefined) {
+    headers["x-test-client-ip"] = testClientAddress;
+  }
+
   const response = await request.fetch(path, {
     data: options.body,
-    headers: options.token === undefined ? undefined : { authorization: `Bearer ${options.token}` },
+    headers,
     method: options.method ?? "GET",
   });
 
   return { body: (await response.json()) as Body, status: response.status() };
+}
+
+function nextTestClientIpAddress(): string {
+  const sequence = nextTestClientAddress++;
+
+  if (sequence > 250) {
+    throw new Error("The test client IP fixture exhausted its documentation address range.");
+  }
+
+  return `198.51.100.${sequence}`;
 }

@@ -21,9 +21,11 @@ import { useLiveToastController } from "@/app/live/effects/ui/useLiveToastContro
 import { useLiveEffectQueue } from "@/app/live/effects/useLiveEffectQueue";
 import {
   apiFetch,
+  assertBrowserStorageAccess,
   getLiveRoomUrl,
   getRoomCodeSearchParam,
   isApiRequestErrorCode,
+  isBrowserStorageUnavailableError,
   isRealtimeInvalidationPayload,
   isUnauthorizedRequestError,
   parseRealtimeSubscriptionKey,
@@ -32,9 +34,11 @@ import {
   requireRoomCode,
   toRealtimeSubscriptionKey,
   toRequestFailureMessage,
+  verifyBrowserStorageAccess,
   writeClipboardText,
   writeStorage,
 } from "@/app/live/liveClient";
+import { createDefaultDisplayName } from "@/app/live/liveDefaultDisplayName";
 import { formatRoomStatus, getLiveMood, getLivePageTitle } from "@/app/live/livePresentation";
 import { LiveRoundTable } from "@/app/live/liveRoundTable";
 import {
@@ -43,6 +47,13 @@ import {
   type StartRuleSetSettings,
 } from "@/app/live/liveStartSettings";
 import { StartSettingsDialog } from "@/app/live/liveStartSettingsDialog";
+import {
+  getStartSettingsRoomSession,
+  getStartSettingsRoomSessionId,
+  parseStartSettings,
+  serializeStartSettings,
+  START_SETTINGS_STORAGE_KEY,
+} from "@/app/live/liveStartSettingsStorage";
 import {
   LeaveRoomDialog,
   LiveEndedSurface,
@@ -114,6 +125,8 @@ type RoomSwitchIntent =
 
 type RoomBoundSurfaceStatus = "ended" | "playing" | "waiting";
 
+type BrowserStorageStatus = "available" | "checking" | "unavailable";
+
 type RealtimeBroadcastEnvelope = {
   readonly payload?: unknown;
 };
@@ -130,7 +143,9 @@ export default function LivePage() {
   const { locale, t } = useI18n();
   const invalidIdentityStatusMessage = t.live.room.identityExpired;
   const [identityToken, setIdentityToken] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState("Sora");
+  const [displayName, setDisplayName] = useState("");
+  const [browserStorageStatus, setBrowserStorageStatus] =
+    useState<BrowserStorageStatus>("checking");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
@@ -158,6 +173,7 @@ export default function LivePage() {
   const nextCurrentRoomRequestIdRef = useRef(0);
   const appliedCurrentRoomRequestIdRef = useRef(0);
   const roomSessionIdRef = useRef(0);
+  const startSettingsRoomSessionIdRef = useRef<string | null>(null);
   const nextRoomRequestIdRef = useRef(0);
   const appliedRoomSnapshotRef = useRef<AppliedRoomSnapshot | null>(null);
   const isBusyRef = useRef(false);
@@ -215,6 +231,24 @@ export default function LivePage() {
     setIdentityToken(nextIdentityToken);
   }, []);
 
+  const markBrowserStorageUnavailable = useCallback(() => {
+    clearEffects();
+    clearToastScope(captureRoomToastScope());
+    updateIdentityToken(null);
+    roomSummaryRef.current = null;
+    appliedRoomSnapshotRef.current = null;
+    startSettingsRoomSessionIdRef.current = null;
+    setBrowserStorageStatus("unavailable");
+    setIsIdentityHydrated(true);
+    setIsCurrentRoomReady(false);
+    setRoomSummary(null);
+    setPendingRoomSwitch(null);
+    setRealtimeAuthorization(null);
+    setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
+    setIsStartSettingsOpen(false);
+    setIsLeaveConfirmationOpen(false);
+  }, [captureRoomToastScope, clearEffects, clearToastScope, updateIdentityToken]);
+
   const createRoomRequestContext = useCallback(
     (expectedRoomCode: string | null, token: string): RoomRequestContext => ({
       expectedRoomCode,
@@ -240,17 +274,31 @@ export default function LivePage() {
     appliedCurrentRoomRequestIdRef.current = nextCurrentRoomRequestIdRef.current;
     appliedRoomSnapshotRef.current = null;
     ignoredRoomCodeRef.current = null;
+    startSettingsRoomSessionIdRef.current = null;
+    setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
     setPendingActionKey(null);
   }, [captureRoomToastScope, clearEffects, clearToastScope]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
+      if (!verifyBrowserStorageAccess()) {
+        markBrowserStorageUnavailable();
+        return;
+      }
+
       const requestedRoomCode = getRoomCodeSearchParam(window.location.search);
       const savedIdentityToken = readStorage(IDENTITY_STORAGE_KEY);
       const savedDisplayName = readStorage(DISPLAY_NAME_STORAGE_KEY);
+      const nextDisplayName = savedDisplayName?.trim()
+        ? savedDisplayName
+        : createDefaultDisplayName();
 
       setLiveOrigin(window.location.origin);
       removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
+
+      if (savedDisplayName !== nextDisplayName) {
+        writeStorage(DISPLAY_NAME_STORAGE_KEY, nextDisplayName);
+      }
 
       if (savedIdentityToken !== null) {
         updateIdentityToken(savedIdentityToken);
@@ -258,20 +306,19 @@ export default function LivePage() {
         setIsCurrentRoomReady(true);
       }
 
-      if (savedDisplayName !== null) {
-        setDisplayName(savedDisplayName);
-      }
+      setDisplayName(nextDisplayName);
 
       if (requestedRoomCode !== null) {
         setInvitationRoomCode(requestedRoomCode);
         setRoomCodeInput(requestedRoomCode);
       }
 
+      setBrowserStorageStatus("available");
       setIsIdentityHydrated(true);
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [updateIdentityToken]);
+  }, [markBrowserStorageUnavailable, updateIdentityToken]);
 
   useEffect(
     () => () => {
@@ -283,6 +330,7 @@ export default function LivePage() {
   );
 
   async function createIdentityToken(): Promise<string> {
+    assertBrowserStorageAccess();
     const identity = await apiFetch<IdentityResponse>("/api/identity", { method: "POST" });
 
     writeStorage(IDENTITY_STORAGE_KEY, identity.token);
@@ -292,6 +340,8 @@ export default function LivePage() {
   }
 
   async function ensureIdentityToken(): Promise<string> {
+    assertBrowserStorageAccess();
+
     if (identityToken !== null) {
       return identityToken;
     }
@@ -301,6 +351,18 @@ export default function LivePage() {
 
   const clearCurrentRoom = useCallback(
     (options: ClearCurrentRoomOptions = {}) => {
+      try {
+        removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
+        removeStorage(START_SETTINGS_STORAGE_KEY);
+      } catch (error) {
+        if (isBrowserStorageUnavailableError(error)) {
+          markBrowserStorageUnavailable();
+          return;
+        }
+
+        throw error;
+      }
+
       clearEffects();
       clearToastScope(captureRoomToastScope());
       roomSessionIdRef.current += 1;
@@ -309,7 +371,7 @@ export default function LivePage() {
       appliedRoomSnapshotRef.current = null;
       ignoredRoomCodeRef.current = options.ignoredRoomCode ?? null;
       roomSummaryRef.current = null;
-      removeStorage(LEGACY_ROOM_CODE_STORAGE_KEY);
+      startSettingsRoomSessionIdRef.current = null;
       setRoomSummary(null);
       setIsCurrentRoomReady(true);
       setPendingRoomSwitch(null);
@@ -322,22 +384,39 @@ export default function LivePage() {
       setIsNightConversationOpen(false);
       setIsPublicLogOpen(false);
       setNightConversationDraft("");
+      setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
       setIsStartSettingsOpen(false);
       setIsLeaveConfirmationOpen(false);
       window.requestAnimationFrame(() => window.scrollTo({ left: 0, top: 0 }));
     },
-    [captureRoomToastScope, clearEffects, clearToastScope],
+    [captureRoomToastScope, clearEffects, clearToastScope, markBrowserStorageUnavailable],
   );
 
   const resetInvalidIdentity = useCallback(
     (nextStatusMessage = invalidIdentityStatusMessage) => {
-      removeStorage(IDENTITY_STORAGE_KEY);
+      try {
+        removeStorage(IDENTITY_STORAGE_KEY);
+      } catch (error) {
+        if (isBrowserStorageUnavailableError(error)) {
+          markBrowserStorageUnavailable();
+          return;
+        }
+
+        throw error;
+      }
+
       updateIdentityToken(null);
       setIsCurrentRoomReady(true);
       showToast(nextStatusMessage, "warning", TOAST_IMPORTANT_DURATION_MS);
       clearCurrentRoom({ preserveRoomCodeInput: true });
     },
-    [clearCurrentRoom, invalidIdentityStatusMessage, showToast, updateIdentityToken],
+    [
+      clearCurrentRoom,
+      invalidIdentityStatusMessage,
+      markBrowserStorageUnavailable,
+      showToast,
+      updateIdentityToken,
+    ],
   );
 
   async function withBusy(
@@ -356,6 +435,11 @@ export default function LivePage() {
     try {
       await work();
     } catch (error) {
+      if (isBrowserStorageUnavailableError(error)) {
+        markBrowserStorageUnavailable();
+        return;
+      }
+
       if (isUnauthorizedRequestError(error)) {
         resetInvalidIdentity();
         return;
@@ -390,6 +474,44 @@ export default function LivePage() {
     }
   }
 
+  const syncStartSettingsForRoom = useCallback((summary: RoomSummary): void => {
+    const session = getStartSettingsRoomSession(summary);
+
+    if (session === null) {
+      const storedSettings = readStorage(START_SETTINGS_STORAGE_KEY);
+
+      if (storedSettings !== null) {
+        removeStorage(START_SETTINGS_STORAGE_KEY);
+      }
+
+      if (startSettingsRoomSessionIdRef.current !== null) {
+        startSettingsRoomSessionIdRef.current = null;
+        setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
+      }
+
+      return;
+    }
+
+    const sessionId = getStartSettingsRoomSessionId(session);
+
+    if (startSettingsRoomSessionIdRef.current === sessionId) {
+      return;
+    }
+
+    const storedSettings = readStorage(START_SETTINGS_STORAGE_KEY);
+    const restoredSettings =
+      storedSettings === null
+        ? null
+        : parseStartSettings(storedSettings, session, summary.roleCatalog);
+
+    if (storedSettings !== null && restoredSettings === null) {
+      removeStorage(START_SETTINGS_STORAGE_KEY);
+    }
+
+    startSettingsRoomSessionIdRef.current = sessionId;
+    setStartRuleSetSettings(restoredSettings ?? DEFAULT_START_RULE_SET_SETTINGS);
+  }, []);
+
   const rememberRoom = useCallback(
     (nextSummary: RoomSummary, requestContext: RoomRequestContext) => {
       if (!isRoomRequestContextCurrent(requestContext)) {
@@ -421,7 +543,18 @@ export default function LivePage() {
         return false;
       }
 
-      writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
+      try {
+        writeStorage(DISPLAY_NAME_STORAGE_KEY, displayName);
+        syncStartSettingsForRoom(nextSummary);
+      } catch (error) {
+        if (isBrowserStorageUnavailableError(error)) {
+          markBrowserStorageUnavailable();
+          return false;
+        }
+
+        throw error;
+      }
+
       appliedRoomSnapshotRef.current = {
         requestId: requestContext.requestId,
         roomCode: nextSummary.code,
@@ -435,11 +568,22 @@ export default function LivePage() {
 
       return true;
     },
-    [acceptEffectSummary, displayName, isRoomRequestContextCurrent],
+    [
+      acceptEffectSummary,
+      displayName,
+      isRoomRequestContextCurrent,
+      markBrowserStorageUnavailable,
+      syncStartSettingsForRoom,
+    ],
   );
 
   const syncCurrentRoom = useCallback(
     async (token: string): Promise<RoomSummary | null> => {
+      if (!verifyBrowserStorageAccess()) {
+        markBrowserStorageUnavailable();
+        return null;
+      }
+
       const currentRoomRequestId = (nextCurrentRoomRequestIdRef.current += 1);
       const response = await apiFetch<CurrentRoomResponse>("/api/rooms/current", {
         method: "GET",
@@ -476,7 +620,13 @@ export default function LivePage() {
 
       return didRememberRoom ? response.room : roomSummaryRef.current;
     },
-    [beginRoomSession, clearCurrentRoom, createRoomRequestContext, rememberRoom],
+    [
+      beginRoomSession,
+      clearCurrentRoom,
+      createRoomRequestContext,
+      markBrowserStorageUnavailable,
+      rememberRoom,
+    ],
   );
 
   useEffect(() => {
@@ -585,6 +735,11 @@ export default function LivePage() {
     const abortController = new AbortController();
 
     async function refreshRealtimeAuthorization(): Promise<void> {
+      if (!verifyBrowserStorageAccess()) {
+        markBrowserStorageUnavailable();
+        return;
+      }
+
       try {
         const authorization = await apiFetch<RealtimeAuthorization>(
           `/api/rooms/${activeRoomCode}/realtime-token`,
@@ -633,6 +788,7 @@ export default function LivePage() {
   }, [
     activeRoomCode,
     identityToken,
+    markBrowserStorageUnavailable,
     resetInvalidIdentity,
     roomSummary?.currentPlayerId,
     roomSummary?.self?.roleId,
@@ -709,6 +865,11 @@ export default function LivePage() {
         return;
       }
 
+      if (!verifyBrowserStorageAccess()) {
+        markBrowserStorageUnavailable();
+        return;
+      }
+
       isSendingHeartbeat = true;
       const requestContext = createRoomRequestContext(activeRoomCode, activeToken);
 
@@ -749,6 +910,7 @@ export default function LivePage() {
     createRoomRequestContext,
     identityToken,
     isRoomRequestContextCurrent,
+    markBrowserStorageUnavailable,
     rememberRoom,
     resetInvalidIdentity,
     roomSummary?.currentPlayerId,
@@ -985,8 +1147,38 @@ export default function LivePage() {
   }, [captureRoomToastScope, pendingRoomSwitch, roomSummary, showToast, t.live.room]);
 
   function handleDisplayNameChange(nextDisplayName: string): void {
-    setDisplayName(nextDisplayName);
-    writeStorage(DISPLAY_NAME_STORAGE_KEY, nextDisplayName);
+    try {
+      writeStorage(DISPLAY_NAME_STORAGE_KEY, nextDisplayName);
+      setDisplayName(nextDisplayName);
+    } catch (error) {
+      if (isBrowserStorageUnavailableError(error)) {
+        markBrowserStorageUnavailable();
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  function handleApplyStartSettings(nextSettings: StartRuleSetSettings): void {
+    const session = roomSummary === null ? null : getStartSettingsRoomSession(roomSummary);
+
+    if (session === null) {
+      return;
+    }
+
+    try {
+      writeStorage(START_SETTINGS_STORAGE_KEY, serializeStartSettings(session, nextSettings));
+      startSettingsRoomSessionIdRef.current = getStartSettingsRoomSessionId(session);
+      setStartRuleSetSettings(nextSettings);
+    } catch (error) {
+      if (isBrowserStorageUnavailableError(error)) {
+        markBrowserStorageUnavailable();
+        return;
+      }
+
+      throw error;
+    }
   }
 
   function handleRoomCodeChange(nextRoomCode: string): void {
@@ -1321,7 +1513,9 @@ export default function LivePage() {
       ),
     [liveMood, roomSummary?.code, roomSummary?.currentPlayerId],
   );
-  const isRoomEntryAvailable = roomSummary === null && isCurrentRoomReady;
+  const isBrowserStorageUnavailable = browserStorageStatus === "unavailable";
+  const isRoomEntryAvailable =
+    browserStorageStatus === "available" && roomSummary === null && isCurrentRoomReady;
   let liveSetupSurfaceKind: LiveSetupSurfaceKind = "game";
 
   if (!isCurrentRoomReady) {
@@ -1416,6 +1610,61 @@ export default function LivePage() {
     );
   }
 
+  function renderRoomEntrySurface(): ReactNode {
+    if (isBrowserStorageUnavailable) {
+      return (
+        <section
+          className={`liveEntrySurface ${liveViewportStyles["entrySurface"]}`}
+          data-live-storage-unavailable
+        >
+          <article className="liveSetupPanel" role="alert">
+            <div className="liveSetupPanelHeader">
+              <div>
+                <p className="liveSetupPanelKicker">{t.live.storageUnavailable.kicker}</p>
+                <h3>{t.live.storageUnavailable.title}</h3>
+              </div>
+            </div>
+            <div className="liveSetupPanelBody">
+              <p className="liveSetupHint">{t.live.storageUnavailable.body}</p>
+            </div>
+          </article>
+        </section>
+      );
+    }
+
+    if (isRoomEntryAvailable) {
+      return (
+        <LiveEntrySurface
+          displayName={displayName}
+          initialEntryMode="join"
+          isBusy={isBusy}
+          pendingAction={setupPendingAction}
+          roomCodeInput={roomCodeInput}
+          t={t}
+          targetPlayerCount={targetPlayerCount}
+          onCreateRoom={handleCreateRoom}
+          onDisplayNameChange={handleDisplayNameChange}
+          onJoinRoom={handleJoinRoom}
+          onRoomCodeChange={handleRoomCodeChange}
+          onTargetPlayerCountChange={handleTargetPlayerCountChange}
+        />
+      );
+    }
+
+    return (
+      <section className="livePanel liveRoomPanel" aria-label={t.live.aria.roomState}>
+        <div className="livePanelHeading">
+          <span>{t.live.page.roomEntry}</span>
+        </div>
+        <div className="liveEmptyState compact" role="status">
+          <strong>{t.live.room.checkingCurrent}</strong>
+        </div>
+      </section>
+    );
+  }
+
+  const roomEntrySurface = renderRoomEntrySurface();
+
   return (
     <main className={liveShellClassName} data-live-mood={liveMood} ref={liveShellRef}>
       <LiveBackground snapshot={liveBackgroundSnapshot} />
@@ -1445,35 +1694,11 @@ export default function LivePage() {
             <div className="liveHeroTitle liveEntryStatus">
               <h2>{getLivePageTitle(roomSummary, t)}</h2>
             </div>
-            {isRoomEntryAvailable ? (
+            {isRoomEntryAvailable || isBrowserStorageUnavailable ? (
               <LanguageSwitcher className="liveEmbeddedLanguageSwitcher liveEntryLanguageSwitcher" />
             ) : null}
           </section>
-          {isRoomEntryAvailable ? (
-            <LiveEntrySurface
-              displayName={displayName}
-              initialEntryMode="join"
-              isBusy={isBusy}
-              pendingAction={setupPendingAction}
-              roomCodeInput={roomCodeInput}
-              t={t}
-              targetPlayerCount={targetPlayerCount}
-              onCreateRoom={handleCreateRoom}
-              onDisplayNameChange={handleDisplayNameChange}
-              onJoinRoom={handleJoinRoom}
-              onRoomCodeChange={handleRoomCodeChange}
-              onTargetPlayerCountChange={handleTargetPlayerCountChange}
-            />
-          ) : (
-            <section className="livePanel liveRoomPanel" aria-label={t.live.aria.roomState}>
-              <div className="livePanelHeading">
-                <span>{t.live.page.roomEntry}</span>
-              </div>
-              <div className="liveEmptyState compact" role="status">
-                <strong>{t.live.room.checkingCurrent}</strong>
-              </div>
-            </section>
-          )}
+          {roomEntrySurface}
         </>
       )}
 
@@ -1487,7 +1712,7 @@ export default function LivePage() {
           settings={startRuleSetSettings}
           t={t}
           onClose={() => setIsStartSettingsOpen(false)}
-          onApplySettings={(nextSettings) => setStartRuleSetSettings(nextSettings)}
+          onApplySettings={handleApplyStartSettings}
         />
       ) : null}
 

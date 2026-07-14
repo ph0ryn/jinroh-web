@@ -1,4 +1,17 @@
+import { randomInt } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("node:crypto", async (importOriginal) => {
+  const original = await importOriginal<
+    Record<string, unknown> & { randomInt: typeof randomInt }
+  >();
+
+  return {
+    ...original,
+    randomInt: vi.fn(original.randomInt),
+  };
+});
 
 import { roleRegistry } from "./game/roles";
 import {
@@ -123,6 +136,93 @@ describe("game engine", () => {
       "Unsupported first-night-started effect",
     );
     spy.mockRestore();
+  });
+
+  it("uses secure Fisher-Yates draws and ignores the input player order", () => {
+    const secureRandomIntMock = vi.mocked(randomInt);
+    const originalImplementation = secureRandomIntMock.getMockImplementation();
+    const draws = [1, 3, 0, 2, 1, 0, 1, 3, 0, 2, 1, 0];
+    const maxExclusiveValues: number[] = [];
+
+    secureRandomIntMock.mockImplementation((maxExclusive) => {
+      const draw = draws.shift();
+
+      if (draw === undefined || draw >= maxExclusive) {
+        throw new Error("Invalid test entropy.");
+      }
+
+      maxExclusiveValues.push(maxExclusive);
+      return draw;
+    });
+
+    try {
+      const firstResult = startGame(PLAYERS, makeDefaultRuleSetForPlayers(PLAYERS.length));
+      const reversedResult = startGame(
+        [...PLAYERS].reverse(),
+        makeDefaultRuleSetForPlayers(PLAYERS.length),
+      );
+
+      expect(firstResult.ok).toBe(true);
+      expect(reversedResult.ok).toBe(true);
+
+      if (firstResult.ok && reversedResult.ok) {
+        expect(reversedResult.assignments).toEqual(firstResult.assignments);
+        expect(firstResult.assignments.map((assignment) => assignment.playerId)).toEqual([
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+        ]);
+      }
+
+      expect(maxExclusiveValues).toEqual([6, 5, 4, 3, 2, 4, 6, 5, 4, 3, 2, 4]);
+    } finally {
+      if (originalImplementation === undefined) {
+        secureRandomIntMock.mockReset();
+      } else {
+        secureRandomIntMock.mockImplementation(originalImplementation);
+      }
+    }
+  });
+
+  it("does not derive repeatable assignments from player ids", () => {
+    const secureRandomIntMock = vi.mocked(randomInt);
+    const originalImplementation = secureRandomIntMock.getMockImplementation();
+
+    try {
+      secureRandomIntMock.mockImplementation(() => 0);
+      const firstResult = startGame(PLAYERS, makeDefaultRuleSetForPlayers(PLAYERS.length));
+
+      secureRandomIntMock.mockImplementation((maxExclusive) => maxExclusive - 1);
+      const secondResult = startGame(PLAYERS, makeDefaultRuleSetForPlayers(PLAYERS.length));
+
+      expect(firstResult.ok).toBe(true);
+      expect(secondResult.ok).toBe(true);
+
+      if (firstResult.ok && secondResult.ok) {
+        expect(secondResult.assignments).not.toEqual(firstResult.assignments);
+        expect(
+          firstResult.assignments.reduce<Record<string, number>>((counts, assignment) => {
+            counts[assignment.roleId] = (counts[assignment.roleId] ?? 0) + 1;
+            return counts;
+          }, {}),
+        ).toEqual(
+          Object.fromEntries(
+            Object.entries(firstResult.ruleSet.roleCounts).filter(
+              ([, count]) => count !== undefined && count > 0,
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (originalImplementation === undefined) {
+        secureRandomIntMock.mockReset();
+      } else {
+        secureRandomIntMock.mockImplementation(originalImplementation);
+      }
+    }
   });
 
   it("creates role-scoped werewolf attack but excludes madman from attack owners", () => {
@@ -406,40 +506,62 @@ describe("game engine", () => {
     expect(resolution.events.map((event) => event.kind)).toContain("inspection_result");
   });
 
-  it("opens ordered speech with one current speaker action", () => {
+  it("rotates ordered speech from one secure random start without shuffling player order", () => {
     const players: PlayerRuntimeState[] = [
-      { alive: true, playerId: "1", roleId: "werewolf" },
       { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "1", roleId: "werewolf" },
       { alive: true, playerId: "3", roleId: "villager" },
     ];
     const ruleSet = {
       ...makeDefaultRuleSetForPlayers(players.length),
       dayMode: "ordered_speech" as const,
     };
-    const resolution = resolvePhase({
-      actions: players.map((player) => ({
-        actorPlayerId: player.playerId,
-        actionKey: `first-night-ready:${player.playerId}`,
-        kind: "first_night_ready",
-        resolverRoleId: null,
-        targetPlayerId: null,
-      })),
-      currentPhase: "night",
-      dayNumber: 0,
-      nightNumber: 1,
-      players,
-      ruleSet,
-    });
+    const secureRandomIntMock = vi.mocked(randomInt);
+    const originalImplementation = secureRandomIntMock.getMockImplementation();
+    const callCountBeforeResolution = secureRandomIntMock.mock.calls.length;
+    secureRandomIntMock.mockImplementation(() => 1);
 
-    expect(resolution.nextPhase).toBe("day");
-    expect(resolution.nextDayNumber).toBe(1);
-    expect(resolution.nextPhaseDurationSeconds).toBe(90);
-    expect(resolution.actionsToOpen).toHaveLength(1);
-    expect(resolution.speechSlotsToCreate).toHaveLength(6);
-    expect(resolution.actionsToOpen[0]).toMatchObject({
-      kind: "end_speech",
-      targetKind: "none",
-    });
+    try {
+      const resolution = resolvePhase({
+        actions: players.map((player) => ({
+          actorPlayerId: player.playerId,
+          actionKey: `first-night-ready:${player.playerId}`,
+          kind: "first_night_ready",
+          resolverRoleId: null,
+          targetPlayerId: null,
+        })),
+        currentPhase: "night",
+        dayNumber: 0,
+        nightNumber: 1,
+        players,
+        ruleSet,
+      });
+
+      expect(resolution.nextPhase).toBe("day");
+      expect(resolution.nextDayNumber).toBe(1);
+      expect(resolution.nextPhaseDurationSeconds).toBe(90);
+      expect(resolution.actionsToOpen).toHaveLength(1);
+      expect(resolution.speechSlotsToCreate).toEqual([
+        { slotIndex: 0, speakerPlayerId: "1" },
+        { slotIndex: 1, speakerPlayerId: "3" },
+        { slotIndex: 2, speakerPlayerId: "2" },
+        { slotIndex: 3, speakerPlayerId: "1" },
+        { slotIndex: 4, speakerPlayerId: "3" },
+        { slotIndex: 5, speakerPlayerId: "2" },
+      ]);
+      expect(resolution.actionsToOpen[0]).toMatchObject({
+        actorPlayerId: "1",
+        kind: "end_speech",
+        targetKind: "none",
+      });
+      expect(secureRandomIntMock.mock.calls.slice(callCountBeforeResolution)).toEqual([[3]]);
+    } finally {
+      if (originalImplementation === undefined) {
+        secureRandomIntMock.mockReset();
+      } else {
+        secureRandomIntMock.mockImplementation(originalImplementation);
+      }
+    }
   });
 
   it("advances ordered speech slots before voting", () => {

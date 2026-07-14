@@ -119,6 +119,54 @@ test("room mutations enforce membership, host ownership, and the accepted game r
   expect(staleRevision).toMatchObject({ body: { error: { code: "conflict" } }, status: 409 });
 });
 
+test("concurrent and retried room starts persist exactly one role assignment", async ({
+  request,
+}) => {
+  const waitingRoom = await createWaitingRoom(request, ["Larch", "Maple", "Nettle"]);
+  const host = requirePlayer(waitingRoom.players, 0);
+  const startPath = `/api/rooms/${waitingRoom.roomCode}/start`;
+  const startResponses = await Promise.all([
+    readJsonResponse<RoomSummary | ApiErrorResponse>(request, startPath, {
+      body: {},
+      method: "POST",
+      token: host.token,
+    }),
+    readJsonResponse<RoomSummary | ApiErrorResponse>(request, startPath, {
+      body: {},
+      method: "POST",
+      token: host.token,
+    }),
+  ]);
+
+  expect(
+    startResponses.map(({ status }) => status).toSorted((left, right) => left - right),
+  ).toEqual([200, 409]);
+
+  const initialRoleIds = await Promise.all(
+    waitingRoom.players.map(async (player) => {
+      const summary = await readRoomSummary(request, waitingRoom.roomCode, player);
+
+      return summary.self?.roleId;
+    }),
+  );
+  const retriedStart = await readJsonResponse<ApiErrorResponse>(request, startPath, {
+    body: {},
+    method: "POST",
+    token: host.token,
+  });
+  const retriedRoleIds = await Promise.all(
+    waitingRoom.players.map(async (player) => {
+      const summary = await readRoomSummary(request, waitingRoom.roomCode, player);
+
+      return summary.self?.roleId;
+    }),
+  );
+
+  expect(initialRoleIds.every((roleId) => roleId !== null && roleId !== undefined)).toBe(true);
+  expect(retriedStart).toMatchObject({ body: { error: { code: "conflict" } }, status: 409 });
+  expect(retriedRoleIds).toEqual(initialRoleIds);
+});
+
 test("HTTP private views and Realtime grants expose only the viewer's authorized scopes", async ({
   request,
 }) => {
