@@ -506,40 +506,62 @@ describe("game engine", () => {
     expect(resolution.events.map((event) => event.kind)).toContain("inspection_result");
   });
 
-  it("opens ordered speech with one current speaker action", () => {
+  it("rotates ordered speech from one secure random start without shuffling player order", () => {
     const players: PlayerRuntimeState[] = [
-      { alive: true, playerId: "1", roleId: "werewolf" },
       { alive: true, playerId: "2", roleId: "seer" },
+      { alive: true, playerId: "1", roleId: "werewolf" },
       { alive: true, playerId: "3", roleId: "villager" },
     ];
     const ruleSet = {
       ...makeDefaultRuleSetForPlayers(players.length),
       dayMode: "ordered_speech" as const,
     };
-    const resolution = resolvePhase({
-      actions: players.map((player) => ({
-        actorPlayerId: player.playerId,
-        actionKey: `first-night-ready:${player.playerId}`,
-        kind: "first_night_ready",
-        resolverRoleId: null,
-        targetPlayerId: null,
-      })),
-      currentPhase: "night",
-      dayNumber: 0,
-      nightNumber: 1,
-      players,
-      ruleSet,
-    });
+    const secureRandomIntMock = vi.mocked(randomInt);
+    const originalImplementation = secureRandomIntMock.getMockImplementation();
+    const callCountBeforeResolution = secureRandomIntMock.mock.calls.length;
+    secureRandomIntMock.mockImplementation(() => 1);
 
-    expect(resolution.nextPhase).toBe("day");
-    expect(resolution.nextDayNumber).toBe(1);
-    expect(resolution.nextPhaseDurationSeconds).toBe(90);
-    expect(resolution.actionsToOpen).toHaveLength(1);
-    expect(resolution.speechSlotsToCreate).toHaveLength(6);
-    expect(resolution.actionsToOpen[0]).toMatchObject({
-      kind: "end_speech",
-      targetKind: "none",
-    });
+    try {
+      const resolution = resolvePhase({
+        actions: players.map((player) => ({
+          actorPlayerId: player.playerId,
+          actionKey: `first-night-ready:${player.playerId}`,
+          kind: "first_night_ready",
+          resolverRoleId: null,
+          targetPlayerId: null,
+        })),
+        currentPhase: "night",
+        dayNumber: 0,
+        nightNumber: 1,
+        players,
+        ruleSet,
+      });
+
+      expect(resolution.nextPhase).toBe("day");
+      expect(resolution.nextDayNumber).toBe(1);
+      expect(resolution.nextPhaseDurationSeconds).toBe(90);
+      expect(resolution.actionsToOpen).toHaveLength(1);
+      expect(resolution.speechSlotsToCreate).toEqual([
+        { slotIndex: 0, speakerPlayerId: "1" },
+        { slotIndex: 1, speakerPlayerId: "3" },
+        { slotIndex: 2, speakerPlayerId: "2" },
+        { slotIndex: 3, speakerPlayerId: "1" },
+        { slotIndex: 4, speakerPlayerId: "3" },
+        { slotIndex: 5, speakerPlayerId: "2" },
+      ]);
+      expect(resolution.actionsToOpen[0]).toMatchObject({
+        actorPlayerId: "1",
+        kind: "end_speech",
+        targetKind: "none",
+      });
+      expect(secureRandomIntMock.mock.calls.slice(callCountBeforeResolution)).toEqual([[3]]);
+    } finally {
+      if (originalImplementation === undefined) {
+        secureRandomIntMock.mockReset();
+      } else {
+        secureRandomIntMock.mockImplementation(originalImplementation);
+      }
+    }
   });
 
   it("advances ordered speech slots before voting", () => {

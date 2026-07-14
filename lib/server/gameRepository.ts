@@ -462,7 +462,6 @@ export async function startRoom(
   }
 
   const phaseInstanceId = randomUUID();
-  const phaseEndsAt = secondsFromNow(startResult.phaseDurationSeconds);
   const transactionResult = await callRoomMutationRpc(supabase, "app_start_room", {
     p_account_id: account.id,
     p_actions: serializeActions(startResult.actions),
@@ -474,7 +473,7 @@ export async function startRoom(
     p_events: serializeEvents(startResult.initialEvents),
     p_expected_player_ids: joinedPlayers.map((player) => player.id),
     p_options: serializeRuleSetOptions(startResult.ruleSet),
-    p_phase_ends_at: phaseEndsAt,
+    p_phase_duration_seconds: startResult.phaseDurationSeconds,
     p_phase_instance_id: phaseInstanceId,
     p_resolved_role_setup: serializeResolvedRoleSetup(startResult.resolvedRoleSetup),
     p_role_counts: startResult.ruleSet.roleCounts,
@@ -677,10 +676,6 @@ async function resolveRoom(roomId: number): Promise<void> {
     ruleSet,
   });
   const nextPhaseInstanceId = resolution.nextPhase === null ? null : randomUUID();
-  const nextEndsAt =
-    resolution.nextPhaseDurationSeconds === null
-      ? null
-      : secondsFromNow(resolution.nextPhaseDurationSeconds);
   const finalOutcome = resolution.finalOutcome;
   const transactionResult = await callRoomMutationRpc(supabase, "app_resolve_phase", {
     p_actions: serializeActions(resolution.actionsToOpen),
@@ -701,7 +696,7 @@ async function resolveRoom(roomId: number): Promise<void> {
     p_next_day_number: resolution.nextDayNumber,
     p_next_night_number: resolution.nextNightNumber,
     p_next_phase: resolution.nextPhase,
-    p_next_phase_ends_at: nextEndsAt,
+    p_next_phase_duration_seconds: resolution.nextPhaseDurationSeconds,
     p_next_phase_instance_id: nextPhaseInstanceId,
     p_phase_instance_id: state.phase_instance_id,
     p_player_results:
@@ -1128,8 +1123,4 @@ async function broadcastRealtimeInvalidation(
       // Realtime cleanup failure should not fail the authoritative mutation.
     }
   }
-}
-
-function secondsFromNow(seconds: number): string {
-  return new Date(Date.now() + seconds * 1000).toISOString();
 }

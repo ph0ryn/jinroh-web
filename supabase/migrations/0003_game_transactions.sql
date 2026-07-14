@@ -629,7 +629,7 @@ create function public.app_start_room(
   p_room_code text,
   p_expected_player_ids bigint[],
   p_phase_instance_id uuid,
-  p_phase_ends_at timestamptz,
+  p_phase_duration_seconds integer,
   p_role_counts jsonb,
   p_options jsonb,
   p_resolved_role_setup jsonb,
@@ -668,14 +668,15 @@ declare
   v_joined_player_ids bigint[];
   v_key_count integer;
   v_now timestamptz;
+  v_phase_ends_at timestamptz;
   v_positive_role_ids text[];
   v_role_count_total numeric;
   v_room public.rooms%rowtype;
 begin
   if p_account_id is null
     or p_phase_instance_id is null
-    or p_phase_ends_at is null
-    or p_phase_ends_at <= pg_catalog.clock_timestamp()
+    or p_phase_duration_seconds is null
+    or p_phase_duration_seconds not between 1 and 3000
     or p_expected_player_ids is null
     or p_role_counts is null
     or pg_catalog.jsonb_typeof(p_role_counts) <> 'object'
@@ -751,6 +752,10 @@ begin
     or not private.jsonb_integer_between(p_options -> 'votingSeconds', 1, 300)
   then
     raise exception using errcode = 'P0001', message = 'invalid_options';
+  end if;
+
+  if p_phase_duration_seconds <> (p_options ->> 'firstNightSeconds')::integer then
+    raise exception using errcode = 'P0001', message = 'invalid_game_start';
   end if;
 
   if exists (
@@ -1003,10 +1008,7 @@ begin
   end if;
 
   v_now := pg_catalog.clock_timestamp();
-
-  if p_phase_ends_at <= v_now then
-    raise exception using errcode = 'P0001', message = 'invalid_game_start';
-  end if;
+  v_phase_ends_at := v_now + pg_catalog.make_interval(secs => p_phase_duration_seconds);
 
   if v_room.status = 'waiting' and v_room.waiting_expires_at <= v_now then
     perform private.end_waiting_room(
@@ -1181,7 +1183,7 @@ begin
     0,
     1,
     v_now,
-    p_phase_ends_at
+    v_phase_ends_at
   );
 
   insert into public.game_states (
@@ -1202,7 +1204,7 @@ begin
     'night',
     p_phase_instance_id,
     v_now,
-    p_phase_ends_at,
+    v_phase_ends_at,
     0,
     1,
     1,
@@ -1255,7 +1257,7 @@ begin
   perform private.insert_current_actions(
     v_room.id,
     p_phase_instance_id,
-    p_phase_ends_at,
+    v_phase_ends_at,
     p_actions
   );
 
@@ -1728,7 +1730,7 @@ create function public.app_resolve_phase(
   p_player_results jsonb,
   p_next_phase text,
   p_next_phase_instance_id uuid,
-  p_next_phase_ends_at timestamptz,
+  p_next_phase_duration_seconds integer,
   p_next_day_number integer,
   p_next_night_number integer,
   p_actions jsonb,
@@ -1753,6 +1755,7 @@ declare
   v_deleted_action_count integer;
   v_final_winner_team text;
   v_key_count integer;
+  v_next_phase_ends_at timestamptz;
   v_now timestamptz;
   v_pending_action_count integer;
   v_phase_timed_out boolean;
@@ -1786,6 +1789,10 @@ begin
     or (
       p_final_outcome is not null
       and pg_catalog.jsonb_typeof(p_final_outcome) <> 'object'
+    )
+    or (
+      p_next_phase_duration_seconds is not null
+      and p_next_phase_duration_seconds not between 1 and 3000
     )
   then
     raise exception using errcode = 'P0001', message = 'invalid_phase_resolution';
@@ -1845,6 +1852,10 @@ begin
   for update of pending;
 
   v_now := pg_catalog.clock_timestamp();
+  v_next_phase_ends_at := case
+    when p_next_phase_duration_seconds is null then null
+    else v_now + pg_catalog.make_interval(secs => p_next_phase_duration_seconds)
+  end;
 
   select count(*)
   into v_action_count
@@ -1994,7 +2005,7 @@ begin
       )
       or p_next_phase is not null
       or p_next_phase_instance_id is not null
-      or p_next_phase_ends_at is not null
+      or p_next_phase_duration_seconds is not null
       or p_next_day_number is distinct from v_state.day_number
       or p_next_night_number is distinct from v_state.night_number
       or pg_catalog.jsonb_array_length(p_actions) <> 0
@@ -2065,8 +2076,7 @@ begin
       or p_next_phase not in ('night', 'day', 'voting', 'execution')
       or p_next_phase_instance_id is null
       or p_next_phase_instance_id = p_phase_instance_id
-      or p_next_phase_ends_at is null
-      or p_next_phase_ends_at <= v_now
+      or p_next_phase_duration_seconds is null
       or p_next_day_number is null
       or p_next_day_number < 0
       or p_next_night_number is null
@@ -2252,14 +2262,14 @@ begin
     p_next_day_number,
     p_next_night_number,
     v_now,
-    p_next_phase_ends_at
+    v_next_phase_ends_at
   );
 
   update public.game_states as states
   set phase = p_next_phase,
       phase_instance_id = p_next_phase_instance_id,
       phase_started_at = v_now,
-      phase_ends_at = p_next_phase_ends_at,
+      phase_ends_at = v_next_phase_ends_at,
       day_number = p_next_day_number,
       night_number = p_next_night_number,
       revision = states.revision + 1,
@@ -2280,7 +2290,7 @@ begin
   perform private.insert_current_actions(
     v_room.id,
     p_next_phase_instance_id,
-    p_next_phase_ends_at,
+    v_next_phase_ends_at,
     p_actions
   );
 
@@ -2318,7 +2328,7 @@ revoke all on function public.app_start_room(
   text,
   bigint[],
   uuid,
-  timestamptz,
+  integer,
   jsonb,
   jsonb,
   jsonb,
@@ -2354,7 +2364,7 @@ revoke all on function public.app_resolve_phase(
   jsonb,
   text,
   uuid,
-  timestamptz,
+  integer,
   integer,
   integer,
   jsonb,
@@ -2367,7 +2377,7 @@ grant execute on function public.app_start_room(
   text,
   bigint[],
   uuid,
-  timestamptz,
+  integer,
   jsonb,
   jsonb,
   jsonb,
@@ -2403,7 +2413,7 @@ grant execute on function public.app_resolve_phase(
   jsonb,
   text,
   uuid,
-  timestamptz,
+  integer,
   integer,
   integer,
   jsonb,

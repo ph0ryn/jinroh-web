@@ -628,27 +628,6 @@ function compareIds(left: string, right: string): number {
   return left < right ? -1 : 1;
 }
 
-function stableShuffle<Item>(items: readonly Item[], salt: string): Item[] {
-  return [...items]
-    .map((item, index) => ({
-      item,
-      sortKey: hashString(`${salt}:${index}:${String(item)}`),
-    }))
-    .sort((left, right) => left.sortKey - right.sortKey)
-    .map(({ item }) => item);
-}
-
-function hashString(value: string): number {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
-}
-
 function normalizeEngineRuleSet(ruleSetInput: RuleSetInput | null, playerCount: number): RuleSet {
   if (ruleSetInput === null) {
     return makeDefaultEngineRuleSet(playerCount);
@@ -1439,10 +1418,12 @@ function createOrderedSpeechSlots(
   dayNumber: number,
   ruleSet: RuleSet,
 ): OrderedSpeechSlot[] {
-  const orderedPlayerIds = stableShuffle(
-    alivePlayers.map((player) => player.playerId),
-    `speech:${dayNumber}:${alivePlayers.map((player) => player.playerId).join(":")}`,
-  );
+  const fixedPlayerIds = alivePlayers.map((player) => player.playerId);
+  const startIndex = fixedPlayerIds.length === 0 ? 0 : randomInt(fixedPlayerIds.length);
+  const orderedPlayerIds = [
+    ...fixedPlayerIds.slice(startIndex),
+    ...fixedPlayerIds.slice(0, startIndex),
+  ];
   const rounds = dayNumber === 1 ? ruleSet.firstDaySpeechRounds : ruleSet.normalDaySpeechRounds;
 
   return [...Array(rounds).keys()].flatMap((roundIndex) =>
