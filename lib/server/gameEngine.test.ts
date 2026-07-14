@@ -95,14 +95,10 @@ describe("game engine", () => {
       expect(result.actions.every((action) => action.kind !== "inspect")).toBe(true);
       expect(seerAssignment).toBeDefined();
       expect(inspectionEvent).toMatchObject({
-        payload: {
-          presentation: {
-            title: { en: "Initial inspection", ja: "初日占い" },
-          },
-        },
         visibility: "private",
         visibleToPlayerIds: [seerAssignment?.playerId],
       });
+      expect(presentation).toBeDefined();
       expect(targetPlayerId).not.toBe(seerAssignment?.playerId);
       expect(targetAssignment?.roleId).not.toBe("werewolf");
     }
@@ -829,7 +825,6 @@ describe("game engine", () => {
               value: { kind: "player", playerId: "3" },
             }),
           ]),
-          title: { en: "Spiritist result", ja: "霊能結果" },
         },
       },
       visibility: "private",

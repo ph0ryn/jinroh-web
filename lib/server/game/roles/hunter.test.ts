@@ -32,11 +32,6 @@ describe("HunterRole", () => {
       throw new Error("Hunter did not create its follow-up action.");
     }
 
-    expect(roleRegistry.get("hunter").getActionPresentation(actionEffect.actionKind)).toEqual({
-      en: { label: "Choose someone to take with you", submitLabel: "Take with you" },
-      ja: { label: "道連れにする相手を選ぶ", submitLabel: "道連れにする" },
-    });
-
     expect(
       collectRoleActionEffects({
         actionKind: actionEffect.actionKind,

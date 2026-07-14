@@ -368,13 +368,15 @@ by Realtime.
 
 ## Local validation
 
-Start the local Supabase stack, then run:
+Run the local validation lifecycle explicitly:
 
 ```sh
+pnpm run db:start
 pnpm run db:reset
 pnpm run lint:db
-pnpm run test:db
+pnpm run db:test
 pnpm run db:diff
+pnpm run db:stop
 ```
 
 `db:diff` must contain no schema DDL after a clean reset. Run the repository's
@@ -385,10 +387,10 @@ composite phase integrity, complete submitted/missing core and role-action
 history, RPC privileges, fixed `search_path` values, and authenticated Realtime
 RLS behavior.
 
-The E2E server obtains its database URL and keys from `supabase status -o env`,
-requires a literal loopback API URL, and injects those values into both build and
-runtime. It does not inherit `.env.local`, which prevents accidental resets or
-writes against a remote project.
+The Playwright server is local-only: it resets the local database, builds the
+application, and starts `next start` on `127.0.0.1:3010`. The application uses
+the documented `.env.local` values. Playwright tests exercise the application
+through its HTTP and browser boundaries.
 
 ## Change checklist
 

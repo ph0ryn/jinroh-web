@@ -115,6 +115,13 @@ type BroadcastMutationOptions = {
   privateRoleIds?: readonly RoleId[];
 };
 
+type RoomPhaseResolutionGateInput = {
+  allActionsSubmitted: boolean;
+  nightNumber: number;
+  phase: GamePhase;
+  phaseTimedOut: boolean;
+};
+
 export type IdentityResult = {
   token: string;
 };
@@ -123,6 +130,15 @@ export type ExpiredWaitingRoomCleanupResult = {
   deletedRealtimeGrants: number;
   expiredRooms: number;
 };
+
+export function shouldResolveRoomPhase({
+  allActionsSubmitted,
+  nightNumber,
+  phase,
+  phaseTimedOut,
+}: RoomPhaseResolutionGateInput): boolean {
+  return phaseTimedOut || ((phase !== "night" || nightNumber === 1) && allActionsSubmitted);
+}
 
 export async function createIdentity(): Promise<IdentityResult> {
   const supabase = createServiceClient();
@@ -621,8 +637,12 @@ async function resolveRoom(roomId: number): Promise<void> {
     actions.every((action) =>
       currentPendingActions.some((pendingAction) => pendingAction.current_action_id === action.id),
     );
-  const canResolve =
-    phaseTimedOut || ((state.phase !== "night" || state.night_number === 1) && allActionsSubmitted);
+  const canResolve = shouldResolveRoomPhase({
+    allActionsSubmitted,
+    nightNumber: state.night_number,
+    phase: state.phase,
+    phaseTimedOut,
+  });
 
   if (!canResolve) {
     return;

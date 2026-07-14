@@ -1,8 +1,10 @@
 import { defineConfig } from "playwright/test";
 
-const externalBaseUrl = process.env["E2E_BASE_URL"]?.replace(/\/$/u, "");
-const port = process.env["E2E_PORT"] ?? "3010";
-const localBaseUrl = `http://127.0.0.1:${port}`;
+const localBaseUrl = "http://127.0.0.1:3010";
+const localServerCommand = [
+  "pnpm run build",
+  "pnpm exec next start --hostname 127.0.0.1 --port 3010",
+].join(" && ");
 
 export default defineConfig({
   expect: {
@@ -11,25 +13,32 @@ export default defineConfig({
   forbidOnly: Boolean(process.env["CI"]),
   fullyParallel: false,
   outputDir: "test-results/playwright",
+  projects: [
+    {
+      name: "integration",
+      testMatch: "integration/**/*.spec.ts",
+    },
+    {
+      name: "browser",
+      testMatch: "browser/**/*.spec.ts",
+    },
+  ],
   reporter: process.env["CI"] ? [["github"], ["html", { open: "never" }]] : "list",
   retries: process.env["CI"] ? 1 : 0,
-  testDir: "./test/e2e",
+  testDir: "./test",
   timeout: 60_000,
   use: {
-    baseURL: externalBaseUrl ?? localBaseUrl,
+    baseURL: localBaseUrl,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "retain-on-failure",
   },
-  webServer:
-    externalBaseUrl === undefined
-      ? {
-          command: "node scripts/start-e2e-server.mjs",
-          env: { E2E_PORT: port },
-          reuseExistingServer: false,
-          timeout: 420_000,
-          url: `${localBaseUrl}/live`,
-        }
-      : undefined,
+  webServer: {
+    command: localServerCommand,
+    gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
+    reuseExistingServer: false,
+    timeout: 420_000,
+    url: `${localBaseUrl}/live`,
+  },
   workers: 1,
 });

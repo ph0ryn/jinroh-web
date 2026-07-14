@@ -71,7 +71,7 @@ pnpm install
 Start the local Supabase stack:
 
 ```sh
-pnpm exec supabase start
+pnpm run db:start
 ```
 
 Generate the token hash secret with:
@@ -80,7 +80,7 @@ Generate the token hash secret with:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
-Create `.env.local` with the local values printed by `supabase start`:
+Create `.env.local` with the local values printed by `pnpm run db:start`:
 
 ```sh
 ACCOUNT_TOKEN_HASH_SECRET=<generated 32-byte base64 secret>
@@ -110,6 +110,12 @@ Keep production Supabase credentials out of local `.env.local`.
 production when you want Open Graph images to resolve to a canonical URL; Vercel
 deployment URL environment variables are used as a fallback. Never expose
 `SUPABASE_SERVICE_ROLE_KEY` to the browser.
+
+Stop the local Supabase stack explicitly when finished:
+
+```sh
+pnpm run db:stop
+```
 
 ## Remote Database Setup
 
@@ -229,12 +235,9 @@ Deployment order:
 3. Configure the production environment variables in the host.
 4. Build with `pnpm run build`.
 5. Deploy the app.
-6. Run smoke checks against the deployment, for example:
-
-```sh
-E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e
-E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e:security
-```
+6. Run focused smoke checks against the local test stack when needed. The
+   repository integration and browser suites write test data, so do not run
+   them against production data.
 
 If using scheduled cleanup, call `/api/maintenance/expire-waiting-rooms` from a
 trusted cron job with `Authorization: Bearer <MAINTENANCE_SECRET>`. The secret
@@ -246,13 +249,10 @@ waiting rooms.
 ```sh
 pnpm run format
 pnpm run lint
-pnpm test
 pnpm run lint:db
-pnpm run test:db
-pnpm run db:diff
 pnpm exec tsc --noEmit --incremental false --pretty false
-pnpm run build
-pnpm run test:e2e:all
+pnpm test
+pnpm run db:diff
 ```
 
 Unit tests cover the engine, roles, effects, persisted contracts, token
@@ -260,23 +260,14 @@ handling, shared rule constraints, maintenance authentication, localization,
 and presentation helpers. Database tests require the local Supabase stack;
 `db:diff` should report no schema DDL after a clean reset.
 
-The Playwright suite owns one reproducible local lifecycle. It reads and validates
-the loopback-only local environment from `supabase status -o env`, resets local
-Supabase, injects the local credentials into the build and test server, and starts
-`next start`. Its specs verify the three-browser waiting-room
-and first-night UI flow, eight-player role/private-view boundaries, stale action
-rejection, private night conversation, private Realtime authorization and
-broadcast delivery, and maintenance authentication.
+Playwright has separate `integration` and `browser` projects under
+`test/integration/` and `test/browser/`. `test:e2e` resets the database, runs
+pgTAP, and invokes Playwright once so both projects share one `webServer` build
+and `next start` lifecycle. Run `pnpm test` for unit, pgTAP, integration, and
+browser coverage. Local E2E commands reset and write to the same database, so
+do not run multiple E2E commands concurrently.
 
-Use `test:e2e:roles` or `test:e2e:security` to run tagged subsets.
-`test:e2e:all` is an alias for the complete Playwright suite. Set
-`E2E_SKIP_DB_RESET=1` or `E2E_SKIP_BUILD=1` only when deliberately reusing local
-state or an existing build.
-
-To test an already running deployment, pass `E2E_BASE_URL=https://...`. Remote
-runs do not reset a database, build the app, or start a server. The authorized
-maintenance assertion is skipped unless running against the managed local test
-server.
+See `test/README.md` for fixture and assertion guidance.
 
 ## Architecture
 

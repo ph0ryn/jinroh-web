@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(88);
+select plan(89);
 
 create temporary table test_game_accounts (
   label text primary key,
@@ -1320,6 +1320,31 @@ select is(
   1,
   'an eligible viewer snapshot includes its night conversation'
 );
+
+update public.players as players
+set disconnected_at = greatest(players.last_seen_at, statement_timestamp())
+where players.id = (select player_id from test_game_accounts where label = 'host');
+
+select throws_ok(
+  $$
+    select *
+    from public.app_send_night_conversation_message(
+      (select account_id from test_game_accounts where label = 'host'),
+      (select room_code from test_game_fixture),
+      (select night_phase_instance_id from test_game_fixture),
+      1,
+      'wolves',
+      'disconnected sender'
+    )
+  $$,
+  'P0001',
+  'current_room_changed',
+  'a disconnected conversation member cannot send messages'
+);
+
+update public.players as players
+set disconnected_at = null
+where players.id = (select player_id from test_game_accounts where label = 'host');
 
 select is(
   (

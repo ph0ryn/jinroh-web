@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { roleRegistry } from "./roles";
 import {
   DEFAULT_RULE_OPTIONS,
   normalizeRuleSetInput,
@@ -50,8 +51,7 @@ describe("validateRuleSet", () => {
     ]);
     expect(result.resolvedRoleSetup.nightConversationGroups).toEqual([
       {
-        groupId: "werewolf",
-        label: { en: "Werewolf council", ja: "人狼の密談" },
+        ...roleRegistry.get("werewolf").nightConversation,
         roleIds: ["werewolf"],
       },
     ]);
@@ -210,7 +210,7 @@ describe("parseResolvedRoleSetup", () => {
     nightConversationGroups: [
       {
         groupId: "werewolf",
-        label: { en: "Werewolf council", ja: "人狼の密談" },
+        label: { en: "fixture-en-label", ja: "fixture-ja-label" },
         roleIds: ["werewolf"],
       },
     ],

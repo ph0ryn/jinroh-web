@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isAuthorizedMaintenanceRequest } from "@/lib/server/maintenanceAuth";
+import { isAuthorizedMaintenanceRequest } from "./maintenanceAuth";
 
 describe("maintenance request authentication", () => {
   afterEach(() => {

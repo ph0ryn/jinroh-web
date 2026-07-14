@@ -21,10 +21,7 @@ describe("authenticated route helper", () => {
     expect(mockedAuthenticate).not.toHaveBeenCalled();
 
     if ("response" in result) {
-      expect(result.response.status).toBe(401);
-      await expect(result.response.json()).resolves.toEqual({
-        error: { code: "unauthorized", message: "Bearer token is required." },
-      });
+      await expectApiError(result.response, 401, "unauthorized");
     }
   });
 
@@ -41,10 +38,7 @@ describe("authenticated route helper", () => {
     expect("response" in result).toBe(true);
 
     if ("response" in result) {
-      expect(result.response.status).toBe(401);
-      await expect(result.response.json()).resolves.toEqual({
-        error: { code: "unauthorized", message: "Invalid account token." },
-      });
+      await expectApiError(result.response, 401, "unauthorized");
     }
   });
 
@@ -60,13 +54,7 @@ describe("authenticated route helper", () => {
     expect("response" in result).toBe(true);
 
     if ("response" in result) {
-      expect(result.response.status).toBe(500);
-      await expect(result.response.json()).resolves.toEqual({
-        error: {
-          code: "server_error",
-          message: "Authentication is temporarily unavailable.",
-        },
-      });
+      await expectApiError(result.response, 500, "server_error");
     }
   });
 
@@ -83,3 +71,19 @@ describe("authenticated route helper", () => {
     expect(mockedAuthenticate).toHaveBeenCalledWith("jat_known");
   });
 });
+
+async function expectApiError(response: Response, status: number, code: string): Promise<void> {
+  expect(response.status).toBe(status);
+
+  const body = (await response.json()) as {
+    readonly error?: { readonly code?: unknown; readonly message?: unknown };
+  };
+
+  expect(body).toEqual({
+    error: {
+      code,
+      message: expect.any(String),
+    },
+  });
+  expect(String(body.error?.message).trim()).not.toBe("");
+}

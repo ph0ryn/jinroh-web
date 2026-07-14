@@ -40,12 +40,21 @@ describe("HTTP route helpers", () => {
     await expect(readJson(request)).resolves.toBeNull();
   });
 
-  it("serializes stable API error envelopes", async () => {
-    const response = jsonError("unauthorized", "Bearer token is required.", 401);
+  it("parses valid JSON bodies", async () => {
+    const request = new Request("https://jinroh.example/api", {
+      body: JSON.stringify({ fixture: true }),
+      method: "POST",
+    });
+
+    await expect(readJson(request)).resolves.toEqual({ fixture: true });
+  });
+
+  it("serializes the supplied API error contract", async () => {
+    const response = jsonError("conflict", "fixture message", 409);
 
     await expect(response.json()).resolves.toEqual({
-      error: { code: "unauthorized", message: "Bearer token is required." },
+      error: { code: "conflict", message: "fixture message" },
     });
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(409);
   });
 });
