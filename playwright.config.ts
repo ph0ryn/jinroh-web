@@ -18,14 +18,14 @@ const localEnvironment =
     : undefined;
 const localServerCommand = [
   "pnpm run db:reset",
-  ...(shouldRunDatabaseTests ? ["pnpm exec supabase test db"] : []),
+  ...(shouldRunDatabaseTests ? ["pnpm run test:db"] : []),
   "pnpm run build",
   `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
 ].join(" && ");
 
 if (externalBaseUrl !== undefined && shouldRunDatabaseTests) {
   throw new Error(
-    "test:all manages the local database and server. Run test:integration or test:browser explicitly for an isolated remote preview.",
+    "test:all includes local database checks and cannot target a remote preview. Run test:integration or test:browser explicitly for an isolated remote preview.",
   );
 }
 

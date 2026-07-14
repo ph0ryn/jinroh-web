@@ -257,18 +257,16 @@ pnpm run db:diff
 
 Unit tests cover the engine, roles, effects, persisted contracts, token
 handling, shared rule constraints, maintenance authentication, localization,
-and presentation helpers. Database tests use the local Supabase stack;
+and presentation helpers. Database tests require the local Supabase stack;
 `db:diff` should report no schema DDL after a clean reset.
 
 Playwright has separate `integration` and `browser` projects under
 `test/integration/` and `test/browser/`. Both use one reproducible local
-lifecycle: the package command starts the local Supabase stack when needed,
-then Playwright's `webServer` reads and validates its loopback-only environment,
-resets the database, builds the application, and starts `next start`.
-Playwright stops the application after every run, and the package command stops
-Supabase only when that run started it. Run `pnpm run test:all` for unit, pgTAP,
-integration, and browser coverage with one Playwright server lifecycle. Local
-Playwright commands share and reset the same database, so do not run them
+lifecycle through Playwright's `webServer`: read and validate the loopback-only
+Supabase environment, reset the database, build the application, start
+`next start`, and stop it after the run. Run `pnpm run test:all` for unit,
+pgTAP, integration, and browser coverage with one Playwright server lifecycle.
+Local Playwright commands share and reset the same database, so do not run them
 concurrently.
 
 See `test/README.md` for fixture, remote-preview, and assertion guidance.
