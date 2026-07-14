@@ -229,11 +229,14 @@ Deployment order:
 3. Configure the production environment variables in the host.
 4. Build with `pnpm run build`.
 5. Deploy the app.
-6. Run smoke checks against the deployment, for example:
+6. Run focused smoke checks against an isolated disposable preview when needed.
+   The repository integration and browser suites write test data, so they must
+   never target production. Remote writes require an explicit opt-in:
 
 ```sh
-E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e
-E2E_BASE_URL=https://your-deployment.example pnpm run test:e2e:security
+E2E_BASE_URL=https://isolated-preview.example \
+E2E_ALLOW_REMOTE_WRITES=1 \
+pnpm run test:browser
 ```
 
 If using scheduled cleanup, call `/api/maintenance/expire-waiting-rooms` from a
@@ -246,13 +249,10 @@ waiting rooms.
 ```sh
 pnpm run format
 pnpm run lint
-pnpm test
 pnpm run lint:db
-pnpm run test:db
-pnpm run db:diff
 pnpm exec tsc --noEmit --incremental false --pretty false
-pnpm run build
-pnpm run test:e2e:all
+pnpm run test:all
+pnpm run db:diff
 ```
 
 Unit tests cover the engine, roles, effects, persisted contracts, token
@@ -260,23 +260,15 @@ handling, shared rule constraints, maintenance authentication, localization,
 and presentation helpers. Database tests require the local Supabase stack;
 `db:diff` should report no schema DDL after a clean reset.
 
-The Playwright suite owns one reproducible local lifecycle. It reads and validates
-the loopback-only local environment from `supabase status -o env`, resets local
-Supabase, injects the local credentials into the build and test server, and starts
-`next start`. Its specs verify the three-browser waiting-room
-and first-night UI flow, eight-player role/private-view boundaries, stale action
-rejection, private night conversation, private Realtime authorization and
-broadcast delivery, and maintenance authentication.
+Playwright has separate `integration` and `browser` projects under
+`test/integration/` and `test/browser/`. Both use one reproducible local
+lifecycle: the runner locks the shared local stack, validates the loopback-only
+environment from `supabase status -o env`, resets Supabase, waits for Realtime,
+builds, starts `next start`, and cleans up the process group and port. Run
+`pnpm run test:all` for unit, pgTAP, integration, and browser coverage with one
+database reset and one build.
 
-Use `test:e2e:roles` or `test:e2e:security` to run tagged subsets.
-`test:e2e:all` is an alias for the complete Playwright suite. Set
-`E2E_SKIP_DB_RESET=1` or `E2E_SKIP_BUILD=1` only when deliberately reusing local
-state or an existing build.
-
-To test an already running deployment, pass `E2E_BASE_URL=https://...`. Remote
-runs do not reset a database, build the app, or start a server. The authorized
-maintenance assertion is skipped unless running against the managed local test
-server.
+See `test/README.md` for fixture, remote-preview, and assertion guidance.
 
 ## Architecture
 
