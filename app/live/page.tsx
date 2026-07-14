@@ -136,7 +136,6 @@ export default function LivePage() {
   const [isIdentityHydrated, setIsIdentityHydrated] = useState(false);
   const [isCurrentRoomReady, setIsCurrentRoomReady] = useState(false);
   const [invitationRoomCode, setInvitationRoomCode] = useState<string | null>(null);
-  const [entryModePreference, setEntryModePreference] = useState<"create" | "join">("create");
   const [pendingRoomSwitch, setPendingRoomSwitch] = useState<PendingRoomSwitch | null>(null);
   const [realtimeAuthorization, setRealtimeAuthorization] = useState<RealtimeAuthorization | null>(
     null,
@@ -246,7 +245,6 @@ export default function LivePage() {
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       const requestedRoomCode = getRoomCodeSearchParam(window.location.search);
-      const requestedEntryMode = new URLSearchParams(window.location.search).get("mode");
       const savedIdentityToken = readStorage(IDENTITY_STORAGE_KEY);
       const savedDisplayName = readStorage(DISPLAY_NAME_STORAGE_KEY);
 
@@ -266,10 +264,6 @@ export default function LivePage() {
       if (requestedRoomCode !== null) {
         setInvitationRoomCode(requestedRoomCode);
         setRoomCodeInput(requestedRoomCode);
-      }
-
-      if (requestedEntryMode === "join") {
-        setEntryModePreference("join");
       }
 
       setIsIdentityHydrated(true);
@@ -1455,9 +1449,7 @@ export default function LivePage() {
           {isRoomEntryAvailable ? (
             <LiveEntrySurface
               displayName={displayName}
-              initialEntryMode={
-                invitationRoomCode === null && entryModePreference === "create" ? "create" : "join"
-              }
+              initialEntryMode={invitationRoomCode === null ? "create" : "join"}
               isBusy={isBusy}
               pendingAction={setupPendingAction}
               roomCodeInput={roomCodeInput}
