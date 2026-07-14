@@ -284,6 +284,70 @@
   }
 }
 
+@media (orientation: landscape) and (max-height: 480px) {
+  .page {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: auto;
+    min-height: 100svh;
+    overflow: auto;
+    padding: max(10px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px))
+      max(10px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
+  }
+
+  .header,
+  .footer {
+    inset: auto;
+    padding: 0;
+    position: relative;
+  }
+
+  .hero {
+    height: auto;
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .heroContent {
+    transform: none;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.4rem, 8vw, 3.6rem);
+    line-height: 0.88;
+  }
+
+  .lead {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    margin-top: 10px;
+    max-width: 360px;
+  }
+
+  .playButton {
+    font-size: 0.68rem;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 6px 20px 6px 6px;
+  }
+
+  .playButtonCore {
+    height: 42px;
+    width: 42px;
+  }
+
+  .notes {
+    font-size: 0.5rem;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .footer {
+    align-self: end;
+    min-height: 12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .playButtonCore,
   .playButtonCore {

@@ -6,6 +6,10 @@ export const jaLocalization = {
       bad_request: "リクエストを受け付けられませんでした。",
       conflict: "部屋の状態が変わりました。更新してからもう一度試してください。",
       not_found: "部屋が見つかりませんでした。",
+      rate_limited: (retryAfterSeconds: number | null) =>
+        retryAfterSeconds === null
+          ? "操作が多すぎます。しばらく待ってからもう一度お試しください。"
+          : `操作が多すぎます。${retryAfterSeconds}秒待ってからもう一度お試しください。`,
       server_error: "問題が発生しました。しばらくしてからもう一度お試しください。",
       unauthorized: "参加情報の期限が切れました。部屋を作るか、参加し直してください。",
       unknown: "リクエストに失敗しました。",
@@ -591,6 +595,11 @@ export const jaLocalization = {
       roomCodeDigit: (index: number) => `部屋コード ${index} 桁目`,
       useIdentityHint: "ゲーム中にほかのプレイヤーから見える名前です。",
       yourSeat: "あなたの席",
+    },
+    storageUnavailable: {
+      body: "このブラウザではローカルストレージが拒否されているため、匿名の参加情報を安全に保持できません。サイトデータを許可するかプライベートブラウズを終了してから、このページを再読み込みしてください。",
+      kicker: "ブラウザ設定",
+      title: "ブラウザストレージが必要です",
     },
     settings: {
       dayMode: {

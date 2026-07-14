@@ -1,3 +1,4 @@
+import { DEFAULT_DISPLAY_NAMES } from "@/app/live/liveDefaultDisplayName";
 import { LOCALE_STORAGE_KEY, localizations } from "@/lib/i18n/localization";
 
 import { LivePage } from "../fixtures/livePage";
@@ -132,6 +133,88 @@ test("display names render as text instead of markup", async ({ live, page }) =>
   expect(await currentSeat.textContent()).toContain(displayName);
 });
 
+test("entry creates a neutral random display name and keeps a saved name", async ({
+  live,
+  page,
+}) => {
+  await live.open();
+
+  const displayNameInput = page.getByLabel(live.t.live.setup.displayName, { exact: true });
+  const generatedDisplayName = await displayNameInput.inputValue();
+
+  expect(DEFAULT_DISPLAY_NAMES).toContain(generatedDisplayName);
+
+  await displayNameInput.fill("Saved Player");
+  await page.reload();
+  await expect(displayNameInput).toHaveValue("Saved Player");
+});
+
+for (const blockedMethod of ["getItem", "setItem", "removeItem"] as const) {
+  test(`entry blocks all API work when localStorage.${blockedMethod} is rejected`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      extraHTTPHeaders: { "x-test-client-ip": nextEntryClientIpAddress() },
+      viewport: { height: 720, width: 1280 },
+    });
+    const page = await context.newPage();
+    const apiRequests: string[] = [];
+
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+
+      if (url.pathname.startsWith("/api/")) {
+        apiRequests.push(url.pathname);
+      }
+    });
+    await page.addInitScript((method) => {
+      const originalMethod = Storage.prototype[method];
+
+      Object.defineProperty(Storage.prototype, method, {
+        configurable: true,
+        value(key: string, ...args: string[]) {
+          if (key.startsWith("jinrohWeb.")) {
+            throw new DOMException("Storage access was denied.", "SecurityError");
+          }
+
+          return Reflect.apply(originalMethod, this, [key, ...args]) as string | null | undefined;
+        },
+      });
+    }, blockedMethod);
+
+    try {
+      await page.goto("/live?roomCode=123456");
+
+      const storageAlert = page.locator("[data-live-storage-unavailable]");
+
+      await expect(storageAlert).toBeVisible();
+      await expect(storageAlert).toContainText(localizations.en.live.storageUnavailable.title);
+      await page.waitForTimeout(250);
+
+      expect(apiRequests).toEqual([]);
+      expect(apiRequests.filter((path) => path === "/api/identity")).toHaveLength(0);
+
+      if (blockedMethod === "getItem") {
+        const languageButton = page.getByRole("button", {
+          name: localizations.en.common.language.ariaLabel,
+          exact: true,
+        });
+
+        await languageButton.click();
+        await page
+          .getByRole("menuitemradio", {
+            name: localizations.en.common.language.japanese,
+            exact: true,
+          })
+          .click();
+        await expect(storageAlert).toContainText(localizations.ja.live.storageUnavailable.title);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 type EntryBrowserPlayer = {
   readonly context: BrowserContext;
   readonly live: LivePage;
@@ -142,7 +225,10 @@ async function createEntryPlayer(
   browser: Browser,
   displayName: string,
 ): Promise<EntryBrowserPlayer> {
-  const context = await browser.newContext({ viewport: { height: 720, width: 1280 } });
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "x-test-client-ip": nextEntryClientIpAddress() },
+    viewport: { height: 720, width: 1280 },
+  });
   const page = await context.newPage();
   const live = new LivePage(page);
 
@@ -150,6 +236,12 @@ async function createEntryPlayer(
   await live.setDisplayName(displayName);
 
   return { context, live, page };
+}
+
+let nextEntryClientAddress = 1;
+
+function nextEntryClientIpAddress(): string {
+  return `203.0.113.${nextEntryClientAddress++}`;
 }
 
 function requireBrowserPlayer(

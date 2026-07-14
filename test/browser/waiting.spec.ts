@@ -114,6 +114,50 @@ test("settings keyboard navigation keeps drafts local until apply", async ({
   ).toBeChecked();
 });
 
+test("applied settings survive a reload only for the same waiting room session", async ({
+  live,
+  page,
+  request,
+}) => {
+  const { players } = await createWaitingRoom(request, ["Scoped settings host"], 3);
+  const host = requirePlayer(players, 0);
+
+  await live.open({ identityToken: host.token });
+  await live.settingsButton().click();
+
+  let dialog = live.settingsDialog();
+  const orderedDayMode = dialog.locator('input[name="dayMode"][value="ordered_speech"]');
+
+  await orderedDayMode.focus();
+  await orderedDayMode.press("Space");
+  await expect(orderedDayMode).toBeChecked();
+  await dialog
+    .getByRole("button", { name: live.t.live.buttons.applySettings, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+
+  await page.reload();
+  await live.settingsButton().click();
+  dialog = live.settingsDialog();
+  await expect(dialog.locator('input[name="dayMode"][value="ordered_speech"]')).toBeChecked();
+  await dialog.getByRole("button", { name: live.t.live.buttons.cancel, exact: true }).click();
+
+  await live.leaveButton().click();
+  await live
+    .leaveDialog()
+    .getByRole("button", { name: live.t.live.buttons.confirmLeaveRoom, exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: live.t.live.buttons.createRoom, exact: true }),
+  ).toBeVisible();
+
+  await live.createRoom(3);
+  await live.settingsButton().click();
+  await expect(
+    live.settingsDialog().locator('input[name="dayMode"][value="ready_check"]'),
+  ).toBeChecked();
+});
+
 test("settings modal owns focus, background isolation, and scrolling", async ({
   live,
   page,
