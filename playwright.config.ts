@@ -18,7 +18,7 @@ const localEnvironment =
     : undefined;
 const localServerCommand = [
   "pnpm run db:reset",
-  ...(shouldRunDatabaseTests ? ["pnpm run test:db"] : []),
+  ...(shouldRunDatabaseTests ? ["pnpm exec supabase test db"] : []),
   "pnpm run build",
   `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
 ].join(" && ");

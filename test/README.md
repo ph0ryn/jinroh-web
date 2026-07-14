@@ -28,19 +28,25 @@ pnpm run test:browser
 pnpm run test:all
 ```
 
-`test:unit` is the fast default and does not require Supabase. `test:db`
-expects the local Supabase stack and current migrations to be ready.
+`test:unit` is the fast default and does not require Supabase. `test:db` starts
+Supabase when needed, resets the local database, and then runs pgTAP.
 
 `test:integration` and `test:browser` run the corresponding Playwright project.
-For local runs, the configuration reads `supabase status -o json`, rejects a
-non-loopback Supabase API URL, and passes the local credentials to Playwright's
-`webServer`. The server command resets Supabase, builds the application, starts
-`next start`, and is stopped by Playwright when the run finishes. Override the
-application port with `E2E_PORT` when another service uses 3010.
+For local runs, the shared package lifecycle first checks `supabase status` and
+runs `supabase start` when the stack is unavailable. Playwright's `webServer`
+then reads the local credentials, rejects a non-loopback Supabase API URL,
+resets Supabase, builds the application, and starts `next start`. Playwright
+stops the application after every run. The package lifecycle also runs
+`supabase stop` when it started the stack, including after a failure or signal,
+while preserving a stack that was already running. Override the application
+port with `E2E_PORT` when another service uses 3010.
+
+`supabase start` uses the currently configured Docker-compatible runtime; the
+test lifecycle does not call an OrbStack-specific command.
 
 `test:all` runs Vitest and then invokes Playwright once for both projects. Its
-local `webServer` lifecycle resets Supabase, runs pgTAP, builds once, and starts
-one application server for the Playwright run.
+shared local lifecycle starts Supabase when needed; Playwright then resets it,
+runs pgTAP, builds once, and starts one application server for the run.
 
 Local Playwright commands reset and write to the same Supabase stack. Do not run
 them concurrently, and do not use a local database that contains data you need

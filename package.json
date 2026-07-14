@@ -16,10 +16,12 @@
     "precommit": "pnpm run fix && eslint",
     "start": "next start",
     "test": "pnpm run test:unit",
-    "test:all": "pnpm run test:unit && E2E_RUN_DATABASE_TESTS=1 playwright test",
-    "test:browser": "playwright test --project=browser",
-    "test:db": "supabase test db",
-    "test:integration": "playwright test --project=integration",
+    "test:all": "pnpm run test:unit && E2E_RUN_DATABASE_TESTS=1 pnpm run test:e2e",
+    "test:browser": "sh -c 'if [ \"${1:-}\" = \"--\" ]; then shift; fi; pnpm run test:e2e --project=browser \"$@\"' --",
+    "test:db": "E2E_BASE_URL= pnpm run test:local sh -c 'pnpm run db:reset && pnpm exec supabase test db'",
+    "test:e2e": "sh -c 'if [ \"${1:-}\" = \"--\" ]; then shift; fi; pnpm run test:local pnpm exec playwright test \"$@\"' --",
+    "test:integration": "sh -c 'if [ \"${1:-}\" = \"--\" ]; then shift; fi; pnpm run test:e2e --project=integration \"$@\"' --",
+    "test:local": "sh -c 'if [ \"$#\" -eq 0 ]; then echo \"test:local requires a command.\" >&2; exit 64; fi; ownsSupabase=0; skipLocalSupabase=0; commandPid=; signalExitCode=0; cleanup() { exitCode=$?; trap - EXIT HUP INT TERM; if [ \"$ownsSupabase\" -eq 1 ] && ! pnpm exec supabase stop; then [ \"$exitCode\" -ne 0 ] || exitCode=1; fi; exit \"$exitCode\"; }; relaySignal() { signalExitCode=$1; signalName=$2; if [ -n \"$commandPid\" ]; then kill \"-$signalName\" \"$commandPid\" 2>/dev/null || true; fi; }; trap cleanup EXIT; trap \"relaySignal 129 HUP\" HUP; trap \"relaySignal 130 INT\" INT; trap \"relaySignal 143 TERM\" TERM; if [ -n \"${E2E_BASE_URL:-}\" ]; then skipLocalSupabase=1; fi; for argument in \"$@\"; do if [ \"$argument\" = \"--list\" ]; then skipLocalSupabase=1; fi; done; if [ \"$skipLocalSupabase\" -eq 0 ]; then pnpm exec supabase status -o json >/dev/null 2>&1; supabaseStatus=$?; if [ \"$signalExitCode\" -ne 0 ]; then exit \"$signalExitCode\"; fi; if [ \"$supabaseStatus\" -ne 0 ]; then ownsSupabase=1; pnpm exec supabase start --yes || exit $?; fi; fi; if [ \"$signalExitCode\" -ne 0 ]; then exit \"$signalExitCode\"; fi; \"$@\" & commandPid=$!; commandExit=0; while :; do wait \"$commandPid\"; commandExit=$?; if [ \"$signalExitCode\" -eq 0 ] || ! kill -0 \"$commandPid\" 2>/dev/null; then break; fi; done; if [ \"$signalExitCode\" -ne 0 ]; then commandExit=$signalExitCode; fi; exit \"$commandExit\"' --",
     "test:unit": "vitest run"
   },
   "dependencies": {
