@@ -262,11 +262,12 @@ and presentation helpers. Database tests require the local Supabase stack;
 
 Playwright has separate `integration` and `browser` projects under
 `test/integration/` and `test/browser/`. Both use one reproducible local
-lifecycle: the runner locks the shared local stack, validates the loopback-only
-environment from `supabase status -o env`, resets Supabase, waits for Realtime,
-builds, starts `next start`, and cleans up the process group and port. Run
-`pnpm run test:all` for unit, pgTAP, integration, and browser coverage with one
-database reset and one build.
+lifecycle through Playwright's `webServer`: read and validate the loopback-only
+Supabase environment, reset the database, build the application, start
+`next start`, and stop it after the run. Run `pnpm run test:all` for unit,
+pgTAP, integration, and browser coverage with one Playwright server lifecycle.
+Local Playwright commands share and reset the same database, so do not run them
+concurrently.
 
 See `test/README.md` for fixture, remote-preview, and assertion guidance.
 

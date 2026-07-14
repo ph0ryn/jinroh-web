@@ -1,11 +1,33 @@
 import { defineConfig } from "playwright/test";
 
-import { resolveExternalBaseUrl } from "./scripts/test/localEnvironment.mjs";
-import { parseTcpPort } from "./scripts/test/tcpPort.mjs";
+import { readLocalTestEnvironment } from "./test/fixtures/environment";
 
-const externalBaseUrl = resolveExternalBaseUrl(process.env);
-const port = parseTcpPort(process.env["E2E_PORT"]);
+const externalBaseUrl = readExternalBaseUrl();
+const port = readPort();
 const localBaseUrl = `http://127.0.0.1:${port}`;
+const shouldRunDatabaseTests = process.env["E2E_RUN_DATABASE_TESTS"] === "1";
+const isListCommand = process.argv.includes("--list");
+const localEnvironment =
+  externalBaseUrl === undefined && !isListCommand
+    ? {
+        ...readLocalTestEnvironment(),
+        MAINTENANCE_SECRET:
+          process.env["MAINTENANCE_SECRET"] ?? "jinroh-e2e-maintenance-secret-32-bytes-minimum",
+        NEXT_TELEMETRY_DISABLED: "1",
+      }
+    : undefined;
+const localServerCommand = [
+  "pnpm run db:reset",
+  ...(shouldRunDatabaseTests ? ["pnpm run test:db"] : []),
+  "pnpm run build",
+  `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
+].join(" && ");
+
+if (externalBaseUrl !== undefined && shouldRunDatabaseTests) {
+  throw new Error(
+    "test:all manages the local database and server. Run test:integration or test:browser explicitly for an isolated remote preview.",
+  );
+}
 
 export default defineConfig({
   expect: {
@@ -37,11 +59,8 @@ export default defineConfig({
   webServer:
     externalBaseUrl === undefined
       ? {
-          command: "node scripts/test/startTestServer.mjs",
-          env: {
-            E2E_PORT: String(port),
-            E2E_RUN_DATABASE_TESTS: process.env["E2E_RUN_DATABASE_TESTS"] ?? "0",
-          },
+          command: localServerCommand,
+          env: localEnvironment,
           gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
           reuseExistingServer: false,
           timeout: 420_000,
@@ -50,3 +69,35 @@ export default defineConfig({
       : undefined,
   workers: 1,
 });
+
+function readExternalBaseUrl(): string | undefined {
+  const value = process.env["E2E_BASE_URL"]?.trim();
+
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+
+  if (process.env["E2E_ALLOW_REMOTE_WRITES"] !== "1") {
+    throw new Error(
+      "Remote E2E writes are disabled. Set E2E_ALLOW_REMOTE_WRITES=1 only for an isolated preview environment.",
+    );
+  }
+
+  const url = new URL(value);
+
+  if (!["http:", "https:"].includes(url.protocol) || url.href !== `${url.origin}/`) {
+    throw new Error("E2E_BASE_URL must be an HTTP origin without credentials or a path.");
+  }
+
+  return url.origin;
+}
+
+function readPort(): number {
+  const value = Number(process.env["E2E_PORT"] ?? 3010);
+
+  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
+    throw new Error("E2E_PORT must be an integer between 1 and 65535.");
+  }
+
+  return value;
+}

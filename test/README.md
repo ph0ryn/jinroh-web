@@ -7,7 +7,6 @@ the lowest layer that can prove it.
 
 - Co-located `app/**/*.test.ts` and `lib/**/*.test.ts` files cover pure UI
   models, game rules, projections, and server helpers with Vitest.
-- `test/tooling/**/*.test.ts` covers the local test runner itself.
 - `test/integration/**/*.spec.ts` covers HTTP, persistence, authorization, and
   Realtime contracts through a running application server.
 - `test/browser/**/*.spec.ts` covers a small set of user journeys, responsive
@@ -32,14 +31,20 @@ pnpm run test:all
 `test:unit` is the fast default and does not require Supabase. `test:db`
 expects the local Supabase stack and current migrations to be ready.
 
-`test:integration` and `test:browser` each own a destructive local lifecycle:
-they acquire a machine-local lock, reset the loopback-only Supabase project,
-wait for Realtime, build once, start `next start`, run the selected Playwright
-project, and release the server port. Do not run those commands concurrently.
-Override the application port with `E2E_PORT` when another service uses 3010.
+`test:integration` and `test:browser` run the corresponding Playwright project.
+For local runs, the configuration reads `supabase status -o json`, rejects a
+non-loopback Supabase API URL, and passes the local credentials to Playwright's
+`webServer`. The server command resets Supabase, builds the application, starts
+`next start`, and is stopped by Playwright when the run finishes. Override the
+application port with `E2E_PORT` when another service uses 3010.
 
-`test:all` runs Vitest, resets Supabase once, runs pgTAP, builds once, and then
-runs both Playwright projects against the same managed server.
+`test:all` runs Vitest and then invokes Playwright once for both projects. Its
+local `webServer` lifecycle resets Supabase, runs pgTAP, builds once, and starts
+one application server for the Playwright run.
+
+Local Playwright commands reset and write to the same Supabase stack. Do not run
+them concurrently, and do not use a local database that contains data you need
+to preserve.
 
 ## Remote previews
 
