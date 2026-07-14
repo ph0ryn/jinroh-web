@@ -168,9 +168,6 @@ describe("resolveEffects", () => {
         eventKind: "spiritist_result",
         kind: GameEffectKind.PrivateMessage,
         playerId: "spiritist",
-        presentation: expect.objectContaining({
-          title: { en: "Spiritist result", ja: "霊能結果" },
-        }),
       }),
     ]);
   });

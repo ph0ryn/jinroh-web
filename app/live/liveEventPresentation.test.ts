@@ -21,6 +21,6 @@ describe("winner presentation", () => {
 
   it("fails visibly instead of mislabeling an unknown team", () => {
     expect(formatWinner("unregistered_team", [], "en", localizations.en)).toBe("unregistered_team");
-    expect(formatWinner(null, [], "en", localizations.en)).toBe("No team");
+    expect(formatWinner(null, [], "en", localizations.en)).toBe(localizations.en.game.team.none);
   });
 });

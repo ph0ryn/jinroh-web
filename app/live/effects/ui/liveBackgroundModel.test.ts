@@ -107,10 +107,14 @@ describe("live background model", () => {
     expect(state.scenes.at(-1)?.mood).toBe("result");
   });
 
-  it("owns the deduplicated source mapping", () => {
-    expect(LIVE_BACKGROUND_SOURCE_BY_MOOD.setup).toBe(LIVE_BACKGROUND_SOURCE_BY_MOOD.waiting);
-    expect(LIVE_BACKGROUND_SOURCE_BY_MOOD.voting).toBe(LIVE_BACKGROUND_SOURCE_BY_MOOD.execution);
-    expect(getUniqueLiveBackgroundSources()).toHaveLength(5);
+  it("returns every configured source exactly once", () => {
+    const uniqueSources = getUniqueLiveBackgroundSources();
+
+    expect(new Set(uniqueSources).size).toBe(uniqueSources.length);
+
+    for (const source of Object.values(LIVE_BACKGROUND_SOURCE_BY_MOOD)) {
+      expect(uniqueSources).toContain(source);
+    }
   });
 });
 

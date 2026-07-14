@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { ENGINE_VERSION, makeDefaultRuleSetForPlayers, ROLE_REGISTRY_VERSION } from "./gameEngine";
 import {
   canSendNightConversation,
   getSharedActionRoleRecipients,
   isActionAvailableToPlayer,
   isRoomSnapshot,
+  parseSnapshotRuleSet,
   type CurrentActionRecord,
   type GameStateRecord,
   type PlayerRecord,
@@ -351,6 +353,34 @@ function makeValidWaitingSnapshot(): RoomSnapshot {
   };
 }
 
+function makeCurrentRuleSetSnapshot(): RoomSnapshot {
+  const snapshot = makeValidFullSnapshot();
+  const ruleSet = makeDefaultRuleSetForPlayers(snapshot.room.target_player_count);
+
+  return {
+    ...snapshot,
+    ruleSet: {
+      engine_version: ENGINE_VERSION,
+      options: {
+        dayMode: ruleSet.dayMode,
+        dayReadyCheckSecondsPerPlayer: ruleSet.dayReadyCheckSecondsPerPlayer,
+        daySpeechSeconds: ruleSet.daySpeechSeconds,
+        executionLastWordsSeconds: ruleSet.executionLastWordsSeconds,
+        firstDaySpeechRounds: ruleSet.firstDaySpeechRounds,
+        firstNightSeconds: ruleSet.firstNightSeconds,
+        nightSeconds: ruleSet.nightSeconds,
+        normalDaySpeechRounds: ruleSet.normalDaySpeechRounds,
+        roleOptions: ruleSet.roleOptions,
+        voteResultVisibility: ruleSet.voteResultVisibility,
+        votingSeconds: ruleSet.votingSeconds,
+      },
+      resolved_role_setup: snapshot.ruleSet!.resolved_role_setup,
+      role_counts: ruleSet.roleCounts as Record<string, number>,
+      role_registry_version: ROLE_REGISTRY_VERSION,
+    },
+  };
+}
+
 function omitOwnKey(value: object, key: string): Record<string, unknown> {
   const copy = { ...value } as Record<string, unknown>;
 
@@ -427,6 +457,58 @@ describe("night conversation write access", () => {
 
   it("keeps the conversation read-only outside night", () => {
     expect(canSendNightConversation(makeState({ phase: "day" }), player, true)).toBe(false);
+  });
+});
+
+describe("persisted rule set compatibility", () => {
+  it("parses a complete rule set for the current engine and role registry", () => {
+    const snapshot = makeCurrentRuleSetSnapshot();
+
+    expect(parseSnapshotRuleSet(snapshot)).toEqual(
+      makeDefaultRuleSetForPlayers(snapshot.room.target_player_count),
+    );
+  });
+
+  it.each([
+    { field: "engine_version" as const, value: `${ENGINE_VERSION}-mismatch` },
+    { field: "role_registry_version" as const, value: `${ROLE_REGISTRY_VERSION}-mismatch` },
+  ])("rejects a mismatched $field", ({ field, value }) => {
+    const snapshot = makeCurrentRuleSetSnapshot();
+
+    expect(() =>
+      parseSnapshotRuleSet({
+        ...snapshot,
+        ruleSet: { ...snapshot.ruleSet!, [field]: value },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a role count for an unknown role", () => {
+    const snapshot = makeCurrentRuleSetSnapshot();
+
+    expect(() =>
+      parseSnapshotRuleSet({
+        ...snapshot,
+        ruleSet: {
+          ...snapshot.ruleSet!,
+          role_counts: { ...snapshot.ruleSet!.role_counts, unknown_role: 1 },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a missing required option instead of applying a default", () => {
+    const snapshot = makeCurrentRuleSetSnapshot();
+
+    expect(() =>
+      parseSnapshotRuleSet({
+        ...snapshot,
+        ruleSet: {
+          ...snapshot.ruleSet!,
+          options: omitOwnKey(snapshot.ruleSet!.options, "nightSeconds"),
+        },
+      }),
+    ).toThrow();
   });
 });
 

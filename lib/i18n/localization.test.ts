@@ -65,28 +65,33 @@ describe("localization", () => {
     }
   });
 
-  it("uses localized fallbacks instead of unknown source text", () => {
-    expect(getLocalizedRole(localizations.ja, "ja").name).toBe("不明な役職");
+  it("resolves registered presentation and falls back through the active localization", () => {
+    const unknownRole = getLocalizedRole(localizations.ja, "ja");
+    const registeredPresentation = {
+      description: "fixture-ja-description",
+      name: "fixture-ja-name",
+      shortLabel: "fixture-ja-short-label",
+    };
+
+    expect(unknownRole).toEqual(localizations.ja.game.catalog.unknown.role);
     expect(
       getLocalizedRole(localizations.ja, "ja", {
         presentation: {
           en: {
-            description: "Future description",
-            name: "Future role",
-            shortLabel: "F",
+            description: "fixture-en-description",
+            name: "fixture-en-name",
+            shortLabel: "fixture-en-short-label",
           },
-          ja: {
-            description: "未来の説明",
-            name: "未来の役職",
-            shortLabel: "未",
-          },
+          ja: registeredPresentation,
         },
-      }).name,
-    ).toBe("未来の役職");
+      }),
+    ).toEqual(registeredPresentation);
     expect(getLocalizedActionProgressLabel(localizations.en, "future-progress")).toBe(
-      "Progress unavailable",
+      localizations.en.game.catalog.unknown.actionProgress,
     );
-    expect(getLocalizedRolePreset(localizations.ja, "future-preset").name).toBe("不明な役職構成");
+    expect(getLocalizedRolePreset(localizations.ja, "future-preset")).toEqual(
+      localizations.ja.game.catalog.unknown.rolePreset,
+    );
   });
 });
 

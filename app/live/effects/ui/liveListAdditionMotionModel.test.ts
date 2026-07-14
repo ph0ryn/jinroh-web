@@ -108,8 +108,16 @@ describe("live list addition motion model", () => {
   });
 
   it("provides a semantic dependency key", () => {
-    expect(getLiveListAdditionMotionSnapshotKey(snapshot(["item-a", "item-b"]))).toBe(
-      "open:visible:session-a:item-a:item-b",
+    const original = snapshot(["item-a", "item-b"]);
+
+    expect(getLiveListAdditionMotionSnapshotKey(original)).toBe(
+      getLiveListAdditionMotionSnapshotKey({ ...original, itemIds: [...original.itemIds] }),
+    );
+    expect(getLiveListAdditionMotionSnapshotKey(original)).not.toBe(
+      getLiveListAdditionMotionSnapshotKey({ ...original, isObscured: true }),
+    );
+    expect(getLiveListAdditionMotionSnapshotKey(original)).not.toBe(
+      getLiveListAdditionMotionSnapshotKey({ ...original, sessionKey: "session-b" }),
     );
   });
 });

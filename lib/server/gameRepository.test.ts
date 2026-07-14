@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getExpectedPersistedGameStatus,
   isRoomEndedBeforeStart,
+  shouldResolveRoomPhase,
   toPublicActionProgress,
   toPublicGameEvent,
   toPublicPhaseFocus,
@@ -126,6 +127,85 @@ describe("private action receipt projection", () => {
 });
 
 describe("phase resolution input", () => {
+  it.each([
+    {
+      allActionsSubmitted: true,
+      expected: true,
+      nightNumber: 1,
+      phase: "night" as const,
+      phaseTimedOut: false,
+      scenario: "first night with all actions submitted",
+    },
+    {
+      allActionsSubmitted: false,
+      expected: true,
+      nightNumber: 1,
+      phase: "night" as const,
+      phaseTimedOut: true,
+      scenario: "first night after timeout",
+    },
+    {
+      allActionsSubmitted: true,
+      expected: true,
+      nightNumber: 1,
+      phase: "day" as const,
+      phaseTimedOut: false,
+      scenario: "day with all actions submitted",
+    },
+    {
+      allActionsSubmitted: false,
+      expected: true,
+      nightNumber: 1,
+      phase: "day" as const,
+      phaseTimedOut: true,
+      scenario: "day after timeout",
+    },
+    {
+      allActionsSubmitted: true,
+      expected: true,
+      nightNumber: 1,
+      phase: "voting" as const,
+      phaseTimedOut: false,
+      scenario: "voting with all actions submitted",
+    },
+    {
+      allActionsSubmitted: false,
+      expected: true,
+      nightNumber: 1,
+      phase: "voting" as const,
+      phaseTimedOut: true,
+      scenario: "voting after timeout",
+    },
+    {
+      allActionsSubmitted: true,
+      expected: false,
+      nightNumber: 2,
+      phase: "night" as const,
+      phaseTimedOut: false,
+      scenario: "normal night with all actions submitted before timeout",
+    },
+    {
+      allActionsSubmitted: false,
+      expected: true,
+      nightNumber: 2,
+      phase: "night" as const,
+      phaseTimedOut: true,
+      scenario: "normal night after timeout",
+    },
+  ])(
+    "resolves $scenario only when allowed",
+    ({ allActionsSubmitted, expected, nightNumber, phase, phaseTimedOut }) => {
+      expect(
+        shouldResolveRoomPhase({
+          allActionsSubmitted,
+          nightNumber,
+          phase,
+          phaseTimedOut,
+        }),
+      ).toBe(expected);
+    },
+  );
+
   it("keeps timed-out core actions missing instead of synthesizing submissions", () => {
     expect(
       toSubmittedResolutionActions(

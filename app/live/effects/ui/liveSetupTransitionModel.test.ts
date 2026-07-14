@@ -49,8 +49,16 @@ describe("live setup transition model", () => {
   });
 
   it("provides a stable semantic dependency key", () => {
-    expect(getLiveSetupTransitionSnapshotKey(snapshot("waiting", "123456"))).toBe(
-      "waiting:123456:viewer-a",
+    const original = snapshot("waiting", "123456");
+
+    expect(getLiveSetupTransitionSnapshotKey(original)).toBe(
+      getLiveSetupTransitionSnapshotKey({ ...original }),
+    );
+    expect(getLiveSetupTransitionSnapshotKey(original)).not.toBe(
+      getLiveSetupTransitionSnapshotKey({ ...original, roomCode: "654321" }),
+    );
+    expect(getLiveSetupTransitionSnapshotKey(original)).not.toBe(
+      getLiveSetupTransitionSnapshotKey({ ...original, viewerPlayerId: "viewer-b" }),
     );
   });
 });

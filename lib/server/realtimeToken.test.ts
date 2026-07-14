@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createRealtimeAccessToken } from "@/lib/server/realtimeToken";
+import { createRealtimeAccessToken } from "./realtimeToken";
 
 describe("Realtime access token", () => {
   afterEach(() => {

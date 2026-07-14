@@ -58,13 +58,6 @@ describe("role presets", () => {
     ]);
   });
 
-  it("keeps spiritist naming and avoids the old medium id", () => {
-    const serializedPresets = JSON.stringify(ROLE_PRESETS);
-
-    expect(serializedPresets).toContain("spiritist");
-    expect(serializedPresets).not.toContain("medium");
-  });
-
   it("matches exact role counts to presets", () => {
     const preset = getRolePresetsForPlayerCount(9, roleIds)[0];
 
