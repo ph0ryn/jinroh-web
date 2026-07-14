@@ -1,17 +1,40 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { switchRoom } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
+import {
+  enforceRoomMutationAccountRateLimit,
+  enforceRoomMutationClientRateLimit,
+} from "@/lib/server/rateLimit";
 import { roomApiErrorResponse } from "@/lib/server/roomApiError";
 import { MAX_ROOM_PLAYERS, MIN_ROOM_PLAYERS, type SwitchRoomRequest } from "@/lib/shared/game";
 
 export async function POST(request: Request): Promise<Response> {
+  const body = await readJson<unknown>(request);
+  const mutationKind = getMutationKind(body);
+  const clientRateLimitResponse = await enforceRoomMutationClientRateLimit(
+    request,
+    mutationKind,
+    getTargetRoomCode(body),
+  );
+
+  if (clientRateLimitResponse !== null) {
+    return clientRateLimitResponse;
+  }
+
   const auth = await requireAccount(request);
 
   if ("response" in auth) {
     return auth.response;
   }
 
-  const body = await readJson<unknown>(request);
+  const accountRateLimitResponse = await enforceRoomMutationAccountRateLimit(
+    auth.account.id,
+    mutationKind,
+  );
+
+  if (accountRateLimitResponse !== null) {
+    return accountRateLimitResponse;
+  }
 
   if (!isSwitchRoomRequest(body)) {
     return jsonError("bad_request", "A valid room switch request is required.", 400);
@@ -27,6 +50,20 @@ export async function POST(request: Request): Promise<Response> {
       jsonError("server_error", "Room switch is temporarily unavailable.", 500)
     );
   }
+}
+
+function getMutationKind(value: unknown): "create" | "join" | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+
+  return value["kind"] === "create" || value["kind"] === "join" ? value["kind"] : undefined;
+}
+
+function getTargetRoomCode(value: unknown): string | undefined {
+  return isObject(value) && typeof value["targetRoomCode"] === "string"
+    ? value["targetRoomCode"]
+    : undefined;
 }
 
 function isSwitchRoomRequest(value: unknown): value is SwitchRoomRequest {

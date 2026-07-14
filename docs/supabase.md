@@ -48,6 +48,68 @@ Identity creation and token registration are atomic through
 `app_create_identity`. Authentication uses `app_authenticate_account`, which
 also throttles `last_used_at` writes.
 
+### Abuse-rate persistence
+
+`private.rate_limit_buckets` stores atomic token-bucket state for identity
+issuance, room create/join/switch mutations, and outsider room-code lookup.
+`app_consume_rate_limits` locks every requested bucket in stable key order,
+evaluates the complete batch against one database timestamp, and consumes all
+or none of the requested tokens. This makes capacity boundaries deterministic
+across concurrent server instances. Each policy's `refillSeconds` is the time
+required to refill the entire capacity, not the interval for one token.
+
+Bucket keys are HMAC-SHA-256 digests derived with a domain-separated use of
+`ACCOUNT_TOKEN_HASH_SECRET`. Raw client IP addresses and limiter subjects are
+never persisted or passed to `app_consume_rate_limits`; ordinary room RPCs still
+receive room codes as domain input. IPv4 clients are grouped by canonical `/32`; IPv6
+privacy addresses are canonicalized to `/64`, while IPv4-mapped IPv6 values are
+normalized back to their underlying IPv4 `/32`, before hashing. Account policies
+are also HMAC-keyed so the limiter table contains no directly reusable subject
+identifiers.
+
+The application consumes client/network buckets before authentication for room
+mutations, then consumes account buckets after authentication. Invalid bearer
+credentials, malformed bodies, unknown rooms, and failed domain mutations
+therefore still spend the relevant abuse quota. `app_switch_room` uses the same
+create or join policy selected by its request discriminator. Join also consumes
+a global target-room bucket so distributed clients cannot bypass concentration
+limits by rotating source addresses.
+
+Ordinary member room reads are excluded because each active browser polls every
+four seconds. `app_classify_room_lookup` first resolves only room existence and
+active membership using the same room-code ordering as the full snapshot. An
+outsider or missing-room lookup consumes the stricter account and network
+buckets before any full snapshot, expiration, resolution, or broadcast work.
+This preserves the existing public-view policy while bounding six-digit
+room-code enumeration and its database cost.
+
+Classification and the later snapshot are separate transactions. Membership or
+room lifecycle may change between them: a request classified as a member keeps
+that one-request exemption, a request classified as an outsider still spends
+its quota if it joins concurrently, and a room classified as missing remains a
+`404` for that request even if a matching code is created immediately afterward.
+The next request observes the new state. A room that disappears or expires after
+classification is still returned as `404` by the authoritative snapshot path.
+
+Expired bucket rows are removed in bounded batches during consume calls. A
+limiter error fails closed with `503`; an exhausted bucket returns `429` and a
+database-derived `Retry-After`. This database layer is not a WAF: ingress must
+still enforce request-size, bot, volumetric, and direct-origin controls.
+
+Only a trusted ingress-provided, single-value IP header may be configured.
+Vercel uses its system `x-vercel-forwarded-for` value. Other production
+environments must set `RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER`, strip any incoming
+value with that name, overwrite it from the transport peer, and prevent direct
+origin access. Missing or malformed trusted headers fail closed rather than
+collapsing public traffic into a shared fallback bucket.
+
+The `build` and `start` package scripts explicitly select release validation;
+they do not rely on an ambient `NODE_ENV` value to decide whether the trusted
+header is mandatory. Both load the standard Next.js production environment
+files and run the shared server-environment validator before starting Next.js.
+This keeps Vercel builds and self-hosted startup fail-fast while leaving
+`pnpm run dev` on development semantics.
+
 ### Rooms and membership
 
 `rooms` owns room lifecycle timestamps, the host account, capacity, and the
@@ -83,6 +145,11 @@ setup contains active role IDs, typed setup contributions, and resolved night
 conversation groups. Winner judgements exist only as typed contributions; they
 are not duplicated in another JSON field. Engine and registry versions live in
 dedicated columns rather than inside the resolved setup JSON.
+
+Game start and phase resolution RPCs accept a duration in seconds rather than an
+application-computed deadline. PostgreSQL derives both `started_at` and
+`ends_at` from the same transaction clock so transport latency and clock skew
+cannot shorten a phase or reject a valid minimum duration.
 
 `game_phase_instances` is the append-only identity and timing history for every
 playing phase. A transition closes the current instance and inserts the next
@@ -388,7 +455,7 @@ history, RPC privileges, fixed `search_path` values, and authenticated Realtime
 RLS behavior.
 
 The Playwright server is local-only: it resets the local database, builds the
-application, and starts `next start` on `127.0.0.1:3010`. The application uses
+application, and runs `pnpm start` on `127.0.0.1:3010`. The application uses
 the documented `.env.local` values. Playwright tests exercise the application
 through its HTTP and browser boundaries.
 

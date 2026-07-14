@@ -44,6 +44,20 @@ create table public.account_tokens (
     )
 );
 
+create table private.rate_limit_buckets (
+  bucket_key text primary key,
+  tokens numeric not null,
+  updated_at timestamptz not null,
+  expires_at timestamptz not null,
+  constraint rate_limit_buckets_key_shape_check
+    check (bucket_key ~ '^[A-Za-z0-9_-]{43}$'),
+  constraint rate_limit_buckets_tokens_check check (tokens >= 0),
+  constraint rate_limit_buckets_timestamps_check check (expires_at > updated_at)
+);
+
+create index rate_limit_buckets_expiration_idx
+  on private.rate_limit_buckets (expires_at, bucket_key);
+
 create index account_tokens_active_account_idx
   on public.account_tokens (account_id)
   where revoked_at is null;
@@ -731,6 +745,8 @@ create index realtime_grants_revoked_cleanup_idx
 
 alter table public.accounts enable row level security;
 alter table public.accounts force row level security;
+alter table private.rate_limit_buckets enable row level security;
+alter table private.rate_limit_buckets force row level security;
 alter table public.account_tokens enable row level security;
 alter table public.account_tokens force row level security;
 alter table public.rooms enable row level security;
@@ -779,4 +795,6 @@ alter table public.realtime_grants force row level security;
 revoke all on all tables in schema public
   from public, anon, authenticated, service_role;
 revoke all on all sequences in schema public
+  from public, anon, authenticated, service_role;
+revoke all on all tables in schema private
   from public, anon, authenticated, service_role;

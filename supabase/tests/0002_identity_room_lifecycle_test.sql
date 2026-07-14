@@ -1,9 +1,10 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
+create extension if not exists dblink with schema extensions;
 set local search_path = public, extensions;
 
-select plan(63);
+select plan(86);
 
 create temporary table test_accounts (
   label text primary key,
@@ -139,6 +140,59 @@ select is(
     where label = 'primary_create'
   ),
   'current room is derived from the active player membership'
+);
+
+select is(
+  (
+    select access_kind
+    from public.app_classify_room_lookup(
+      (select account_id from test_accounts where label = 'host'),
+      (
+        select public_room_code
+        from public.rooms
+        where id = (select room_id from room_calls where label = 'primary_create')
+      )
+    )
+  ),
+  'member',
+  'room lookup classification exempts an active member'
+);
+
+select is(
+  (
+    select access_kind
+    from public.app_classify_room_lookup(
+      (select account_id from test_accounts where label = 'overflow'),
+      (
+        select public_room_code
+        from public.rooms
+        where id = (select room_id from room_calls where label = 'primary_create')
+      )
+    )
+  ),
+  'outsider',
+  'room lookup classification identifies a nonmember before reading a snapshot'
+);
+
+select is(
+  (
+    select access_kind
+    from public.app_classify_room_lookup(
+      (select account_id from test_accounts where label = 'overflow'),
+      '999999'
+    )
+  ),
+  'not_found',
+  'room lookup classification rejects an unknown code without reading a snapshot'
+);
+
+select function_privs_are(
+  'public',
+  'app_classify_room_lookup',
+  array['bigint', 'text'],
+  'service_role',
+  array['EXECUTE'],
+  'only the application service role can classify room lookup access'
 );
 
 select throws_ok(
@@ -1429,6 +1483,376 @@ select is(
   ),
   '(ended,1)',
   'room switch join leaves only the target membership active'
+);
+
+select ok(
+  (
+    select allowed
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('a', 43),
+          'capacity', 2,
+          'refillSeconds', 60
+        )
+      )
+    )
+  ),
+  'the first token-bucket attempt is allowed'
+);
+
+select ok(
+  (
+    select allowed
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('a', 43),
+          'capacity', 2,
+          'refillSeconds', 60
+        )
+      )
+    )
+  ),
+  'the last available token is allowed'
+);
+
+select is(
+  (
+    select allowed
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('a', 43),
+          'capacity', 2,
+          'refillSeconds', 60
+        )
+      )
+    )
+  ),
+  false,
+  'capacity plus one is rejected'
+);
+
+select ok(
+  (
+    select retry_after_seconds > 0
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('a', 43),
+          'capacity', 2,
+          'refillSeconds', 60
+        )
+      )
+    )
+  ),
+  'a rejection returns a positive Retry-After value'
+);
+
+select is(
+  (
+    select allowed
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('a', 43),
+          'capacity', 2,
+          'refillSeconds', 60
+        ),
+        jsonb_build_object(
+          'key', repeat('b', 43),
+          'capacity', 1,
+          'refillSeconds', 60
+        )
+      )
+    )
+  ),
+  false,
+  'a multi-bucket request is denied when any bucket is empty'
+);
+
+select is(
+  (select tokens from private.rate_limit_buckets where bucket_key = repeat('b', 43)),
+  1::numeric,
+  'a denied multi-bucket request consumes no tokens'
+);
+
+update private.rate_limit_buckets
+set updated_at = clock_timestamp() - interval '1 minute'
+where bucket_key = repeat('a', 43);
+
+select ok(
+  (
+    select allowed
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('a', 43),
+          'capacity', 2,
+          'refillSeconds', 60
+        )
+      )
+    )
+  ),
+  'elapsed time refills the token bucket'
+);
+
+insert into private.rate_limit_buckets (bucket_key, tokens, updated_at, expires_at)
+values (
+  repeat('c', 43),
+  0,
+  clock_timestamp() - interval '2 minutes',
+  clock_timestamp() - interval '1 minute'
+);
+
+select lives_ok(
+  $$
+    select *
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('d', 43),
+          'capacity', 1,
+          'refillSeconds', 60
+        )
+      )
+    )
+  $$,
+  'a consume call cleans expired buckets without blocking the request'
+);
+
+select is(
+  (select count(*) from private.rate_limit_buckets where bucket_key = repeat('c', 43)),
+  0::bigint,
+  'expired buckets are deleted'
+);
+
+select throws_ok(
+  $$
+    select *
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object('key', repeat('e', 43), 'capacity', 1, 'refillSeconds', 60),
+        jsonb_build_object('key', repeat('e', 43), 'capacity', 1, 'refillSeconds', 60)
+      )
+    )
+  $$,
+  '22023',
+  'duplicate_rate_limit_rule',
+  'duplicate rules are rejected before locking buckets'
+);
+
+select throws_ok(
+  $$select * from public.app_consume_rate_limits(null::jsonb)$$,
+  '22023',
+  'invalid_rate_limit_rules',
+  'null rate-limit rules are rejected'
+);
+
+select throws_ok(
+  $$select * from public.app_consume_rate_limits('{}'::jsonb)$$,
+  '22023',
+  'invalid_rate_limit_rules',
+  'non-array rate-limit rules are rejected'
+);
+
+select throws_ok(
+  $$select * from public.app_consume_rate_limits('[]'::jsonb)$$,
+  '22023',
+  'invalid_rate_limit_rules',
+  'empty rate-limit rules are rejected'
+);
+
+select throws_ok(
+  $$
+    select *
+    from public.app_consume_rate_limits(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'key', rpad(rule_number::text, 43, 'x'),
+            'capacity', 1,
+            'refillSeconds', 60
+          )
+        )
+        from generate_series(1, 13) as rules(rule_number)
+      )
+    )
+  $$,
+  '22023',
+  'invalid_rate_limit_rules',
+  'an oversized rate-limit rule batch is rejected'
+);
+
+do $$
+begin
+  perform dblink_connect(
+    'rate_limit_cleanup_lock',
+    'host=supabase_db_jinroh-web port=5432 dbname='
+      || current_database()
+      || ' user=postgres password=postgres'
+  );
+  perform dblink_exec(
+    'rate_limit_cleanup_lock',
+    $remote$
+      insert into private.rate_limit_buckets (
+        bucket_key,
+        tokens,
+        updated_at,
+        expires_at
+      ) values (
+        'lllllllllllllllllllllllllllllllllllllllllll',
+        0,
+        clock_timestamp() - interval '2 minutes',
+        clock_timestamp() - interval '1 minute'
+      )
+    $remote$
+  );
+  perform dblink_exec('rate_limit_cleanup_lock', 'begin');
+  perform locked.bucket_key
+  from dblink(
+    'rate_limit_cleanup_lock',
+    $remote$
+      select bucket_key
+      from private.rate_limit_buckets
+      where bucket_key = 'lllllllllllllllllllllllllllllllllllllllllll'
+      for update
+    $remote$
+  ) as locked(bucket_key text);
+end;
+$$;
+
+set local lock_timeout = '500ms';
+
+select lives_ok(
+  $$
+    select *
+    from public.app_consume_rate_limits(
+      jsonb_build_array(
+        jsonb_build_object(
+          'key', repeat('m', 43),
+          'capacity', 1,
+          'refillSeconds', 60
+        )
+      )
+    )
+  $$,
+  'cleanup skips an expired bucket locked by another consumer'
+);
+
+select is(
+  (select tokens from private.rate_limit_buckets where bucket_key = repeat('m', 43)),
+  0::numeric,
+  'concurrent cleanup does not delete the newly consumed bucket'
+);
+
+select is(
+  (
+    select count(*)
+    from private.rate_limit_buckets
+    where bucket_key = repeat('l', 43)
+  ),
+  1::bigint,
+  'the locked expired bucket remains for a later bounded cleanup pass'
+);
+
+do $$
+begin
+  perform dblink_exec('rate_limit_cleanup_lock', 'rollback');
+  perform dblink_exec(
+    'rate_limit_cleanup_lock',
+    $remote$
+      delete from private.rate_limit_buckets
+      where bucket_key = 'lllllllllllllllllllllllllllllllllllllllllll'
+    $remote$
+  );
+  perform dblink_disconnect('rate_limit_cleanup_lock');
+end;
+$$;
+
+create temporary table test_rate_limit_lock_timing (
+  released_at timestamptz not null
+);
+
+do $$
+declare
+  v_connection_string text := 'host=supabase_db_jinroh-web port=5432 dbname='
+    || current_database()
+    || ' user=postgres password=postgres';
+begin
+  perform dblink_connect('rate_limit_timestamp_lock', v_connection_string);
+  perform dblink_connect('rate_limit_timestamp_consumer', v_connection_string);
+  perform dblink_exec(
+    'rate_limit_timestamp_lock',
+    $remote$
+      insert into private.rate_limit_buckets (
+        bucket_key,
+        tokens,
+        updated_at,
+        expires_at
+      ) values (
+        'ttttttttttttttttttttttttttttttttttttttttttt',
+        1,
+        clock_timestamp(),
+        clock_timestamp() + interval '2 minutes'
+      )
+    $remote$
+  );
+  perform dblink_exec('rate_limit_timestamp_lock', 'begin');
+  perform locked.bucket_key
+  from dblink(
+    'rate_limit_timestamp_lock',
+    $remote$
+      select bucket_key
+      from private.rate_limit_buckets
+      where bucket_key = 'ttttttttttttttttttttttttttttttttttttttttttt'
+      for update
+    $remote$
+  ) as locked(bucket_key text);
+  perform dblink_send_query(
+    'rate_limit_timestamp_consumer',
+    $remote$
+      select *
+      from public.app_consume_rate_limits(
+        jsonb_build_array(
+          jsonb_build_object(
+            'key', 'ttttttttttttttttttttttttttttttttttttttttttt',
+            'capacity', 1,
+            'refillSeconds', 60
+          )
+        )
+      )
+    $remote$
+  );
+  perform pg_sleep(0.2);
+  insert into test_rate_limit_lock_timing (released_at) values (clock_timestamp());
+  perform dblink_exec('rate_limit_timestamp_lock', 'commit');
+  perform result.allowed
+  from dblink_get_result('rate_limit_timestamp_consumer')
+    as result(allowed boolean, retry_after_seconds integer);
+  perform dblink_disconnect('rate_limit_timestamp_lock');
+  perform dblink_disconnect('rate_limit_timestamp_consumer');
+end;
+$$;
+
+select ok(
+  (
+    select buckets.updated_at >= timing.released_at
+    from private.rate_limit_buckets as buckets
+    cross join test_rate_limit_lock_timing as timing
+    where buckets.bucket_key = repeat('t', 43)
+  ),
+  'a waiting consumer fixes its decision timestamp after acquiring every bucket lock'
+);
+
+select function_privs_are(
+  'public',
+  'app_consume_rate_limits',
+  array['jsonb'],
+  'service_role',
+  array['EXECUTE'],
+  'only the application service role can consume rate limits'
 );
 
 select * from finish();

@@ -171,6 +171,49 @@ Account token が守るべき中心は、長期アカウント維持ではなく
 同じ Player として戻れることである。参加中の active Room がない Account が後から
 復元できなくなっても、ユーザー視点では新しい匿名 Account が作られるだけでよい。
 
+### Abuse Rate Limits
+
+Identity 発行、Room 作成、Room 参加、Room switch、非メンバーによる Room 参照には、
+全 application server instance で共有される database-backed token bucket を適用する。
+各 bucket の `refill` は記載時間で capacity 全体を回復する意味である。
+
+| 対象                 | Subject                      | Burst capacity / full refill | Sustained capacity / full refill |
+| -------------------- | ---------------------------- | ---------------------------- | -------------------------------- |
+| Identity 発行        | client network               | 15 / 30 分                   | 50 / 24 時間                     |
+| Room mutation 共通   | Account                      | 8 / 10 分                    | 24 / 24 時間                     |
+| Room mutation 共通   | client network               | 32 / 60 秒                   | 120 / 24 時間                    |
+| Room 作成            | Account                      | 3 / 30 分                    | 8 / 24 時間                      |
+| Room 作成            | client network               | 8 / 5 分                     | 30 / 24 時間                     |
+| Room 参加            | Account                      | 6 / 2 分                     | 20 / 24 時間                     |
+| Room 参加            | client network               | 24 / 30 秒                   | 100 / 24 時間                    |
+| Room 参加            | client network + target Room | 12 / 60 秒                   | なし                             |
+| Room 参加            | target Room 全体             | 12 / 60 秒                   | なし                             |
+| 非メンバー Room 参照 | Account                      | 6 / 10 分                    | 30 / 24 時間                     |
+| 非メンバー Room 参照 | client network               | 30 / 10 分                   | 100 / 24 時間                    |
+
+ルール:
+
+- 複数bucketは同一database timestampで原子的に判定し、全bucketが許可した場合だけ
+  tokenを消費する。
+- Room mutationのclient network bucketは認証より前に消費する。無効Token、不正body、
+  存在しないRoom、domain conflictもattemptとして数える。
+- Room switchは`kind`に応じて直接のRoom作成または参加と同じbucketを消費する。
+- 10人が同じNATから1つのRoomを作成・参加する通常フローを許可する。
+- active memberの4秒pollはRoom参照quotaを消費しない。cheapなRoom存在・active
+  membership分類をfull snapshotより先に行い、非メンバーと未存在codeはlookup
+  quotaが許可されるまでsnapshot・phase resolve・expiration処理へ進めない。
+- lookup分類とsnapshotの間にmembershipが変化した場合、そのrequestでは分類時の
+  quota判定を採用し、次のrequestから新しいmembershipを反映する。
+- quota超過は`429`と正の`Retry-After`を返す。limiter storeを利用できない場合は
+  protected operationを実行せず`503`を返す。
+- raw IPをDBへ保存しない。application serverでdomain-separated HMAC keyへ変換する。
+- IPv4はcanonical `/32`、IPv6はcanonical `/64`をclient network subjectとする。
+  IPv4-mapped IPv6はunderlying IPv4の`/32`へ正規化する。
+- client IP headerは、direct origin accessを遮断したtrusted ingressが必ず削除・上書き
+  する単一値headerだけを信頼する。欠落または不正値ではfail closedする。
+- application rate limitはWAF、bot management、request-size limit、DDoS protectionの
+  代替ではない。
+
 ### Display Name
 
 表示名は、Account の属性ではなく、ブラウザに保存する入力補助と
@@ -179,6 +222,8 @@ Room 内 Player の snapshot に分ける。
 ルール:
 
 - ブラウザは次回入力用の表示名 preference を local storage に保存してよい。
+- 保存済み preference がない場合、ブラウザは暗号学的乱数を使って1,024通りの中立な
+  default nameから偏りなく1つ選び、そのブラウザのpreferenceとして保存する。
 - 表示名 preference は認証情報ではない。
 - 表示名 preference は Account の source of truth ではない。
 - Account が消えて新しい匿名 Account になっても、local storage の表示名

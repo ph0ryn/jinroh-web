@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
+    "build": "node ./scripts/validateServerEnv.mjs && NODE_ENV=production next build",
     "db:diff": "supabase db diff --local",
     "db:reset": "supabase db reset --local",
     "db:start": "supabase start",
@@ -17,13 +17,14 @@
     "lint": "eslint && oxlint --type-aware --type-check",
     "lint:db": "supabase db lint --local",
     "precommit": "pnpm run fix && eslint && pnpm run test:unit",
-    "start": "next start",
+    "start": "node ./scripts/validateServerEnv.mjs && NODE_ENV=production next start",
     "test": "pnpm run --aggregate-output /^test:/",
     "test:e2e": "pnpm run db:reset && pnpm run db:test && playwright test",
     "test:unit": "vitest run"
   },
   "dependencies": {
     "@gsap/react": "catalog:",
+    "@next/env": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "gsap": "catalog:",
     "next": "catalog:",

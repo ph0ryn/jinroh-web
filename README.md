@@ -219,6 +219,7 @@ Production environment variables:
 ```sh
 ACCOUNT_TOKEN_HASH_SECRET=
 MAINTENANCE_SECRET=
+RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
@@ -227,15 +228,46 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_PUBLIC_SITE_URL=
 ```
 
+`RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER` must name a single-value client IP header
+that a trusted ingress removes and rewrites on every request. Vercel deployments
+use the platform-provided `x-vercel-forwarded-for` header automatically when the
+variable is omitted. Other production runtimes fail closed until the variable
+is configured. Reject direct origin access that can bypass the ingress; never
+configure a client-controlled `x-forwarded-for` or `x-real-ip` header without
+that guarantee.
+
+`pnpm run build` and `pnpm run start` run the same release-environment preflight
+before invoking Next.js. Missing or malformed required server variables stop a
+build before an artifact is produced and stop a self-hosted server before it can
+print `Ready` or listen on a port. These commands are treated as release
+operations even when the parent shell did not set `NODE_ENV`. Self-hosted
+deployments must use `pnpm run start` rather than invoke `next start` directly.
+`pnpm run dev` keeps development semantics and may omit the trusted client IP
+header.
+
+Identity creation, room creation, joining, switching, and outsider room lookup
+use atomic database-backed token buckets. A rejected request returns `429` with
+`Retry-After`; unavailable rate-limit storage returns `503` and does not perform
+the protected operation. These application limits protect domain writes and
+room-code lookup, but they do not replace CDN/WAF rate limiting, bot management,
+request-size limits, or network-level denial-of-service protection.
+
 Deployment order:
 
 1. Apply Supabase migrations with `pnpm exec supabase db push`.
 2. Confirm `pnpm exec supabase migration list` shows local and remote at the
    same latest migration.
 3. Configure the production environment variables in the host.
-4. Build with `pnpm run build`.
-5. Deploy the app.
-6. Run focused smoke checks against the local test stack when needed. The
+4. Confirm the trusted ingress overwrites the configured client IP header and
+   the application origin cannot be reached around it.
+5. Build with `pnpm run build`; the release preflight must succeed before Next.js
+   begins compiling.
+6. Deploy the app. Self-hosted deployments must launch it with `pnpm run start`
+   so the same preflight runs before the server process.
+7. Verify a deliberate quota breach returns `429` with a positive
+   `Retry-After`, and verify the upstream WAF independently blocks abusive
+   traffic.
+8. Run focused smoke checks against the local test stack when needed. The
    repository integration and browser suites write test data, so do not run
    them against production data.
 
