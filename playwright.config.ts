@@ -2,7 +2,6 @@ import { defineConfig } from "playwright/test";
 
 const localBaseUrl = "http://127.0.0.1:3010";
 const localServerCommand = [
-  "pnpm run db:reset",
   "pnpm run build",
   "pnpm exec next start --hostname 127.0.0.1 --port 3010",
 ].join(" && ");

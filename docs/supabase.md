@@ -374,7 +374,7 @@ Run the local validation lifecycle explicitly:
 pnpm run db:start
 pnpm run db:reset
 pnpm run lint:db
-pnpm run test:db
+pnpm run db:test
 pnpm run db:diff
 pnpm run db:stop
 ```

@@ -6,5 +6,5 @@ export default {
     return formatFiles.length === 0 ? [] : [`pnpm oxfmt ${formatFiles.join(" ")}`];
   },
   "package.json": ["sort-package-json"],
-  "{app,lib}/**/*.{ts,tsx}": ["pnpm run precommit", () => "pnpm test"],
+  "{app,lib}/**/*.{ts,tsx}": ["pnpm run precommit", () => "pnpm run test:unit"],
 };

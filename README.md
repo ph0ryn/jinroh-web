@@ -251,7 +251,7 @@ pnpm run format
 pnpm run lint
 pnpm run lint:db
 pnpm exec tsc --noEmit --incremental false --pretty false
-pnpm run test:all
+pnpm test
 pnpm run db:diff
 ```
 
@@ -261,13 +261,11 @@ and presentation helpers. Database tests require the local Supabase stack;
 `db:diff` should report no schema DDL after a clean reset.
 
 Playwright has separate `integration` and `browser` projects under
-`test/integration/` and `test/browser/`. Both use one reproducible local
-lifecycle through Playwright's `webServer`: reset the database, build the
-application, start `next start`, and stop it after the run. Run
-`pnpm run test:all` for unit, pgTAP, integration, and browser coverage with one
-Playwright server lifecycle.
-Local Playwright commands share and reset the same database, so do not run them
-concurrently.
+`test/integration/` and `test/browser/`. `test:e2e` resets the database, runs
+pgTAP, and invokes Playwright once so both projects share one `webServer` build
+and `next start` lifecycle. Run `pnpm test` for unit, pgTAP, integration, and
+browser coverage. Local E2E commands reset and write to the same database, so
+do not run multiple E2E commands concurrently.
 
 See `test/README.md` for fixture and assertion guidance.
 

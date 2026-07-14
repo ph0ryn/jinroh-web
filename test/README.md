@@ -21,29 +21,32 @@ of duplicating them across specs.
 ## Commands
 
 ```sh
+pnpm test
 pnpm run test:unit
-pnpm run test:db
-pnpm run test:integration
-pnpm run test:browser
-pnpm run test:all
+pnpm run db:test
+pnpm run test:e2e
+pnpm run test:e2e --project=integration
+pnpm run test:e2e --project=browser
 ```
 
-`test:unit` is the fast default and does not require Supabase. `test:db`
+`test:unit` is the fast unit suite and does not require Supabase. `db:test`
 expects the local Supabase stack and current migrations to be ready. Start and
 stop the stack explicitly with `pnpm run db:start` and `pnpm run db:stop`; test
 commands do not manage its lifecycle.
 
-`test:integration` and `test:browser` run the corresponding Playwright project.
-For local runs, Playwright's `webServer` resets Supabase, builds the application,
-starts `next start` on port 3010, and stops it when the run finishes.
+`test:e2e` resets Supabase, runs pgTAP, and invokes Playwright once. Playwright's
+`webServer` builds the application, starts `next start` on port 3010, and stops
+it when the run finishes. Pass `--project=integration` or `--project=browser`
+to run one Playwright project through the same lifecycle.
 
-`test:all` runs Vitest, pgTAP, and then invokes Playwright once for both projects.
-Its local `webServer` lifecycle resets Supabase, builds once, and starts one
-application server for the Playwright run.
+`pnpm test` uses pnpm's regular-expression runner to execute `test:unit` and
+`test:e2e` together. Only those two parallel-safe top-level scripts use the
+`test:` namespace; database and Playwright project selection stay inside the
+single `test:e2e` process.
 
-Local Playwright commands reset and write to the same Supabase stack. Do not run
-them concurrently, and do not use a local database that contains data you need
-to preserve.
+Local E2E commands reset and write to the same Supabase stack. Do not run them
+concurrently, and do not use a local database that contains data you need to
+preserve.
 
 ## Assertion boundaries
 
