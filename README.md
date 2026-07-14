@@ -71,7 +71,7 @@ pnpm install
 Start the local Supabase stack:
 
 ```sh
-pnpm exec supabase start
+pnpm run db:start
 ```
 
 Generate the token hash secret with:
@@ -80,7 +80,7 @@ Generate the token hash secret with:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
-Create `.env.local` with the local values printed by `supabase start`:
+Create `.env.local` with the local values printed by `pnpm run db:start`:
 
 ```sh
 ACCOUNT_TOKEN_HASH_SECRET=<generated 32-byte base64 secret>
@@ -110,6 +110,12 @@ Keep production Supabase credentials out of local `.env.local`.
 production when you want Open Graph images to resolve to a canonical URL; Vercel
 deployment URL environment variables are used as a fallback. Never expose
 `SUPABASE_SERVICE_ROLE_KEY` to the browser.
+
+Stop the local Supabase stack explicitly when finished:
+
+```sh
+pnpm run db:stop
+```
 
 ## Remote Database Setup
 

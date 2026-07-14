@@ -368,13 +368,15 @@ by Realtime.
 
 ## Local validation
 
-Start the local Supabase stack, then run:
+Run the local validation lifecycle explicitly:
 
 ```sh
+pnpm run db:start
 pnpm run db:reset
 pnpm run lint:db
 pnpm run test:db
 pnpm run db:diff
+pnpm run db:stop
 ```
 
 `db:diff` must contain no schema DDL after a clean reset. Run the repository's

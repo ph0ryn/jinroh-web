@@ -29,7 +29,9 @@ pnpm run test:all
 ```
 
 `test:unit` is the fast default and does not require Supabase. `test:db`
-expects the local Supabase stack and current migrations to be ready.
+expects the local Supabase stack and current migrations to be ready. Start and
+stop the stack explicitly with `pnpm run db:start` and `pnpm run db:stop`; test
+commands do not manage its lifecycle.
 
 `test:integration` and `test:browser` run the corresponding Playwright project.
 For local runs, Playwright's `webServer` resets Supabase, builds the application,

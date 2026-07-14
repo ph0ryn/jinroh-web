@@ -6,6 +6,8 @@
     "build": "next build",
     "db:diff": "supabase db diff --local",
     "db:reset": "supabase db reset --local",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
     "dev": "next dev",
     "fix": "oxlint --type-aware --type-check --fix && pnpm run format",
     "format": "pnpm run lint --fix && oxfmt",
