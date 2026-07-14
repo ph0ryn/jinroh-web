@@ -1,0 +1,41 @@
+.brand {
+  align-items: center;
+  display: inline-flex;
+  gap: 11px;
+}
+
+.mark {
+  align-items: center;
+  background: rgba(214, 173, 103, 0.1);
+  border: 1px solid rgba(214, 173, 103, 0.58);
+  border-radius: 50%;
+  display: inline-flex;
+  height: 39px;
+  justify-content: center;
+  width: 39px;
+}
+
+.mark img {
+  display: block;
+}
+
+.name {
+  align-items: baseline;
+  display: flex;
+  gap: 4px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.name strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.name span {
+  color: #d6ad67;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}

@@ -53,25 +53,6 @@
   z-index: 2;
 }
 
-.brand {
-  align-items: center;
-  display: inline-flex;
-  gap: 11px;
-}
-
-.brandMark {
-  align-items: center;
-  background: rgba(214, 173, 103, 0.1);
-  border: 1px solid rgba(214, 173, 103, 0.58);
-  border-radius: 50%;
-  color: var(--landing-brass);
-  display: inline-flex;
-  height: 39px;
-  justify-content: center;
-  width: 39px;
-}
-
-.brandMark img,
 .playButtonCore svg {
   display: block;
 }
@@ -85,27 +66,6 @@
 
 .playButtonCore svg {
   stroke: none;
-}
-
-.brandName {
-  align-items: baseline;
-  display: flex;
-  gap: 4px;
-  letter-spacing: 0.04em;
-  line-height: 1;
-}
-
-.brandName strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.2rem;
-  font-weight: 700;
-}
-
-.brandName span {
-  color: var(--landing-brass);
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
 }
 
 .headerStatus,

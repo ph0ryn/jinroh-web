@@ -1,6 +1,6 @@
-import Image from "next/image";
 import Link from "next/link";
 
+import { JinrohBrandLink } from "./jinrohBrandLink";
 import styles from "./landingPage.module.css";
 
 import type { ReactNode } from "react";
@@ -16,15 +16,7 @@ export default function Page() {
       <div className={styles["grid"]} aria-hidden="true" />
 
       <header className={styles["header"]}>
-        <Link className={styles["brand"]} href="/" aria-label="Jinroh Web home">
-          <span className={styles["brandMark"]}>
-            <Image alt="" aria-hidden="true" height={32} src="/images/jinroh-mark.png" width={32} />
-          </span>
-          <span className={styles["brandName"]}>
-            <strong>Jinroh</strong>
-            <span>WEB</span>
-          </span>
-        </Link>
+        <JinrohBrandLink />
         <span className={styles["headerStatus"]}>
           <span /> Ready for game night
         </span>

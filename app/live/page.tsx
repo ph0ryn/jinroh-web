@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/app/i18nProvider";
+import { JinrohBrandLink } from "@/app/jinrohBrandLink";
 import { LanguageSwitcher } from "@/app/languageSwitcher";
 import { LiveGameEffects } from "@/app/live/effects/LiveGameEffects";
 import { LiveBackground } from "@/app/live/effects/ui/LiveBackground";
@@ -1437,7 +1438,9 @@ export default function LivePage() {
             data-live-entry-header
           >
             <div className="liveHeroTitle liveEntryBrand">
-              <h1>Jinroh Web</h1>
+              <h1 className="liveEntryBrandHeading">
+                <JinrohBrandLink />
+              </h1>
             </div>
             <div className="liveHeroTitle liveEntryStatus">
               <h2>{getLivePageTitle(roomSummary, t)}</h2>
