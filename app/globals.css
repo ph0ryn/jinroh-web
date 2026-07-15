@@ -97,10 +97,6 @@ a {
   display: inline-flex;
   height: 48px;
   justify-content: center;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
   width: 48px;
 }
 
@@ -362,10 +358,6 @@ a {
   box-shadow:
     var(--shadow-tight),
     0 0 42px rgba(var(--live-accent-rgb), 0.04);
-  transition:
-    background 260ms ease,
-    border-color 260ms ease,
-    box-shadow 260ms ease;
 }
 
 .liveEntrySurface {
@@ -454,10 +446,6 @@ a {
   height: 48px;
   outline: none;
   padding: 0 14px;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
   width: 100%;
 }
 
@@ -602,11 +590,6 @@ a {
   justify-content: center;
   min-height: 44px;
   padding: 0 14px;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    opacity 160ms ease,
-    transform 160ms ease;
 }
 
 .liveShell button:hover:not(:disabled) {
@@ -1372,11 +1355,6 @@ a {
   min-height: 138px;
   padding: 14px;
   text-align: left;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
 }
 
 .liveRolePresetCard:hover {
@@ -1514,11 +1492,6 @@ a {
   min-height: 158px;
   padding: 16px;
   position: relative;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
 }
 
 .liveSettingsChoice input {
@@ -1834,10 +1807,6 @@ a {
   grid-template-columns: 44px minmax(0, 1fr) 136px;
   min-height: 72px;
   padding: 12px;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    opacity 160ms ease;
 }
 
 .liveRoleCard.is-zero {

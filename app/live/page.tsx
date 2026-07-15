@@ -48,7 +48,12 @@ import {
 } from "@/app/live/liveClient";
 import { createDefaultDisplayName } from "@/app/live/liveDefaultDisplayName";
 import { getLiveGameSessionKey, hasLiveGameBoundary } from "@/app/live/liveGameSession";
-import { formatRoomStatus, getLiveMood, getLivePageTitle } from "@/app/live/livePresentation";
+import {
+  formatRoomStatus,
+  getLiveDocumentTitle,
+  getLiveMood,
+  getLivePageTitle,
+} from "@/app/live/livePresentation";
 import { LiveRoundTable } from "@/app/live/liveRoundTable";
 import {
   buildStartRuleSetInput,
@@ -221,6 +226,10 @@ export default function LivePage() {
     request: requestToast,
     state: toastState,
   } = useLiveToastController();
+
+  useEffect(() => {
+    document.title = getLiveDocumentTitle(displayedRoomSummary, t);
+  }, [displayedRoomSummary, t]);
 
   const captureRoomToastScope = useCallback(
     (): LiveToastScope =>

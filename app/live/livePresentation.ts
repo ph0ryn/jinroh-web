@@ -42,6 +42,14 @@ export function getLivePageTitle(summary: RoomSummary | null, t: Localization): 
   return formatPhaseTitle(summary.game?.phase ?? null, t);
 }
 
+export function getLiveDocumentTitle(summary: RoomSummary | null, t: Localization): string {
+  if (summary === null) {
+    return `${getLivePageTitle(null, t)} — Jinroh Web`;
+  }
+
+  return `${getLiveTableTitle(summary, t)} · ${summary.code} — Jinroh Web`;
+}
+
 export function getLiveTableTitle(summary: RoomSummary, t: Localization): string {
   if (summary.game?.status === "ended") {
     return t.live.page.result;

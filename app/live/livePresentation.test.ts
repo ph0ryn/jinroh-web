@@ -2,11 +2,40 @@ import { describe, expect, it } from "vitest";
 
 import { localizations } from "@/lib/i18n/localization";
 
-import { canStartRoom, countLobbyReadyPlayers, getLobbyReadinessHint } from "./livePresentation";
+import {
+  canStartRoom,
+  countLobbyReadyPlayers,
+  getLiveDocumentTitle,
+  getLobbyReadinessHint,
+} from "./livePresentation";
 
 import type { PublicPlayer, RoomSummary } from "@/lib/shared/game";
 
 describe("live lobby presentation", () => {
+  it("identifies the live surface and accepted room in the document title", () => {
+    expect(getLiveDocumentTitle(null, localizations.en)).toBe("Enter room — Jinroh Web");
+    expect(getLiveDocumentTitle(makeSummary("waiting", []), localizations.en)).toBe(
+      "Waiting · 123456 — Jinroh Web",
+    );
+    const ended = makeSummary("ended", []);
+    ended.game = {
+      actionProgress: null,
+      dayNumber: 2,
+      events: [],
+      gameId: "game-a",
+      nightNumber: 1,
+      phase: null,
+      phaseEndsAt: null,
+      phaseFocus: null,
+      phaseInstanceId: null,
+      revision: 1,
+      status: "ended",
+      winnerTeam: "villagers",
+    };
+
+    expect(getLiveDocumentTitle(ended, localizations.ja)).toBe("結果 · 123456 — Jinroh Web");
+  });
+
   it("requires an exact connected and ready roster before either first play or replay", () => {
     const waiting = makeSummary("waiting", [
       makePlayer("alice", true),
