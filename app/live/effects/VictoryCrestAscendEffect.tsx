@@ -13,6 +13,7 @@ type VictoryCrestAscendEffectProps = {
   readonly cue: Extract<LiveEffectCue, { readonly kind: "victory" }>;
   readonly kicker: string;
   readonly onComplete: () => void;
+  readonly onDisplayCommit: () => void;
   readonly result: string | null;
   readonly subtitle: string;
   readonly title: string;
@@ -22,6 +23,7 @@ export function VictoryCrestAscendEffect({
   cue,
   kicker,
   onComplete,
+  onDisplayCommit,
   result,
   subtitle,
   title,
@@ -45,17 +47,18 @@ export function VictoryCrestAscendEffect({
 
       if (reducedMotion) {
         timeline
-          .set(root, { autoAlpha: 0 })
+          .set(root, { opacity: 0 })
           .set(staticElements, { clearProps: "all" })
-          .to(root, { autoAlpha: 1, duration: 0.16, ease: "power1.out" })
-          .to(root, { autoAlpha: 0, duration: 0.16, ease: "power1.in" }, "+=1.45");
+          .to(root, { duration: 0.16, ease: "power1.out", opacity: 1 })
+          .call(onDisplayCommit, undefined, "+=1.45")
+          .to(root, { duration: 0.16, ease: "power1.in", opacity: 0 });
 
         return () => timeline.kill();
       }
 
       timeline
-        .set(root, { autoAlpha: 0 })
-        .to(root, { autoAlpha: 1, duration: 0.24, ease: "power2.out" }, 0)
+        .set(root, { opacity: 0 })
+        .to(root, { duration: 0.24, ease: "power2.out", opacity: 1 }, 0)
         .fromTo(
           emblem,
           { autoAlpha: 0, filter: "blur(14px)", rotate: -42, scale: 0.34, y: 88 },
@@ -91,7 +94,8 @@ export function VictoryCrestAscendEffect({
         )
         .to(emblem, { duration: 1.1, ease: "sine.inOut", repeat: 1, scale: 1.06, yoyo: true }, 1.65)
         .to(rings, { duration: 2.2, ease: "none", rotate: 28, stagger: 0.08 }, 1.2)
-        .to(root, { autoAlpha: 0, duration: 0.54, ease: "power2.inOut" }, 4.2);
+        .call(onDisplayCommit, undefined, 4.2)
+        .to(root, { duration: 0.54, ease: "power2.inOut", opacity: 0 }, 4.2);
 
       return () => timeline.kill();
     },

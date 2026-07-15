@@ -12,11 +12,11 @@
   padding: max(24px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px))
     max(24px, env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
   place-items: center;
-  pointer-events: none;
+  pointer-events: auto;
   position: fixed;
-  visibility: hidden;
+  visibility: visible;
   width: 100vw;
-  z-index: 60;
+  z-index: 90;
 }
 
 .roleStage {

@@ -13,6 +13,7 @@ type PhaseChapterEffectProps = {
   readonly cue: Extract<LiveEffectCue, { readonly kind: "phase" }>;
   readonly label: string;
   readonly onComplete: () => void;
+  readonly onDisplayCommit: () => void;
   readonly title: string;
 };
 
@@ -21,6 +22,7 @@ export function PhaseChapterEffect({
   cue,
   label,
   onComplete,
+  onDisplayCommit,
   title,
 }: PhaseChapterEffectProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -46,17 +48,18 @@ export function PhaseChapterEffect({
 
       if (reducedMotion) {
         timeline
-          .set(root, { autoAlpha: 0 })
+          .set(root, { opacity: 0 })
           .set(staticElements, { clearProps: "all" })
-          .to(root, { autoAlpha: 1, duration: 0.16, ease: "power1.out" })
-          .to(root, { autoAlpha: 0, duration: 0.16, ease: "power1.in" }, "+=1.05");
+          .to(root, { duration: 0.16, ease: "power1.out", opacity: 1 })
+          .call(onDisplayCommit, undefined, "+=1.05")
+          .to(root, { duration: 0.16, ease: "power1.in", opacity: 0 });
 
         return () => timeline.kill();
       }
 
       timeline
-        .set(root, { autoAlpha: 0 })
-        .to(root, { autoAlpha: 1, duration: 0.2, ease: "power2.out" }, 0)
+        .set(root, { opacity: 0 })
+        .to(root, { duration: 0.2, ease: "power2.out", opacity: 1 }, 0)
         .fromTo(
           diamond,
           { autoAlpha: 0, rotate: -135, scale: 0 },
@@ -78,7 +81,8 @@ export function PhaseChapterEffect({
         )
         .fromTo(labelElement, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, duration: 0.42, y: 0 }, 1.1)
         .to(diamond, { duration: 1.5, ease: "none", rotate: 225 }, 1.25)
-        .to(root, { autoAlpha: 0, duration: 0.5, ease: "power2.inOut" }, 2.85);
+        .call(onDisplayCommit, undefined, 2.85)
+        .to(root, { duration: 0.5, ease: "power2.inOut", opacity: 0 }, 2.85);
 
       return () => timeline.kill();
     },

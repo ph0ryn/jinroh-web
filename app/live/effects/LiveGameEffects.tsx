@@ -21,6 +21,7 @@ type LiveGameEffectsProps = {
   readonly activeCue: LiveEffectCue | null;
   readonly locale: Locale;
   readonly onComplete: (cueId: string) => void;
+  readonly onDisplayCommit: (cueId: string) => void;
   readonly shellRef: RefObject<HTMLElement | null>;
   readonly summary: RoomSummary | null;
   readonly t: Localization;
@@ -30,6 +31,7 @@ export function LiveGameEffects({
   activeCue,
   locale,
   onComplete,
+  onDisplayCommit,
   shellRef,
   summary,
   t,
@@ -41,6 +43,11 @@ export function LiveGameEffects({
       onComplete(activeCueId);
     }
   }, [activeCueId, onComplete]);
+  const handleDisplayCommit = useCallback(() => {
+    if (activeCueId !== null) {
+      onDisplayCommit(activeCueId);
+    }
+  }, [activeCueId, onDisplayCommit]);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -65,6 +72,7 @@ export function LiveGameEffects({
           <RoleTarotFlipEffect
             cue={currentCue}
             onComplete={handleComplete}
+            onDisplayCommit={handleDisplayCommit}
             role={getLocalizedRole(
               t,
               locale,
@@ -84,6 +92,7 @@ export function LiveGameEffects({
             cue={currentCue}
             label={t.live.effects.phase.label(phaseName)}
             onComplete={handleComplete}
+            onDisplayCommit={handleDisplayCommit}
             title={getPhaseEffectTitle(currentCue.phase, t)}
           />
         );
@@ -96,6 +105,7 @@ export function LiveGameEffects({
             kicker={t.live.effects.death.kicker}
             message={getDeathMessage(currentCue.playerIds, summary, t)}
             onComplete={handleComplete}
+            onDisplayCommit={handleDisplayCommit}
             shellRef={shellRef}
           />
         );
@@ -107,6 +117,7 @@ export function LiveGameEffects({
             cue={currentCue}
             key={currentCue.id}
             onComplete={handleComplete}
+            onDisplayCommit={handleDisplayCommit}
             players={summary.players}
             t={t}
           />
@@ -121,6 +132,7 @@ export function LiveGameEffects({
             cue={currentCue}
             kicker={t.live.effects.victory.kicker}
             onComplete={handleComplete}
+            onDisplayCommit={handleDisplayCommit}
             result={getPlayerResult(currentCue.playerResult, t)}
             subtitle={t.live.effects.victory.subtitle}
             title={t.live.effects.victory.title(winner)}

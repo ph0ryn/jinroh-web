@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { useI18n } from "@/app/i18nProvider";
 import { JinrohBrandLink } from "@/app/jinrohBrandLink";
@@ -18,7 +19,10 @@ import {
 import { LiveToastRegion } from "@/app/live/effects/ui/LiveToastRegion";
 import { useLiveActionFeedback } from "@/app/live/effects/ui/useLiveActionFeedback";
 import { useLiveToastController } from "@/app/live/effects/ui/useLiveToastController";
-import { useLiveEffectQueue } from "@/app/live/effects/useLiveEffectQueue";
+import {
+  useLiveEffectQueue,
+  type LiveDisplayCommitOrigin,
+} from "@/app/live/effects/useLiveEffectQueue";
 import {
   apiFetch,
   assertBrowserStorageAccess,
@@ -150,6 +154,7 @@ export default function LivePage() {
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [targetPlayerCount, setTargetPlayerCount] = useState(DEFAULT_TARGET_PLAYER_COUNT);
   const [roomSummary, setRoomSummary] = useState<RoomSummary | null>(null);
+  const [displayedRoomSummary, setDisplayedRoomSummary] = useState<RoomSummary | null>(null);
   const [isIdentityHydrated, setIsIdentityHydrated] = useState(false);
   const [isCurrentRoomReady, setIsCurrentRoomReady] = useState(false);
   const [invitationRoomCode, setInvitationRoomCode] = useState<string | null>(null);
@@ -183,15 +188,28 @@ export default function LivePage() {
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [setupPendingAction, setSetupPendingAction] = useState<SetupPendingAction>(null);
   const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
+  const handleDisplayCommit = useCallback(
+    (summary: RoomSummary, origin: LiveDisplayCommitOrigin) => {
+      if (origin === "animation") {
+        // The GSAP exit tween must reveal the new React surface from its first frame.
+        flushSync(() => setDisplayedRoomSummary(summary));
+        return;
+      }
+
+      setDisplayedRoomSummary(summary);
+    },
+    [],
+  );
   const {
     acceptSummary: acceptEffectSummary,
     activeCue,
     clearEffects,
+    commitActiveCueDisplay,
     completeActiveCue,
     replayRole,
-  } = useLiveEffectQueue();
+  } = useLiveEffectQueue({ onDisplayCommit: handleDisplayCommit });
   const { completeCue: completeActionFeedbackCue, cue: actionFeedbackCue } =
-    useLiveActionFeedback(roomSummary);
+    useLiveActionFeedback(displayedRoomSummary);
   const {
     clearScope: clearToastScope,
     completeEntry: completeToastEntry,
@@ -263,6 +281,7 @@ export default function LivePage() {
     setIsIdentityHydrated(true);
     setIsCurrentRoomReady(false);
     setRoomSummary(null);
+    setDisplayedRoomSummary(null);
     setPendingRoomSwitch(null);
     setRealtimeAuthorization(null);
     setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
@@ -398,6 +417,7 @@ export default function LivePage() {
       roomSummaryRef.current = null;
       startSettingsRoomSessionIdRef.current = null;
       setRoomSummary(null);
+      setDisplayedRoomSummary(null);
       setIsCurrentRoomReady(true);
       setPendingRoomSwitch(null);
 
@@ -1556,55 +1576,62 @@ export default function LivePage() {
     showToast(t.live.invite.shareFailed, "error", TOAST_IMPORTANT_DURATION_MS, toastScope);
   }
 
-  const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
-  const selfActions = isCurrentRoomParticipant ? (roomSummary.self?.actions ?? []) : [];
+  const presentationSummary = displayedRoomSummary;
+  const isCurrentRoomParticipant =
+    presentationSummary !== null && presentationSummary.currentPlayerId !== null;
+  const selfActions = isCurrentRoomParticipant ? (presentationSummary.self?.actions ?? []) : [];
   const isCurrentGameCinematicObscured =
     activeCue !== null && activeCue.gameId === roomSummary?.game?.gameId;
   const canConfigureStartSettings =
     isCurrentRoomParticipant &&
-    roomSummary.isHost &&
-    (roomSummary.status === "waiting" || roomSummary.status === "ended");
+    presentationSummary.isHost &&
+    (presentationSummary.status === "waiting" || presentationSummary.status === "ended");
   const canLeaveRoom =
     isCurrentRoomParticipant &&
-    (roomSummary.status === "waiting" || roomSummary.status === "ended");
+    (presentationSummary.status === "waiting" || presentationSummary.status === "ended");
   let roomBoundSurfaceStatus: RoomBoundSurfaceStatus | null = null;
 
-  if (isCurrentRoomParticipant && roomSummary.status === "waiting") {
+  if (isCurrentRoomParticipant && presentationSummary.status === "waiting") {
     roomBoundSurfaceStatus = "waiting";
   } else if (
     isCurrentRoomParticipant &&
-    roomSummary.game !== null &&
-    (roomSummary.status === "playing" || roomSummary.status === "ended")
+    presentationSummary.game !== null &&
+    (presentationSummary.status === "playing" || presentationSummary.status === "ended")
   ) {
-    roomBoundSurfaceStatus = roomSummary.status;
+    roomBoundSurfaceStatus = presentationSummary.status;
   }
 
-  const liveMood = getLiveMood(roomSummary);
+  const liveMood = getLiveMood(presentationSummary);
   const liveBackgroundSnapshot = useMemo(
     () =>
       getLiveBackgroundSnapshot(
         liveMood,
-        roomSummary?.code ?? null,
-        roomSummary?.currentPlayerId ?? null,
-        roomSummary?.game?.gameId ?? null,
+        presentationSummary?.code ?? null,
+        presentationSummary?.currentPlayerId ?? null,
+        presentationSummary?.game?.gameId ?? null,
       ),
-    [liveMood, roomSummary?.code, roomSummary?.currentPlayerId, roomSummary?.game?.gameId],
+    [
+      liveMood,
+      presentationSummary?.code,
+      presentationSummary?.currentPlayerId,
+      presentationSummary?.game?.gameId,
+    ],
   );
   const isBrowserStorageUnavailable = browserStorageStatus === "unavailable";
   const isRoomEntryAvailable =
-    browserStorageStatus === "available" && roomSummary === null && isCurrentRoomReady;
+    browserStorageStatus === "available" && presentationSummary === null && isCurrentRoomReady;
   let liveSetupSurfaceKind: LiveSetupSurfaceKind = "game";
 
   if (!isCurrentRoomReady) {
     liveSetupSurfaceKind = "loading";
   } else if (roomBoundSurfaceStatus === "waiting") {
     liveSetupSurfaceKind = "waiting";
-  } else if (roomSummary === null) {
+  } else if (presentationSummary === null) {
     liveSetupSurfaceKind = "entry";
   }
 
-  const liveSetupRoomCode = roomSummary?.code ?? null;
-  const liveSetupViewerPlayerId = roomSummary?.currentPlayerId ?? null;
+  const liveSetupRoomCode = presentationSummary?.code ?? null;
+  const liveSetupViewerPlayerId = presentationSummary?.currentPlayerId ?? null;
   const liveSetupTransitionSnapshot = useMemo(
     (): LiveSetupTransitionSnapshot => ({
       kind: liveSetupSurfaceKind,
@@ -1624,20 +1651,20 @@ export default function LivePage() {
     .filter(Boolean)
     .join(" ");
   const roomInviteUrl =
-    liveOrigin === null || roomSummary === null
+    liveOrigin === null || presentationSummary === null
       ? null
-      : getLiveRoomUrl(roomSummary.code, liveOrigin);
+      : getLiveRoomUrl(presentationSummary.code, liveOrigin);
   let roomBoundSurface: ReactNode = null;
 
-  if (roomSummary !== null && roomBoundSurfaceStatus === "waiting") {
+  if (presentationSummary !== null && roomBoundSurfaceStatus === "waiting") {
     roomBoundSurface = (
       <LiveWaitingSurface
         copiedRoomCode={copiedInviteRoomCode}
         isBusy={isBusy}
         isSettingsOpen={isStartSettingsOpen}
-        roomStatusLabel={formatRoomStatus(roomSummary, t)}
+        roomStatusLabel={formatRoomStatus(presentationSummary, t)}
         roomUrl={roomInviteUrl}
-        summary={roomSummary}
+        summary={presentationSummary}
         t={t}
         onCopyRoomCode={handleCopyRoomCode}
         onOpenSettings={() => setIsStartSettingsOpen(true)}
@@ -1647,7 +1674,7 @@ export default function LivePage() {
         onStartGame={handleStartGame}
       />
     );
-  } else if (roomSummary !== null && roomBoundSurfaceStatus === "playing") {
+  } else if (presentationSummary !== null && roomBoundSurfaceStatus === "playing") {
     roomBoundSurface = (
       <LivePlayingSurface
         actionFeedbackCue={actionFeedbackCue}
@@ -1658,7 +1685,7 @@ export default function LivePage() {
         nightConversationDraft={nightConversationDraft}
         pendingActionKey={pendingActionKey}
         selfActions={selfActions}
-        summary={roomSummary}
+        summary={presentationSummary}
         locale={locale}
         t={t}
         onActionFeedbackComplete={completeActionFeedbackCue}
@@ -1672,7 +1699,7 @@ export default function LivePage() {
         onSubmitAction={handleSubmitAction}
       />
     );
-  } else if (roomSummary !== null && roomBoundSurfaceStatus === "ended") {
+  } else if (presentationSummary !== null && roomBoundSurfaceStatus === "ended") {
     roomBoundSurface = (
       <LiveEndedSurface
         copiedRoomCode={copiedInviteRoomCode}
@@ -1682,7 +1709,7 @@ export default function LivePage() {
         isCinematicObscured={isCurrentGameCinematicObscured}
         locale={locale}
         roomUrl={roomInviteUrl}
-        summary={roomSummary}
+        summary={presentationSummary}
         t={t}
         onClosePublicLog={() => setIsPublicLogOpen(false)}
         onCopyRoomCode={handleCopyRoomCode}
@@ -1758,12 +1785,12 @@ export default function LivePage() {
         rootRef={liveShellRef}
         snapshot={liveSetupTransitionSnapshot}
       />
-      {roomSummary !== null && roomBoundSurfaceStatus !== null ? (
+      {presentationSummary !== null && roomBoundSurfaceStatus !== null ? (
         <LiveRoomLayout
           controls={roomBoundSurface}
-          table={<LiveRoundTable locale={locale} summary={roomSummary} t={t} />}
+          table={<LiveRoundTable locale={locale} summary={presentationSummary} t={t} />}
           tableLabel={t.live.aria.roundTable}
-          title={getLivePageTitle(roomSummary, t)}
+          title={getLivePageTitle(presentationSummary, t)}
           transitionItem={roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined}
         />
       ) : (
@@ -1778,7 +1805,7 @@ export default function LivePage() {
               </h1>
             </div>
             <div className="liveHeroTitle liveEntryStatus">
-              <h2>{getLivePageTitle(roomSummary, t)}</h2>
+              <h2>{getLivePageTitle(presentationSummary, t)}</h2>
             </div>
             {isRoomEntryAvailable || isBrowserStorageUnavailable ? (
               <LanguageSwitcher className="liveEmbeddedLanguageSwitcher liveEntryLanguageSwitcher" />
@@ -1790,11 +1817,11 @@ export default function LivePage() {
 
       {canConfigureStartSettings ? (
         <StartSettingsDialog
-          defaultRoleCounts={roomSummary.defaultRoleCounts}
+          defaultRoleCounts={presentationSummary.defaultRoleCounts}
           isOpen={isStartSettingsOpen}
           locale={locale}
-          playerCount={roomSummary.targetPlayerCount}
-          roleCatalog={roomSummary.roleCatalog}
+          playerCount={presentationSummary.targetPlayerCount}
+          roleCatalog={presentationSummary.roleCatalog}
           settings={startRuleSetSettings}
           t={t}
           onClose={() => setIsStartSettingsOpen(false)}
@@ -1802,7 +1829,7 @@ export default function LivePage() {
         />
       ) : null}
 
-      {roomSummary !== null && canLeaveRoom ? (
+      {presentationSummary !== null && canLeaveRoom ? (
         <LeaveRoomDialog
           isBusy={isBusy}
           isOpen={isLeaveConfirmationOpen}
@@ -1835,6 +1862,7 @@ export default function LivePage() {
       <LiveGameEffects
         activeCue={activeCue}
         locale={locale}
+        onDisplayCommit={commitActiveCueDisplay}
         shellRef={liveShellRef}
         summary={roomSummary}
         t={t}

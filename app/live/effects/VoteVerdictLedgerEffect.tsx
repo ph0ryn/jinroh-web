@@ -15,6 +15,7 @@ import type { CSSProperties } from "react";
 type VoteVerdictLedgerEffectProps = {
   readonly cue: LiveVoteEffectCue;
   readonly onComplete: () => void;
+  readonly onDisplayCommit: () => void;
   readonly players: readonly PublicPlayer[];
   readonly t: Localization;
 };
@@ -22,6 +23,7 @@ type VoteVerdictLedgerEffectProps = {
 export function VoteVerdictLedgerEffect({
   cue,
   onComplete,
+  onDisplayCommit,
   players,
   t,
 }: VoteVerdictLedgerEffectProps) {
@@ -54,21 +56,22 @@ export function VoteVerdictLedgerEffect({
       if (reducedMotion) {
         counters.forEach(setCounterToFinalValue);
         timeline
-          .set(root, { autoAlpha: 0 })
+          .set(root, { opacity: 0 })
           .set([panel, ...rows, footer, seal], { clearProps: "all" })
           .set(meters, {
             clearProps: "transform,transformOrigin,opacity,visibility",
           })
-          .to(root, { autoAlpha: 1, duration: 0.16, ease: "power1.out" })
-          .to(root, { autoAlpha: 0, duration: 0.16, ease: "power1.in" }, "+=1.25");
+          .to(root, { duration: 0.16, ease: "power1.out", opacity: 1 })
+          .call(onDisplayCommit, undefined, "+=1.25")
+          .to(root, { duration: 0.16, ease: "power1.in", opacity: 0 });
 
         return () => timeline.kill();
       }
 
       timeline
-        .set(root, { autoAlpha: 0 })
+        .set(root, { opacity: 0 })
         .set(meters, { scaleX: 0, transformOrigin: "0 50%" })
-        .to(root, { autoAlpha: 1, duration: 0.24, ease: "power2.out" }, 0)
+        .to(root, { duration: 0.24, ease: "power2.out", opacity: 1 }, 0)
         .fromTo(
           panel,
           { autoAlpha: 0, rotationY: -5, transformOrigin: "100% 50%", x: 84 },
@@ -139,7 +142,8 @@ export function VoteVerdictLedgerEffect({
           },
           1.18,
         )
-        .to(root, { autoAlpha: 0, duration: 0.42, ease: "power2.in" }, "+=1.05");
+        .call(onDisplayCommit, undefined, "+=1.05")
+        .to(root, { duration: 0.42, ease: "power2.in", opacity: 0 });
 
       return () => timeline.kill();
     },

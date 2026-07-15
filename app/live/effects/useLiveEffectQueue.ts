@@ -4,6 +4,12 @@ import { useCallback, useRef, useState } from "react";
 
 import { isSameLiveRoomViewerSession } from "../liveGameSession";
 import {
+  getLiveDisplayCommitOwner,
+  reconcileLiveDisplayCommit,
+  resolveLiveDisplayCommit,
+  type LiveDisplayCommitTicket,
+} from "./liveDisplayCommitModel";
+import {
   projectLiveEffectCues,
   type LiveEffectCue,
   type LiveRoleEffectCue,
@@ -15,8 +21,15 @@ export type LiveEffectQueue = {
   readonly acceptSummary: (summary: RoomSummary) => void;
   readonly activeCue: LiveEffectCue | null;
   readonly clearEffects: () => void;
+  readonly commitActiveCueDisplay: (cueId: string) => void;
   readonly completeActiveCue: (cueId?: string) => void;
   readonly replayRole: () => void;
+};
+
+export type LiveDisplayCommitOrigin = "animation" | "snapshot";
+
+type UseLiveEffectQueueOptions = {
+  readonly onDisplayCommit: (summary: RoomSummary, origin: LiveDisplayCommitOrigin) => void;
 };
 
 export type ReconciledLiveEffectQueue = {
@@ -77,10 +90,13 @@ export function reconcileLiveEffectQueueForSummary(
   };
 }
 
-export function useLiveEffectQueue(): LiveEffectQueue {
+export function useLiveEffectQueue({
+  onDisplayCommit,
+}: UseLiveEffectQueueOptions): LiveEffectQueue {
   const [activeCue, setActiveCue] = useState<LiveEffectCue | null>(null);
   const acceptedSummaryRef = useRef<RoomSummary | null>(null);
   const activeCueRef = useRef<LiveEffectCue | null>(null);
+  const displayCommitTicketRef = useRef<LiveDisplayCommitTicket | null>(null);
   const queuedCuesRef = useRef<LiveEffectCue[]>([]);
   const seenCueIdsRef = useRef(new Set<string>());
   const seenEventIdsRef = useRef(new Set<string>());
@@ -99,6 +115,7 @@ export function useLiveEffectQueue(): LiveEffectQueue {
 
   const resetQueuedEffects = useCallback(() => {
     activeCueRef.current = null;
+    displayCommitTicketRef.current = null;
     queuedCuesRef.current = [];
     seenCueIdsRef.current.clear();
     seenEventIdsRef.current.clear();
@@ -114,6 +131,30 @@ export function useLiveEffectQueue(): LiveEffectQueue {
   const clearEffects = useCallback(() => {
     resetQueue();
   }, [resetQueue]);
+
+  const commitActiveCueDisplay = useCallback(
+    (cueId: string) => {
+      const currentCue = activeCueRef.current;
+
+      if (currentCue?.id !== cueId) {
+        return;
+      }
+
+      const summary = resolveLiveDisplayCommit(
+        displayCommitTicketRef.current,
+        currentCue,
+        acceptedSummaryRef.current,
+      );
+
+      if (summary === null) {
+        return;
+      }
+
+      displayCommitTicketRef.current = null;
+      onDisplayCommit(summary, "animation");
+    },
+    [onDisplayCommit],
+  );
 
   const acceptSummary = useCallback(
     (summary: RoomSummary) => {
@@ -139,9 +180,11 @@ export function useLiveEffectQueue(): LiveEffectQueue {
 
         acceptedSummaryRef.current = summary;
         activeCueRef.current = settledQueue.activeCue;
+        displayCommitTicketRef.current = null;
         queuedCuesRef.current = [...settledQueue.pendingCues];
         summary.game?.events.forEach((event) => seenEventIdsRef.current.add(event.id));
         setActiveCue(settledQueue.activeCue);
+        onDisplayCommit(summary, "snapshot");
         return;
       }
 
@@ -183,9 +226,28 @@ export function useLiveEffectQueue(): LiveEffectQueue {
       }
 
       summary.game?.events.forEach((event) => seenEventIdsRef.current.add(event.id));
+      const availableCues = [
+        ...(activeCueRef.current === null ? [] : [activeCueRef.current]),
+        ...queuedCuesRef.current,
+      ];
+      const displayCommit = reconcileLiveDisplayCommit(
+        displayCommitTicketRef.current,
+        summary,
+        getLiveDisplayCommitOwner(incomingAutomaticCues),
+        availableCues,
+        changedEffectSession,
+      );
+
+      if (displayCommit.kind === "defer") {
+        displayCommitTicketRef.current = displayCommit.ticket;
+      } else {
+        displayCommitTicketRef.current = null;
+        onDisplayCommit(displayCommit.summary, "snapshot");
+      }
+
       activateNextCue();
     },
-    [activateNextCue, resetQueuedEffects],
+    [activateNextCue, onDisplayCommit, resetQueuedEffects],
   );
 
   const completeActiveCue = useCallback(
@@ -196,11 +258,12 @@ export function useLiveEffectQueue(): LiveEffectQueue {
         return;
       }
 
+      commitActiveCueDisplay(currentCue.id);
       activeCueRef.current = null;
       setActiveCue(null);
       activateNextCue();
     },
-    [activateNextCue],
+    [activateNextCue, commitActiveCueDisplay],
   );
 
   const replayRole = useCallback(() => {
@@ -246,6 +309,7 @@ export function useLiveEffectQueue(): LiveEffectQueue {
     acceptSummary,
     activeCue,
     clearEffects,
+    commitActiveCueDisplay,
     completeActiveCue,
     replayRole,
   };

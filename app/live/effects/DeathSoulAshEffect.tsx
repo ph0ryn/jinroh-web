@@ -15,6 +15,7 @@ type DeathSoulAshEffectProps = {
   readonly kicker: string;
   readonly message: string;
   readonly onComplete: () => void;
+  readonly onDisplayCommit: () => void;
   readonly shellRef: RefObject<HTMLElement | null>;
 };
 
@@ -30,6 +31,7 @@ export function DeathSoulAshEffect({
   kicker,
   message,
   onComplete,
+  onDisplayCommit,
   shellRef,
 }: DeathSoulAshEffectProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -48,10 +50,11 @@ export function DeathSoulAshEffect({
 
       if (reducedMotion) {
         timeline
-          .set(root, { autoAlpha: 0 })
+          .set(root, { opacity: 0 })
           .set(card, { clearProps: "all" })
-          .to(root, { autoAlpha: 1, duration: 0.16, ease: "power1.out" })
-          .to(root, { autoAlpha: 0, duration: 0.16, ease: "power1.in" }, "+=1.15");
+          .to(root, { duration: 0.16, ease: "power1.out", opacity: 1 })
+          .call(onDisplayCommit, undefined, "+=1.15")
+          .to(root, { duration: 0.16, ease: "power1.in", opacity: 0 });
 
         return () => timeline.kill();
       }
@@ -80,8 +83,8 @@ export function DeathSoulAshEffect({
       }
 
       timeline
-        .set(root, { autoAlpha: 0 })
-        .to(root, { autoAlpha: 1, duration: 0.18, ease: "power2.out" }, 0)
+        .set(root, { opacity: 0 })
+        .to(root, { duration: 0.18, ease: "power2.out", opacity: 1 }, 0)
         .fromTo(
           card,
           { autoAlpha: 0, filter: "blur(8px)", y: 28 },
@@ -147,7 +150,9 @@ export function DeathSoulAshEffect({
           );
       });
 
-      timeline.to(root, { autoAlpha: 0, duration: 0.5, ease: "power2.inOut" }, "+=1.05");
+      timeline
+        .call(onDisplayCommit, undefined, "+=1.05")
+        .to(root, { duration: 0.5, ease: "power2.inOut", opacity: 0 });
 
       return () => timeline.kill();
     },

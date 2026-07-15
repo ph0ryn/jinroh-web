@@ -96,9 +96,11 @@ through the explicit role opt-in model in `docs/game/night-conversation.md`.
 - Use CSS Modules for static effect layout and appearance. Do not add CSS
   keyframes or CSS-driven timing for new `/live` game animations.
 - Every effect must provide reduced-motion behavior through a shortened timeline
-  or immediate final-state settlement, clean up on unmount or room changes,
-  avoid blocking input, and preserve a non-transient way to read current game
-  state.
+  or immediate final-state settlement, clean up on unmount or room changes, and
+  preserve a non-transient way to read current game state.
+- Interruptive cinematic effects must remain above the gameplay surface and
+  absorb pointer input for their entire mounted lifetime, including transparent
+  entry and exit frames. Component-local effects must not block input.
 - Route `/live` dialogs through `app/live/effects/ui/LiveModalFrame.tsx`. Keep
   dialog content mounted until its exit completes, and leave focus trapping,
   background inertness, scroll locking, and stacked-dialog ownership to the

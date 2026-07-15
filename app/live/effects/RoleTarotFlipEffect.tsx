@@ -12,11 +12,18 @@ import type { Localization } from "@/lib/i18n/localization";
 type RoleTarotFlipEffectProps = {
   readonly cue: Extract<LiveEffectCue, { readonly kind: "role" }>;
   readonly onComplete: () => void;
+  readonly onDisplayCommit: () => void;
   readonly role: Localization["game"]["catalog"]["unknown"]["role"];
   readonly t: Localization;
 };
 
-export function RoleTarotFlipEffect({ cue, onComplete, role, t }: RoleTarotFlipEffectProps) {
+export function RoleTarotFlipEffect({
+  cue,
+  onComplete,
+  onDisplayCommit,
+  role,
+  t,
+}: RoleTarotFlipEffectProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
 
@@ -42,17 +49,18 @@ export function RoleTarotFlipEffect({ cue, onComplete, role, t }: RoleTarotFlipE
 
       if (reducedMotion) {
         timeline
-          .set(root, { autoAlpha: 0 })
+          .set(root, { opacity: 0 })
           .set(staticElements, { clearProps: "all" })
-          .to(root, { autoAlpha: 1, duration: 0.16, ease: "power1.out" })
-          .to(root, { autoAlpha: 0, duration: 0.16, ease: "power1.in" }, "+=1.35");
+          .to(root, { duration: 0.16, ease: "power1.out", opacity: 1 })
+          .call(onDisplayCommit, undefined, "+=1.35")
+          .to(root, { duration: 0.16, ease: "power1.in", opacity: 0 });
 
         return () => timeline.kill();
       }
 
       timeline
-        .set(root, { autoAlpha: 0 })
-        .to(root, { autoAlpha: 1, duration: 0.24, ease: "power2.out" }, 0)
+        .set(root, { opacity: 0 })
+        .to(root, { duration: 0.24, ease: "power2.out", opacity: 1 }, 0)
         .set(card, { transformOrigin: "50% 50%", transformPerspective: 1200 })
         .fromTo(
           card,
@@ -110,7 +118,8 @@ export function RoleTarotFlipEffect({ cue, onComplete, role, t }: RoleTarotFlipE
           { duration: 1.25, ease: "sine.inOut", repeat: 1, rotationZ: 0.5, y: -7, yoyo: true },
           1.8,
         )
-        .to(root, { autoAlpha: 0, duration: 0.5, ease: "power2.inOut" }, 4.65);
+        .call(onDisplayCommit, undefined, 4.65)
+        .to(root, { duration: 0.5, ease: "power2.inOut", opacity: 0 }, 4.65);
 
       return () => timeline.kill();
     },
