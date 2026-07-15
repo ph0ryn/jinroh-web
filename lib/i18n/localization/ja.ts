@@ -109,40 +109,6 @@ export const jaLocalization = {
       none: "なし",
       private: "非公開",
     },
-    actionStatus: {
-      locked: "対象確定済み",
-      noTarget: "対象なし",
-      submitted: "送信済み",
-    },
-    actions: {
-      action: "アクション",
-      button: {
-        submitted: "送信済み",
-        submitting: "送信中",
-      },
-      day: "昼アクション",
-      empty: {
-        gameComplete: {
-          body: "非公開アクションは終了しました。結果と公開ログを確認してください。",
-          title: "ゲーム終了",
-        },
-        noActions: {
-          body: "いま選べる役職アクションはないか、すでに締め切られています。",
-          title: "非公開アクションなし",
-        },
-        noRoom: {
-          body: "部屋に参加すると役職ごとの指示が読み込まれます。",
-          title: "非公開アクションなし",
-        },
-        waitingForStart: {
-          body: "ホストがゲームを開始すると非公開アクションが表示されます。",
-          title: "開始待ち",
-        },
-      },
-      execution: "処刑アクション",
-      night: "夜アクション",
-      vote: "投票アクション",
-    },
     phase: {
       day: "昼",
       execution: "処刑",
@@ -195,15 +161,6 @@ export const jaLocalization = {
       },
       votingPrepared: "生存プレイヤーごとに1つの投票アクションを準備しました。",
     },
-    actionRows: {
-      livingPlayers: "生存者",
-      status: {
-        done: "完了",
-        locked: "ロック中",
-        open: "受付中",
-        pending: "待機中",
-      },
-    },
     aria: {
       appSurface: (title: string) => `${title}画面`,
       commandPanel: "ホストとプレイヤー操作",
@@ -249,13 +206,11 @@ export const jaLocalization = {
       voting: { detail: "投票", label: "投票", mobileLabel: "投票" },
     },
     panel: {
-      actionStatus: "アクション状況",
       alive: (count: number) => `生存 ${count}人`,
       ended: "終了",
       hostControls: "ホスト操作",
       live: "進行中",
       out: "退場",
-      selectedPlayer: "選択中のプレイヤー",
       selectedSeatRole: (seatNumber: number, roleName: string) => `席 ${seatNumber} / ${roleName}`,
     },
     phaseMeta: {
@@ -330,8 +285,13 @@ export const jaLocalization = {
     },
   },
   live: {
+    actionGuide: {
+      closedWithoutReceipt: "このアクションは受付を終了しました。",
+      irreversibleWarning: "確定後は変更できません。",
+      reselect: "選び直す",
+      submitting: "送信中...",
+    },
     aria: {
-      actionTarget: (actionName: string) => `${actionName}の対象`,
       commonPhaseTiming: "ゲームの制限時間",
       currentPhase: "現在の場面",
       entryMode: "部屋への入り方を選択",
@@ -387,10 +347,6 @@ export const jaLocalization = {
       title: "公開ログ",
     },
     effects: {
-      action: {
-        announcement: (actionName: string) => `${actionName}を確定しました。`,
-        confirmed: "確定",
-      },
       death: {
         kicker: "死亡報告",
         message: (playerNames: readonly string[]) => {

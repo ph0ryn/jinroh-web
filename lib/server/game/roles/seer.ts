@@ -15,6 +15,7 @@ import { Role, scopeRoleContext } from "./base";
 import { VILLAGE_TEAM } from "./villager";
 
 import type {
+  AvailableRoleAction,
   GameActionKind,
   GameEffect,
   GameEventPresentation,
@@ -37,8 +38,34 @@ const INSPECT_ACTION_KIND: GameActionKind = "inspect";
 const INITIAL_INSPECTION_OPTION_KEY = "initial_inspection";
 const INITIAL_INSPECTION_DISABLED = "disabled";
 const INITIAL_INSPECTION_ENABLED = "enabled";
+const INSPECT_ACTION_DEFINITION = {
+  kind: INSPECT_ACTION_KIND,
+  presentation: {
+    en: {
+      label: "Select a player to inspect.",
+      submitLabel: "Inspect",
+      submittedMessage: "Your inspection has been submitted.",
+      targetConfirmation: {
+        afterTarget: "?",
+        beforeTarget: "Inspect ",
+      },
+    },
+    ja: {
+      label: "占うプレイヤーを選択してください",
+      submitLabel: "占う",
+      submittedMessage: "占い済みです",
+      targetConfirmation: {
+        afterTarget: "を占いますか？",
+        beforeTarget: "",
+      },
+    },
+  },
+  target: RoleTargetKind.SinglePlayer,
+  targetStateRequirement: ActionTargetStateRequirement.Alive,
+} as const satisfies RoleActionDefinition;
 
 export class SeerRole extends Role {
+  override readonly actionDefinitions = [INSPECT_ACTION_DEFINITION];
   override readonly id: RoleId = "seer";
   override readonly maxCount = 1;
   override readonly order = 30;
@@ -56,17 +83,6 @@ export class SeerRole extends Role {
   };
   override readonly team = VILLAGE_TEAM;
   override readonly version = 2;
-
-  override getActionPresentation(actionKind: GameActionKind) {
-    if (actionKind !== INSPECT_ACTION_KIND) {
-      return super.getActionPresentation(actionKind);
-    }
-
-    return {
-      en: { label: "Choose someone to inspect", submitLabel: "Inspect" },
-      ja: { label: "占う相手を選ぶ", submitLabel: "占う" },
-    };
-  }
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
     return context.playerCount >= 4 ? 1 : 0;
@@ -95,19 +111,12 @@ export class SeerRole extends Role {
     ];
   }
 
-  override getActions(context: PlayerRoleContext): readonly RoleActionDefinition[] {
+  override getActions(context: PlayerRoleContext): readonly AvailableRoleAction[] {
     if (context.state.phase !== GamePhase.Night || context.state.nightNumber === 1) {
       return [];
     }
 
-    return [
-      {
-        kind: INSPECT_ACTION_KIND,
-        roleGroupRoleId: null,
-        target: RoleTargetKind.SinglePlayer,
-        targetStateRequirement: ActionTargetStateRequirement.Alive,
-      },
-    ];
+    return [this.createAvailableAction(INSPECT_ACTION_KIND, null)];
   }
 
   override validateRuleSet(context: RoleRuleValidationContext): readonly RoleRuleValidationIssue[] {

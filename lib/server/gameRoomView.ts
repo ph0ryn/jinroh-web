@@ -29,7 +29,7 @@ import {
 import { isValidRuleSetNumber, RULE_SET_NUMBER_FIELDS } from "@/lib/shared/ruleSetConstraints";
 import { getCodePointLength } from "@/lib/shared/text";
 
-import { CoreActionKind, getCoreActionPresentation } from "./game/coreActions";
+import { CoreActionKind, getCoreActionDefinition } from "./game/coreActions";
 import { getRoleCatalog, getRoleIds, getTeamCatalog, roleRegistry } from "./game/roles";
 import { makeDefaultRoleCounts, parseResolvedRoleSetup } from "./game/ruleset";
 import {
@@ -479,18 +479,27 @@ function toPublicActions(
     .filter((action) =>
       isActionAvailableToPlayer(action, currentPlayer, currentRoleId, currentPlayerAlive),
     )
-    .map((action) => ({
-      closesAt: action.closes_at,
-      eligibleTargetIds: action.eligible_target_player_ids
-        .map((playerId) => publicIdByInternalId.get(playerId))
-        .filter((playerId): playerId is string => playerId !== undefined),
-      key: action.action_key,
-      kind: action.action_kind as PublicAction["kind"],
-      presentation: getActionPresentation(action),
-      phaseInstanceId: action.phase_instance_id,
-      status: submittedActionIds.has(action.id) ? "submitted" : "open",
-      targetKind: action.target_kind,
-    }));
+    .map((action) => {
+      const definition = getActionDefinition(action);
+      const commonAction: PublicActionCommon = {
+        closesAt: action.closes_at,
+        eligibleTargetIds: action.eligible_target_player_ids
+          .map((playerId) => publicIdByInternalId.get(playerId))
+          .filter((playerId): playerId is string => playerId !== undefined),
+        key: action.action_key,
+        kind: action.action_kind as PublicAction["kind"],
+        phaseInstanceId: action.phase_instance_id,
+        status: submittedActionIds.has(action.id) ? "submitted" : "open",
+      };
+
+      if (definition.targetKind !== action.target_kind) {
+        throw new Error(
+          `Stored action target does not match its definition: ${action.action_kind}`,
+        );
+      }
+
+      return toPublicAction(commonAction, definition);
+    });
 }
 
 export function isActionAvailableToPlayer(
@@ -789,12 +798,50 @@ export function toPrivateGameEvent(
       };
 }
 
-function getActionPresentation(action: CurrentActionRecord): PublicAction["presentation"] {
+type PublicActionDefinition =
+  | Pick<Extract<PublicAction, { targetKind: "none" }>, "presentation" | "targetKind">
+  | Pick<Extract<PublicAction, { targetKind: "single_player" }>, "presentation" | "targetKind">;
+
+type PublicActionCommon = Omit<PublicAction, "presentation" | "targetKind">;
+
+function toPublicAction(
+  commonAction: PublicActionCommon,
+  definition: PublicActionDefinition,
+): PublicAction {
+  return {
+    ...commonAction,
+    ...definition,
+  };
+}
+
+function toTargetlessPublicActionDefinition(
+  presentation: Extract<PublicAction, { targetKind: "none" }>["presentation"],
+): Extract<PublicActionDefinition, { targetKind: "none" }> {
+  return { presentation, targetKind: "none" };
+}
+
+function toSinglePlayerPublicActionDefinition(
+  presentation: Extract<PublicAction, { targetKind: "single_player" }>["presentation"],
+): Extract<PublicActionDefinition, { targetKind: "single_player" }> {
+  return { presentation, targetKind: "single_player" };
+}
+
+function getActionDefinition(action: CurrentActionRecord): PublicActionDefinition {
   if (action.resolver_role_id === null) {
-    return getCoreActionPresentation(action.action_kind);
+    const definition = getCoreActionDefinition(action.action_kind);
+
+    return definition.targetKind === "none"
+      ? toTargetlessPublicActionDefinition(definition.presentation)
+      : toSinglePlayerPublicActionDefinition(definition.presentation);
   }
 
-  return roleRegistry.get(action.resolver_role_id).getActionPresentation(action.action_kind);
+  const definition = roleRegistry
+    .get(action.resolver_role_id)
+    .getActionDefinition(action.action_kind);
+
+  return definition.target === "none"
+    ? toTargetlessPublicActionDefinition(definition.presentation)
+    : toSinglePlayerPublicActionDefinition(definition.presentation);
 }
 
 export function toPublicGameEvent(

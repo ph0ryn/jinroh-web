@@ -395,8 +395,7 @@
     font-size: 0.7rem;
   }
 
-  .controls :global(.livePlayPhaseCard),
-  .controls :global(.liveActionRow) {
+  .controls :global(.livePlayPhaseCard) {
     gap: 6px;
     padding: 8px;
   }
@@ -412,10 +411,6 @@
 
   .controlsScroll {
     min-height: 52px;
-  }
-
-  .controlsPrimary :global(.liveActionRow) {
-    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 
@@ -461,10 +456,6 @@
   .controls :global(.livePanel) {
     gap: 6px;
     padding: 8px;
-  }
-
-  .controlsPrimary :global(.liveActionRow) {
-    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .controlsPrimary :global(.liveWaitingActions),

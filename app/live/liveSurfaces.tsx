@@ -13,7 +13,6 @@ import {
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   type NightConversationView,
-  type PublicAction,
   type RoomSummary,
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
@@ -21,7 +20,6 @@ import {
 import { LiveLobbyProgress } from "./effects/ui/LiveLobbyProgress";
 import { LiveModalFrame } from "./effects/ui/LiveModalFrame";
 import { useLiveListAdditionMotion } from "./effects/ui/useLiveListAdditionMotion";
-import { LiveActionList } from "./liveActionList";
 import {
   formatDateTime,
   formatPrivateEvent,
@@ -32,7 +30,6 @@ import {
   canStartRoom,
   formatActionProgress,
   formatPhaseCountdown,
-  getActionPanelTitle,
   getControlHint,
   getPlayerInitial,
   getPlayPhaseGuidance,
@@ -40,7 +37,6 @@ import {
 import { LiveRoomControls, liveViewportStyles } from "./liveViewportLayout";
 import { useFollowScrollEnd } from "./useFollowScrollEnd";
 
-import type { LiveActionFeedbackCue } from "./effects/ui/liveActionFeedbackModel";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export type SetupPendingAction = "create" | "join" | null;
@@ -63,18 +59,14 @@ type LiveWaitingSurfaceProps = {
 };
 
 type LivePlayingSurfaceProps = {
-  readonly actionFeedbackCue: LiveActionFeedbackCue | null;
   readonly isBusy: boolean;
   readonly isNightConversationOpen: boolean;
   readonly isPublicLogOpen: boolean;
   readonly isCinematicObscured: boolean;
   readonly locale: Locale;
   readonly nightConversationDraft: string;
-  readonly pendingActionKey: string | null;
-  readonly selfActions: readonly PublicAction[];
   readonly summary: RoomSummary;
   readonly t: Localization;
-  readonly onActionFeedbackComplete: (receiptId: string) => void;
   readonly onCloseNightConversation: () => void;
   readonly onClosePublicLog: () => void;
   readonly onNightConversationDraftChange: (value: string) => void;
@@ -82,7 +74,6 @@ type LivePlayingSurfaceProps = {
   readonly onOpenPublicLog: () => void;
   readonly onRevealRole: () => void;
   readonly onSendNightConversation: (conversation: NightConversationView) => void;
-  readonly onSubmitAction: (action: PublicAction, targetPlayerId: string | null) => void;
 };
 
 type LiveEndedSurfaceProps = {
@@ -845,18 +836,14 @@ export function LiveWaitingSurface({
 }
 
 export function LivePlayingSurface({
-  actionFeedbackCue,
   isBusy,
   isNightConversationOpen,
   isPublicLogOpen,
   isCinematicObscured,
   locale,
   nightConversationDraft,
-  pendingActionKey,
-  selfActions,
   summary,
   t,
-  onActionFeedbackComplete,
   onCloseNightConversation,
   onClosePublicLog,
   onNightConversationDraftChange,
@@ -864,7 +851,6 @@ export function LivePlayingSurface({
   onOpenPublicLog,
   onRevealRole,
   onSendNightConversation,
-  onSubmitAction,
 }: LivePlayingSurfaceProps) {
   const hasCurrentPlayer = summary.currentPlayerId !== null;
   const actionProgress = summary.game?.actionProgress ?? null;
@@ -887,31 +873,7 @@ export function LivePlayingSurface({
   return (
     <>
       <LiveRoomControls
-        primary={
-          !hasCurrentPlayer || selfActions.length === 0 ? null : (
-            <section
-              className="livePanel liveNightActionPanel"
-              aria-label={getActionPanelTitle(summary, t)}
-            >
-              <div className="livePanelHeading">
-                <span>{getActionPanelTitle(summary, t)}</span>
-              </div>
-              <div className="liveNightActionStack">
-                <LiveActionList
-                  actions={selfActions}
-                  feedbackCue={actionFeedbackCue}
-                  isBusy={isBusy}
-                  locale={locale}
-                  pendingActionKey={pendingActionKey}
-                  players={summary.players}
-                  t={t}
-                  onFeedbackComplete={onActionFeedbackComplete}
-                  onSubmitAction={onSubmitAction}
-                />
-              </div>
-            </section>
-          )
-        }
+        primary={null}
         scroll={
           <div className="liveControlScrollStack">
             {!hasCurrentPlayer || selfRole === null ? null : (

@@ -15,6 +15,7 @@ import { Role, scopeRoleContext } from "./base";
 import { VILLAGE_TEAM } from "./villager";
 
 import type {
+  AvailableRoleAction,
   GameActionKind,
   GameEffect,
   GameEndCandidate,
@@ -39,6 +40,31 @@ const WEREWOLF_DOMINANCE_REASON = "werewolf_dominance";
 const WEREWOLVES_ELIMINATED_REASON = "werewolves_eliminated";
 const WEREWOLF_DOMINANCE_JUDGEMENT = "werewolf_dominance";
 const VILLAGE_ELIMINATION_JUDGEMENT = "werewolves_eliminated";
+const ATTACK_ACTION_DEFINITION = {
+  kind: ATTACK_ACTION_KIND,
+  presentation: {
+    en: {
+      label: "Select a player to attack.",
+      submitLabel: "Attack",
+      submittedMessage: "Your attack has been submitted.",
+      targetConfirmation: {
+        afterTarget: "?",
+        beforeTarget: "Attack ",
+      },
+    },
+    ja: {
+      label: "襲撃するプレイヤーを選択してください",
+      submitLabel: "襲撃する",
+      submittedMessage: "襲撃済みです",
+      targetConfirmation: {
+        afterTarget: "を襲撃しますか？",
+        beforeTarget: "",
+      },
+    },
+  },
+  target: RoleTargetKind.SinglePlayer,
+  targetStateRequirement: ActionTargetStateRequirement.Alive,
+} as const satisfies RoleActionDefinition;
 
 export const WEREWOLF_TEAM = {
   id: "werewolf",
@@ -46,6 +72,7 @@ export const WEREWOLF_TEAM = {
 } as const satisfies RoleTeamDefinition;
 
 export class WerewolfRole extends Role {
+  override readonly actionDefinitions = [ATTACK_ACTION_DEFINITION];
   override readonly id: RoleId = "werewolf";
   override readonly minCount = 1;
   override readonly nightConversation = {
@@ -69,17 +96,6 @@ export class WerewolfRole extends Role {
   override readonly team = WEREWOLF_TEAM;
   override readonly version = 2;
 
-  override getActionPresentation(actionKind: GameActionKind) {
-    if (actionKind !== ATTACK_ACTION_KIND) {
-      return super.getActionPresentation(actionKind);
-    }
-
-    return {
-      en: { label: "Choose someone to attack", submitLabel: "Attack" },
-      ja: { label: "襲撃する相手を選ぶ", submitLabel: "襲撃する" },
-    };
-  }
-
   override getDefaultCount(context: RoleDefaultCountContext): number {
     return context.playerCount >= 7 ? 2 : 1;
   }
@@ -96,23 +112,16 @@ export class WerewolfRole extends Role {
     return InspectionView.Werewolf;
   }
 
-  override getActions(context: PlayerRoleContext): readonly RoleActionDefinition[] {
+  override getActions(context: PlayerRoleContext): readonly AvailableRoleAction[] {
     if (context.state.phase !== GamePhase.Night || context.state.nightNumber === 1) {
       return [];
     }
 
-    return [
-      {
-        kind: ATTACK_ACTION_KIND,
-        roleGroupRoleId: this.id,
-        target: RoleTargetKind.SinglePlayer,
-        targetStateRequirement: ActionTargetStateRequirement.Alive,
-      },
-    ];
+    return [this.createAvailableAction(ATTACK_ACTION_KIND, this.id)];
   }
 
   override getEligibleTargets(
-    action: RoleActionDefinition,
+    action: AvailableRoleAction,
     context: PlayerRoleContext,
   ): readonly string[] {
     if (action.kind !== ATTACK_ACTION_KIND) {

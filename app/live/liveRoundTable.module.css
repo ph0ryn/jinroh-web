@@ -197,7 +197,8 @@
   width: 44%;
 }
 
-.seat {
+.seat,
+:global(.liveShell) .seatButton {
   align-items: center;
   backdrop-filter: blur(14px);
   background:
@@ -216,6 +217,50 @@
   padding: clamp(4px, 1.5cqi, 8px);
   position: relative;
   width: clamp(58px, 20cqi, 98px);
+}
+
+:global(.liveShell) .seatButton {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  margin: 0;
+  text-align: inherit;
+  transition: none;
+}
+
+:global(.liveShell) .seatButton:hover:not(:disabled) {
+  transform: none;
+}
+
+:global(.liveShell) .seatButton:disabled {
+  background:
+    linear-gradient(180deg, rgba(20, 25, 21, 0.96), rgba(6, 9, 8, 0.94)),
+    linear-gradient(135deg, rgba(var(--live-accent-rgb), 0.12), transparent);
+  border-color: rgba(var(--live-accent-rgb), 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 24px rgba(0, 0, 0, 0.36);
+  color: var(--paper-100);
+}
+
+.actionTarget {
+  border-color: rgba(var(--live-accent-rgb), 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 3px rgba(var(--live-accent-rgb), 0.18),
+    0 14px 28px rgba(0, 0, 0, 0.44),
+    0 0 32px rgba(var(--live-accent-rgb), 0.32);
+  filter: brightness(1.16);
+}
+
+.actionTarget:focus-visible {
+  outline: 3px solid var(--paper-100);
+  outline-offset: 4px;
+}
+
+.disabledActionTarget {
+  filter: brightness(0.64) saturate(0.72);
+  opacity: 0.72;
 }
 
 .selected {

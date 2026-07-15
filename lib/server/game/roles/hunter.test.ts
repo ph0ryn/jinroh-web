@@ -32,6 +32,20 @@ describe("HunterRole", () => {
       throw new Error("Hunter did not create its follow-up action.");
     }
 
+    const actionDefinition = roleRegistry
+      .get(actionEffect.resolverRoleId)
+      .getActionDefinition(actionEffect.actionKind);
+
+    expect(actionDefinition).toMatchObject({
+      presentation: {
+        ja: {
+          label: "道連れにするプレイヤーを選択してください",
+        },
+      },
+      target: actionEffect.target,
+      targetStateRequirement: actionEffect.targetStateRequirement,
+    });
+
     expect(
       collectRoleActionEffects({
         actionKind: actionEffect.actionKind,

@@ -1,0 +1,112 @@
+.placement {
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(58%, 19rem);
+  z-index: 4;
+}
+
+.guide {
+  align-items: center;
+  backdrop-filter: blur(14px);
+  background:
+    linear-gradient(145deg, rgba(var(--live-accent-rgb), 0.18), transparent 56%),
+    rgba(7, 11, 10, 0.94);
+  border: 1px solid rgba(var(--live-accent-rgb), 0.66);
+  border-radius: clamp(9px, 2.8cqi, 14px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 34px rgba(0, 0, 0, 0.46),
+    0 0 24px rgba(var(--live-accent-rgb), 0.12);
+  color: var(--paper-100);
+  display: grid;
+  gap: clamp(6px, 1.8cqi, 10px);
+  justify-items: center;
+  min-width: 0;
+  padding: clamp(8px, 2.6cqi, 14px);
+  text-align: center;
+}
+
+.guide p {
+  margin: 0;
+}
+
+.guide p strong {
+  font-size: clamp(0.68rem, 2.5cqi, 0.94rem);
+  line-height: 1.32;
+  overflow-wrap: anywhere;
+}
+
+.guide .targetlessButton {
+  min-height: 44px;
+  pointer-events: auto;
+  width: 100%;
+}
+
+.confirmationDialog {
+  height: auto;
+  width: min(100%, 460px);
+}
+
+.confirmationBody {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.confirmationHeading {
+  display: grid;
+  gap: 6px;
+}
+
+.confirmationHeading > span {
+  color: var(--live-accent);
+  font-size: 0.76rem;
+  font-weight: 820;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.confirmationHeading h2 {
+  color: var(--paper-100);
+  font-size: clamp(1.12rem, 4vw, 1.42rem);
+  line-height: 1.35;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.confirmationHeading h2 strong {
+  color: var(--live-accent);
+}
+
+.confirmationBody p {
+  border-left: 2px solid rgba(var(--live-accent-rgb), 0.62);
+  color: var(--live-muted);
+  line-height: 1.55;
+  margin: 0;
+  padding-left: 10px;
+}
+
+.confirmationActions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 359px) {
+  .placement {
+    width: 62%;
+  }
+
+  .guide {
+    padding: 7px;
+  }
+}
+
+@media (max-width: 420px) {
+  .confirmationActions {
+    grid-template-columns: 1fr;
+  }
+}

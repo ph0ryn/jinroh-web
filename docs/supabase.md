@@ -216,8 +216,8 @@ player or role.
 resolved action history. SQL validates its identifier shape but does not
 maintain a role action allowlist, translate it, or attach behavior to it. The
 application dispatches a submitted role action with
-`(resolver_role_id, action_kind)` and resolves its fallback presentation from
-`RoleRegistry`. Adding another role with equivalent effects therefore does not
+`(resolver_role_id, action_kind)` and resolves its required definition and presentation from
+`RoleRegistry` without a generic fallback. Adding another role with equivalent effects therefore does not
 require a database constraint, function branch, or view-adapter exception.
 An accepted first submission also records one submitter-private
 `action_submitted` receipt carrying both the opaque `actionKey` and `kind`. The

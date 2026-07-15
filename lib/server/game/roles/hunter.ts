@@ -3,7 +3,6 @@ import {
   ActionActorStateRequirement,
   ActionTargetStateRequirement,
   EFFECT_TAG,
-  GameEffectKind,
   GameEffectLayer,
   RoleTargetKind,
 } from "../types";
@@ -15,6 +14,7 @@ import type {
   EffectTag as RoleEffectTag,
   GameActionKind,
   GameEffect,
+  RoleActionDefinition,
   RoleId,
 } from "../types";
 import type { ExecutionContext, RoleActionResolvedContext } from "./base";
@@ -22,8 +22,34 @@ import type { ExecutionContext, RoleActionResolvedContext } from "./base";
 const RETALIATION_ACTION_KIND: GameActionKind = "hunter_retaliate";
 const RETALIATION_DEATH_REASON: RoleDeathReason = "retaliation";
 const RETALIATION_EFFECT_TAG: RoleEffectTag = "retaliation";
+const RETALIATION_ACTION_DEFINITION = {
+  kind: RETALIATION_ACTION_KIND,
+  presentation: {
+    en: {
+      label: "Select a player to take with you.",
+      submitLabel: "Take with you",
+      submittedMessage: "Your retaliation has been submitted.",
+      targetConfirmation: {
+        afterTarget: " with you?",
+        beforeTarget: "Take ",
+      },
+    },
+    ja: {
+      label: "道連れにするプレイヤーを選択してください",
+      submitLabel: "道連れにする",
+      submittedMessage: "道連れを確定しました",
+      targetConfirmation: {
+        afterTarget: "を道連れにしますか？",
+        beforeTarget: "",
+      },
+    },
+  },
+  target: RoleTargetKind.SinglePlayer,
+  targetStateRequirement: ActionTargetStateRequirement.Alive,
+} as const satisfies RoleActionDefinition;
 
 export class HunterRole extends Role {
+  override readonly actionDefinitions = [RETALIATION_ACTION_DEFINITION];
   override readonly id: RoleId = "hunter";
   override readonly maxCount = 1;
   override readonly order = 60;
@@ -42,17 +68,6 @@ export class HunterRole extends Role {
   override readonly team = VILLAGE_TEAM;
   override readonly version = 2;
 
-  override getActionPresentation(actionKind: GameActionKind) {
-    if (actionKind !== RETALIATION_ACTION_KIND) {
-      return super.getActionPresentation(actionKind);
-    }
-
-    return {
-      en: { label: "Choose someone to take with you", submitLabel: "Take with you" },
-      ja: { label: "道連れにする相手を選ぶ", submitLabel: "道連れにする" },
-    };
-  }
-
   override onExecuted(context: ExecutionContext): readonly GameEffect[] {
     const eligibleTargetPlayerIds = context.state.alivePlayerIds.filter(
       (playerId) => playerId !== context.targetId,
@@ -63,24 +78,19 @@ export class HunterRole extends Role {
       ...(eligibleTargetPlayerIds.length === 0
         ? []
         : [
-            {
+            this.createCurrentActionEffect({
               actionKey: `hunter-retaliate:${context.state.phaseInstanceId ?? "execution"}:${context.targetId}`,
               actionKind: RETALIATION_ACTION_KIND,
               actorPlayerId: context.targetId,
               actorRoleId: this.id,
               actorStateRequirement: ActionActorStateRequirement.Assigned,
               eligibleTargetPlayerIds,
-              emitterRoleId: this.id,
               id: `action:hunter-retaliate:${context.targetId}`,
-              kind: GameEffectKind.CurrentAction,
               layer: GameEffectLayer.Action,
               priority: 200,
-              resolverRoleId: this.id,
               sourceActionId: null,
               tags: [],
-              target: RoleTargetKind.SinglePlayer,
-              targetStateRequirement: ActionTargetStateRequirement.Alive,
-            } satisfies GameEffect,
+            }),
           ]),
     ];
   }

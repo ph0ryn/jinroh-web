@@ -40,22 +40,24 @@ export type LocalizedText = {
 export type ActionPresentationText = {
   label: string;
   submitLabel: string;
+  submittedMessage: string;
 };
 
-export type ActionPresentation = {
+export type SinglePlayerActionPresentationText = ActionPresentationText & {
+  targetConfirmation: {
+    afterTarget: string;
+    beforeTarget: string;
+  };
+};
+
+export type TargetlessActionPresentation = {
   en: ActionPresentationText;
   ja: ActionPresentationText;
 };
 
-export const DEFAULT_ACTION_PRESENTATION: ActionPresentation = {
-  en: {
-    label: "Choose an action",
-    submitLabel: "Submit",
-  },
-  ja: {
-    label: "アクションを選ぶ",
-    submitLabel: "送信",
-  },
+export type SinglePlayerActionPresentation = {
+  en: SinglePlayerActionPresentationText;
+  ja: SinglePlayerActionPresentationText;
 };
 
 export function isActionKind(value: unknown): value is ActionKind {
@@ -235,16 +237,24 @@ export type NightConversationMessage = {
   senderPlayerId: string;
 };
 
-export type PublicAction = {
+type PublicActionBase = {
   key: string;
   kind: ActionKind;
-  presentation: ActionPresentation;
   phaseInstanceId: string;
   status: PublicActionStatus;
-  targetKind: "none" | "single_player";
   eligibleTargetIds: string[];
   closesAt: string | null;
 };
+
+export type PublicAction =
+  | (PublicActionBase & {
+      presentation: TargetlessActionPresentation;
+      targetKind: "none";
+    })
+  | (PublicActionBase & {
+      presentation: SinglePlayerActionPresentation;
+      targetKind: "single_player";
+    });
 
 export type RealtimeScope = "player_private" | "role_private" | "room";
 

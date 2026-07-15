@@ -1,7 +1,8 @@
 import "server-only";
-import { DEFAULT_ACTION_PRESENTATION, isRoleId } from "@/lib/shared/game";
+import { isActionKind, isRoleId } from "@/lib/shared/game";
 
 import {
+  ActionTargetStateRequirement,
   CountGroup,
   DEATH_REASON,
   EFFECT_TAG,
@@ -12,6 +13,7 @@ import {
 } from "../types";
 
 import type {
+  AvailableRoleAction,
   CurrentAction,
   DeathReason,
   EffectTag,
@@ -24,7 +26,6 @@ import type {
   ReadonlyGameState,
   ResolvedDeath,
   RoleActionDefinition,
-  RoleActionPresentation,
   RoleDefaultCountContext,
   RoleId,
   RoleNightConversationDefinition,
@@ -134,6 +135,7 @@ export abstract class Role {
   abstract readonly presentation: RolePresentation;
   abstract readonly team: RoleTeamDefinition;
 
+  readonly actionDefinitions: readonly RoleActionDefinition[] = [];
   readonly incompatibleRoleIds: readonly RoleId[] = [];
   readonly maxCount: number | null = null;
   readonly minCount: number = 0;
@@ -197,22 +199,63 @@ export abstract class Role {
     return InspectionView.Human;
   }
 
-  getActions(context: PlayerRoleContext): readonly RoleActionDefinition[] {
+  getActions(context: PlayerRoleContext): readonly AvailableRoleAction[] {
     void context;
 
     return [];
   }
 
-  getActionPresentation(actionKind: GameActionKind): RoleActionPresentation {
-    void actionKind;
+  getActionDefinition(actionKind: GameActionKind): RoleActionDefinition {
+    const definition = this.actionDefinitions.find((action) => action.kind === actionKind);
 
-    return DEFAULT_ACTION_PRESENTATION;
+    if (definition === undefined) {
+      throw new Error(`Role ${this.id} does not define action: ${actionKind}`);
+    }
+
+    return definition;
   }
 
-  getEligibleTargets(
-    action: RoleActionDefinition,
-    context: PlayerRoleContext,
-  ): readonly PlayerId[] {
+  protected createAvailableAction(
+    actionKind: GameActionKind,
+    roleGroupRoleId: RoleId | null,
+  ): AvailableRoleAction {
+    const definition = this.getActionDefinition(actionKind);
+
+    return {
+      kind: definition.kind,
+      roleGroupRoleId,
+      target: definition.target,
+      targetStateRequirement: definition.targetStateRequirement,
+    };
+  }
+
+  protected createCurrentActionEffect(
+    params: Omit<
+      Extract<GameEffect, { kind: GameEffectKind.CurrentAction }>,
+      | "actionKind"
+      | "emitterRoleId"
+      | "kind"
+      | "resolverRoleId"
+      | "target"
+      | "targetStateRequirement"
+    > & {
+      actionKind: GameActionKind;
+    },
+  ): Extract<GameEffect, { kind: GameEffectKind.CurrentAction }> {
+    const definition = this.getActionDefinition(params.actionKind);
+
+    return {
+      ...params,
+      actionKind: definition.kind,
+      emitterRoleId: this.id,
+      kind: GameEffectKind.CurrentAction,
+      resolverRoleId: this.id,
+      target: definition.target,
+      targetStateRequirement: definition.targetStateRequirement,
+    };
+  }
+
+  getEligibleTargets(action: AvailableRoleAction, context: PlayerRoleContext): readonly PlayerId[] {
     if (action.target === RoleTargetKind.None) {
       return [];
     }
@@ -440,6 +483,18 @@ function validateRoleDefinition(role: Role): void {
     throw new Error(`Invalid role presentation: ${role.id}`);
   }
 
+  const actionKinds = role.actionDefinitions.map((action) => action.kind);
+
+  if (new Set(actionKinds).size !== actionKinds.length) {
+    throw new Error(`Duplicate role action kinds: ${role.id}`);
+  }
+
+  for (const action of role.actionDefinitions) {
+    if (!isRoleActionDefinitionValid(action)) {
+      throw new Error(`Invalid role action definition: ${role.id}:${action.kind}`);
+    }
+  }
+
   if (
     role.nightConversation !== null &&
     (!/^[a-z][a-z0-9_:-]{0,63}$/u.test(role.nightConversation.groupId) ||
@@ -490,9 +545,66 @@ function isRolePresentationTextValid(text: {
   );
 }
 
+function isRoleActionDefinitionValid(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const target = value["target"];
+
+  return (
+    isActionKind(value["kind"]) &&
+    (target === RoleTargetKind.None || target === RoleTargetKind.SinglePlayer) &&
+    (value["targetStateRequirement"] === ActionTargetStateRequirement.Alive ||
+      value["targetStateRequirement"] === ActionTargetStateRequirement.Assigned) &&
+    isActionPresentationValid(value["presentation"], target)
+  );
+}
+
+function isActionPresentationValid(value: unknown, target: RoleTargetKind): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return ["en", "ja"].every((locale) => {
+    const text = value[locale];
+
+    if (
+      !isRecord(text) ||
+      !isNonEmptyString(text["label"]) ||
+      !isNonEmptyString(text["submitLabel"]) ||
+      !isNonEmptyString(text["submittedMessage"])
+    ) {
+      return false;
+    }
+
+    if (target === RoleTargetKind.None) {
+      return !("targetConfirmation" in text);
+    }
+
+    const confirmation = text["targetConfirmation"];
+
+    return (
+      isRecord(confirmation) &&
+      typeof confirmation["afterTarget"] === "string" &&
+      typeof confirmation["beforeTarget"] === "string" &&
+      `${confirmation["beforeTarget"]}${confirmation["afterTarget"]}`.trim().length > 0
+    );
+  });
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function createRegistryVersion(roles: readonly Role[]): string {
   const manifest = JSON.stringify(
     roles.map((role) => ({
+      actions: role.actionDefinitions,
       metadata: role.getPublicMetadata(),
       nightConversation: role.nightConversation,
       team: role.team,

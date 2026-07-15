@@ -1,9 +1,19 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+
 import { getLocalizedRole } from "@/lib/i18n/localization";
 
+import { LiveActionGuide } from "./effects/ui/LiveActionGuide";
 import motionStyles from "./effects/ui/liveRoundTableMotion.module.css";
 import { useLiveRoundTableMotion } from "./effects/ui/useLiveRoundTableMotion";
+import {
+  getLiveActionGuideState,
+  isLiveActionSelectionValid,
+  matchesLiveActionIdentity,
+  type LiveActionIdentity,
+  type LiveActionSelection,
+} from "./liveActionInteractionModel";
 import { formatWinner } from "./liveEventPresentation";
 import {
   countJoinedPlayers,
@@ -16,19 +26,151 @@ import { getLiveRoundTableSeats } from "./liveRoundTableModel";
 import { getLiveSeatPresentation } from "./liveSeatPresentation";
 
 import type { Locale, Localization } from "@/lib/i18n/localization";
-import type { RoomSummary } from "@/lib/shared/game";
+import type { PublicAction, RoomSummary } from "@/lib/shared/game";
 import type { CSSProperties, ReactNode } from "react";
 
 type LiveRoundTableProps = {
+  readonly isBusy: boolean;
+  readonly isCinematicObscured: boolean;
   readonly locale: Locale;
+  readonly pendingAction: LiveActionIdentity | null;
   readonly summary: RoomSummary;
   readonly t: Localization;
+  readonly onSubmitAction: (action: PublicAction, targetPlayerId: string | null) => void;
 };
 
-export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
+type LiveActionSelectionState = {
+  readonly contextKey: string;
+  readonly selection: LiveActionSelection;
+};
+
+export function LiveRoundTable({
+  isBusy,
+  isCinematicObscured,
+  locale,
+  pendingAction,
+  summary,
+  t,
+  onSubmitAction,
+}: LiveRoundTableProps) {
   const seats = getLiveRoundTableSeats(summary);
   const mood = getLiveMood(summary);
   const rootRef = useLiveRoundTableMotion(summary);
+  const actions = useMemo(
+    () => (summary.status === "playing" ? (summary.self?.actions ?? []) : []),
+    [summary.self?.actions, summary.status],
+  );
+  const receipts = summary.status === "playing" ? (summary.self?.actionReceipts ?? []) : [];
+  const actionGuideState = getLiveActionGuideState(actions, receipts);
+  const activeAction = actionGuideState.kind === "active" ? actionGuideState.action : null;
+  const activeActionSignature =
+    activeAction === null
+      ? "none"
+      : [
+          activeAction.key,
+          activeAction.kind,
+          activeAction.phaseInstanceId,
+          activeAction.targetKind,
+          activeAction.eligibleTargetIds.join(","),
+        ].join("|");
+  const interactionContextKey = [
+    summary.code,
+    summary.currentPlayerId ?? "observer",
+    summary.game?.gameId ?? "no-game",
+    summary.game?.phaseInstanceId ?? "no-phase",
+    activeActionSignature,
+  ].join("|");
+  const [selectionState, setSelectionState] = useState<LiveActionSelectionState | null>(null);
+  const hasSelectionBoundaryChanged =
+    selectionState !== null &&
+    (selectionState.contextKey !== interactionContextKey || isCinematicObscured);
+
+  if (hasSelectionBoundaryChanged) {
+    setSelectionState(null);
+  }
+
+  const candidateSelection =
+    !hasSelectionBoundaryChanged &&
+    !isCinematicObscured &&
+    selectionState?.contextKey === interactionContextKey
+      ? selectionState.selection
+      : null;
+  const selection =
+    candidateSelection !== null && isLiveActionSelectionValid(candidateSelection, actions)
+      ? candidateSelection
+      : null;
+  const selectedPlayer =
+    selection === null
+      ? null
+      : (summary.players.find((player) => player.id === selection.targetPlayerId) ?? null);
+  const selectedAction =
+    selection === null
+      ? null
+      : (actions.find(
+          (action) =>
+            action.key === selection.actionKey &&
+            action.kind === selection.actionKind &&
+            action.phaseInstanceId === selection.phaseInstanceId,
+        ) ?? null);
+  const isPendingSelection =
+    pendingAction !== null &&
+    selectedAction !== null &&
+    matchesLiveActionIdentity(pendingAction, selectedAction) &&
+    isBusy;
+
+  useEffect(() => {
+    function clearHiddenSelection(): void {
+      if (document.visibilityState === "hidden") {
+        setSelectionState(null);
+      }
+    }
+
+    document.addEventListener("visibilitychange", clearHiddenSelection);
+
+    return () => document.removeEventListener("visibilitychange", clearHiddenSelection);
+  }, []);
+
+  function selectTarget(playerId: string): void {
+    if (activeAction?.targetKind !== "single_player" || isBusy || isCinematicObscured) {
+      return;
+    }
+
+    const nextSelection: LiveActionSelection = {
+      actionKey: activeAction.key,
+      actionKind: activeAction.kind,
+      phaseInstanceId: activeAction.phaseInstanceId,
+      targetPlayerId: playerId,
+    };
+
+    if (isLiveActionSelectionValid(nextSelection, actions)) {
+      setSelectionState({
+        contextKey: interactionContextKey,
+        selection: nextSelection,
+      });
+    }
+  }
+
+  function submitTargetlessAction(action: PublicAction): void {
+    if (
+      activeAction === action &&
+      action.targetKind === "none" &&
+      !isBusy &&
+      !isCinematicObscured
+    ) {
+      onSubmitAction(action, null);
+    }
+  }
+
+  function confirmSelection(): void {
+    if (
+      selection !== null &&
+      selectedAction !== null &&
+      isLiveActionSelectionValid(selection, actions) &&
+      !isBusy
+    ) {
+      onSubmitAction(selectedAction, selection.targetPlayerId);
+    }
+  }
 
   return (
     <div
@@ -45,6 +187,24 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
           <span className={styles["centerKicker"]}>{getLiveTableMeta(summary, locale, t)}</span>
           <strong>{getLiveTableTitle(summary, t)}</strong>
         </div>
+
+        <LiveActionGuide
+          state={actionGuideState}
+          isObscured={isCinematicObscured}
+          isPending={
+            isPendingSelection ||
+            (pendingAction !== null &&
+              activeAction !== null &&
+              matchesLiveActionIdentity(pendingAction, activeAction) &&
+              isBusy)
+          }
+          locale={locale}
+          selectedPlayer={selectedPlayer}
+          t={t}
+          onConfirm={confirmSelection}
+          onReselect={() => setSelectionState(null)}
+          onTargetlessSubmit={submitTargetlessAction}
+        />
 
         {seats.map(({ player, seatNumber, x, y }) => {
           const seatStyle: CSSProperties & {
@@ -127,6 +287,49 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
           ]
             .filter(Boolean)
             .join(" ");
+          const targetedAction = activeAction?.targetKind === "single_player" ? activeAction : null;
+          const canSelectForAction =
+            targetedAction !== null &&
+            targetedAction.eligibleTargetIds.includes(player.id) &&
+            !isBusy &&
+            !isCinematicObscured;
+          const actionSeatClassName = [
+            seatClassName,
+            motionStyles["seatVisual"],
+            targetedAction === null ? "" : styles["seatButton"],
+            canSelectForAction ? styles["actionTarget"] : "",
+            targetedAction !== null && !canSelectForAction ? styles["disabledActionTarget"] : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const seatAriaLabel = [
+            player.displayName,
+            ...seatPresentation.ariaLabels,
+            ...(lobbyReadinessLabel === null ? [] : [lobbyReadinessLabel]),
+            ...(revealedRole === null ? [] : [revealedRole.name]),
+          ].join(", ");
+          const seatContent = (
+            <>
+              <span
+                aria-hidden="true"
+                className={motionStyles["attentionHalo"]}
+                data-live-seat-attention
+              />
+              <span className={styles["seatNumber"]}>{seatNumber}</span>
+              <span className={styles["avatar"]} aria-hidden="true" data-live-seat-avatar>
+                {getPlayerInitial(player.displayName)}
+              </span>
+              <span className={styles["seatLabel"]}>
+                <strong>{player.displayName}</strong>
+                {seatDetailLabel === null ? null : (
+                  <small className={seatDetailClassName}>{seatDetailLabel}</small>
+                )}
+              </span>
+              {revealedRole !== null && seatPresentation.visibleLabel !== null ? (
+                <span className={styles["seatState"]}>{seatPresentation.visibleLabel}</span>
+              ) : null}
+            </>
+          );
 
           return (
             <LiveSeatPosition
@@ -135,43 +338,41 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
               seatNumber={seatNumber}
               style={seatStyle}
             >
-              <div
-                aria-label={[
-                  player.displayName,
-                  ...seatPresentation.ariaLabels,
-                  ...(lobbyReadinessLabel === null ? [] : [lobbyReadinessLabel]),
-                  ...(revealedRole === null ? [] : [revealedRole.name]),
-                ].join(", ")}
-                className={`${seatClassName} ${motionStyles["seatVisual"]}`}
-                data-live-player-id={player.id}
-                data-live-current-seat={player.isCurrent ? "" : undefined}
-                data-live-lobby-ready={
-                  lobbyReadinessLabel === null ? undefined : String(player.isLobbyReady)
-                }
-                data-live-role-id={revealedRole === null ? undefined : player.revealedRoleId}
-                data-live-seat-number={seatNumber}
-                data-live-seat-presentation-state={seatPresentation.state}
-                data-live-seat-state="occupied"
-              >
-                <span
-                  aria-hidden="true"
-                  className={motionStyles["attentionHalo"]}
-                  data-live-seat-attention
-                />
-                <span className={styles["seatNumber"]}>{seatNumber}</span>
-                <span className={styles["avatar"]} aria-hidden="true" data-live-seat-avatar>
-                  {getPlayerInitial(player.displayName)}
-                </span>
-                <span className={styles["seatLabel"]}>
-                  <strong>{player.displayName}</strong>
-                  {seatDetailLabel === null ? null : (
-                    <small className={seatDetailClassName}>{seatDetailLabel}</small>
-                  )}
-                </span>
-                {revealedRole !== null && seatPresentation.visibleLabel !== null ? (
-                  <span className={styles["seatState"]}>{seatPresentation.visibleLabel}</span>
-                ) : null}
-              </div>
+              {targetedAction === null ? (
+                <div
+                  aria-label={seatAriaLabel}
+                  className={actionSeatClassName}
+                  data-live-player-id={player.id}
+                  data-live-current-seat={player.isCurrent ? "" : undefined}
+                  data-live-lobby-ready={
+                    lobbyReadinessLabel === null ? undefined : String(player.isLobbyReady)
+                  }
+                  data-live-role-id={revealedRole === null ? undefined : player.revealedRoleId}
+                  data-live-seat-number={seatNumber}
+                  data-live-seat-presentation-state={seatPresentation.state}
+                  data-live-seat-state="occupied"
+                >
+                  {seatContent}
+                </div>
+              ) : (
+                <button
+                  aria-label={seatAriaLabel}
+                  aria-pressed={selection?.targetPlayerId === player.id}
+                  className={actionSeatClassName}
+                  data-live-action-target-state={canSelectForAction ? "eligible" : "disabled"}
+                  data-live-player-id={player.id}
+                  data-live-current-seat={player.isCurrent ? "" : undefined}
+                  data-live-role-id={revealedRole === null ? undefined : player.revealedRoleId}
+                  data-live-seat-number={seatNumber}
+                  data-live-seat-presentation-state={seatPresentation.state}
+                  data-live-seat-state="occupied"
+                  disabled={!canSelectForAction}
+                  type="button"
+                  onClick={() => selectTarget(player.id)}
+                >
+                  {seatContent}
+                </button>
+              )}
             </LiveSeatPosition>
           );
         })}

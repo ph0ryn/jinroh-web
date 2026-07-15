@@ -195,6 +195,25 @@ extension を設計して `Role` から提供する。
 
 ```ts
 const ATTACK_ACTION_KIND: GameActionKind = "attack";
+const ATTACK_ACTION_DEFINITION = {
+  kind: ATTACK_ACTION_KIND,
+  presentation: {
+    en: {
+      label: "Select a player to attack.",
+      submitLabel: "Attack",
+      submittedMessage: "Your attack has been submitted.",
+      targetConfirmation: { afterTarget: "?", beforeTarget: "Attack " },
+    },
+    ja: {
+      label: "襲撃するプレイヤーを選択してください",
+      submitLabel: "襲撃する",
+      submittedMessage: "襲撃済みです",
+      targetConfirmation: { afterTarget: "を襲撃しますか？", beforeTarget: "" },
+    },
+  },
+  target: RoleTargetKind.SinglePlayer,
+  targetStateRequirement: ActionTargetStateRequirement.Alive,
+} as const satisfies RoleActionDefinition;
 const WEREWOLF_DOMINANCE_REASON = "werewolf_dominance";
 const WEREWOLVES_ELIMINATED_REASON = "werewolves_eliminated";
 const WEREWOLF_TEAM = {
@@ -203,6 +222,7 @@ const WEREWOLF_TEAM = {
 } as const satisfies RoleTeamDefinition;
 
 export class WerewolfRole extends Role {
+  readonly actionDefinitions = [ATTACK_ACTION_DEFINITION];
   readonly id = "werewolf";
   readonly name = "人狼";
   readonly team = WEREWOLF_TEAM;
@@ -222,7 +242,7 @@ export class WerewolfRole extends Role {
     return InspectionView.Werewolf;
   }
 
-  getActions(context: PlayerRoleContext): readonly RoleActionDefinition[] {
+  getActions(context: PlayerRoleContext): readonly AvailableRoleAction[] {
     if (context.state.phase !== GamePhase.Night) {
       return [];
     }
@@ -231,13 +251,7 @@ export class WerewolfRole extends Role {
       return [];
     }
 
-    return [
-      {
-        kind: ATTACK_ACTION_KIND,
-        target: RoleTargetKind.SinglePlayer,
-        roleGroupRoleId: this.id,
-      },
-    ];
+    return [this.createAvailableAction(ATTACK_ACTION_KIND, this.id)];
   }
 
   checkEndCondition(context: RoleContext): GameEndCandidate | null {

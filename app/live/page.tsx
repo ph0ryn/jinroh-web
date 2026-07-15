@@ -17,12 +17,16 @@ import {
   type LiveToastTone,
 } from "@/app/live/effects/ui/liveToastModel";
 import { LiveToastRegion } from "@/app/live/effects/ui/LiveToastRegion";
-import { useLiveActionFeedback } from "@/app/live/effects/ui/useLiveActionFeedback";
 import { useLiveToastController } from "@/app/live/effects/ui/useLiveToastController";
 import {
   useLiveEffectQueue,
   type LiveDisplayCommitOrigin,
 } from "@/app/live/effects/useLiveEffectQueue";
+import {
+  getLiveActionIdentity,
+  matchesLiveActionIdentity,
+  type LiveActionIdentity,
+} from "@/app/live/liveActionInteractionModel";
 import {
   apiFetch,
   assertBrowserStorageAccess,
@@ -185,7 +189,7 @@ export default function LivePage() {
   const isBusyRef = useRef(false);
   const liveShellRef = useRef<HTMLElement>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
+  const [pendingLiveAction, setPendingLiveAction] = useState<LiveActionIdentity | null>(null);
   const [setupPendingAction, setSetupPendingAction] = useState<SetupPendingAction>(null);
   const [liveOrigin, setLiveOrigin] = useState<string | null>(null);
   const handleDisplayCommit = useCallback(
@@ -208,8 +212,6 @@ export default function LivePage() {
     completeActiveCue,
     replayRole,
   } = useLiveEffectQueue({ onDisplayCommit: handleDisplayCommit });
-  const { completeCue: completeActionFeedbackCue, cue: actionFeedbackCue } =
-    useLiveActionFeedback(displayedRoomSummary);
   const {
     clearScope: clearToastScope,
     completeEntry: completeToastEntry,
@@ -261,7 +263,7 @@ export default function LivePage() {
   }, []);
 
   const clearGameBoundUiState = useCallback(() => {
-    setPendingActionKey(null);
+    setPendingLiveAction(null);
     setIsNightConversationOpen(false);
     setIsPublicLogOpen(false);
     setNightConversationDraft("");
@@ -425,7 +427,7 @@ export default function LivePage() {
         setRoomCodeInput("");
       }
 
-      setPendingActionKey(null);
+      setPendingLiveAction(null);
       setIsNightConversationOpen(false);
       setIsPublicLogOpen(false);
       setNightConversationDraft("");
@@ -1455,7 +1457,9 @@ export default function LivePage() {
 
   function handleSubmitAction(action: PublicAction, targetPlayerId: string | null): void {
     void withBusy(async () => {
-      setPendingActionKey(action.key);
+      const actionIdentity = getLiveActionIdentity(action);
+
+      setPendingLiveAction(actionIdentity);
 
       try {
         const token = await ensureIdentityToken();
@@ -1482,8 +1486,10 @@ export default function LivePage() {
 
         rememberRoom(summary, requestContext);
       } finally {
-        setPendingActionKey((currentActionKey) =>
-          currentActionKey === action.key ? null : currentActionKey,
+        setPendingLiveAction((currentAction) =>
+          currentAction !== null && matchesLiveActionIdentity(currentAction, actionIdentity)
+            ? null
+            : currentAction,
         );
       }
     });
@@ -1579,7 +1585,6 @@ export default function LivePage() {
   const presentationSummary = displayedRoomSummary;
   const isCurrentRoomParticipant =
     presentationSummary !== null && presentationSummary.currentPlayerId !== null;
-  const selfActions = isCurrentRoomParticipant ? (presentationSummary.self?.actions ?? []) : [];
   const isCurrentGameCinematicObscured =
     activeCue !== null && activeCue.gameId === roomSummary?.game?.gameId;
   const canConfigureStartSettings =
@@ -1677,18 +1682,14 @@ export default function LivePage() {
   } else if (presentationSummary !== null && roomBoundSurfaceStatus === "playing") {
     roomBoundSurface = (
       <LivePlayingSurface
-        actionFeedbackCue={actionFeedbackCue}
         isBusy={isBusy}
         isNightConversationOpen={isNightConversationOpen}
         isPublicLogOpen={isPublicLogOpen}
         isCinematicObscured={isCurrentGameCinematicObscured}
         nightConversationDraft={nightConversationDraft}
-        pendingActionKey={pendingActionKey}
-        selfActions={selfActions}
         summary={presentationSummary}
         locale={locale}
         t={t}
-        onActionFeedbackComplete={completeActionFeedbackCue}
         onCloseNightConversation={() => setIsNightConversationOpen(false)}
         onClosePublicLog={() => setIsPublicLogOpen(false)}
         onNightConversationDraftChange={setNightConversationDraft}
@@ -1696,7 +1697,6 @@ export default function LivePage() {
         onOpenPublicLog={() => setIsPublicLogOpen(true)}
         onRevealRole={replayRole}
         onSendNightConversation={handleSendNightConversation}
-        onSubmitAction={handleSubmitAction}
       />
     );
   } else if (presentationSummary !== null && roomBoundSurfaceStatus === "ended") {
@@ -1788,7 +1788,17 @@ export default function LivePage() {
       {presentationSummary !== null && roomBoundSurfaceStatus !== null ? (
         <LiveRoomLayout
           controls={roomBoundSurface}
-          table={<LiveRoundTable locale={locale} summary={presentationSummary} t={t} />}
+          table={
+            <LiveRoundTable
+              isBusy={isBusy}
+              isCinematicObscured={isCurrentGameCinematicObscured}
+              locale={locale}
+              pendingAction={pendingLiveAction}
+              summary={presentationSummary}
+              t={t}
+              onSubmitAction={handleSubmitAction}
+            />
+          }
           tableLabel={t.live.aria.roundTable}
           title={getLivePageTitle(presentationSummary, t)}
           transitionItem={roomBoundSurfaceStatus === "waiting" ? "waiting" : undefined}

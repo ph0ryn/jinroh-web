@@ -108,40 +108,6 @@ export const enLocalization = {
       none: "none",
       private: "private",
     },
-    actionStatus: {
-      locked: "Target locked",
-      noTarget: "No target",
-      submitted: "Already submitted",
-    },
-    actions: {
-      action: "Action",
-      button: {
-        submitted: "Submitted",
-        submitting: "Submitting",
-      },
-      day: "Day action",
-      empty: {
-        gameComplete: {
-          body: "Private actions are closed. Review your result and the public log.",
-          title: "Game complete",
-        },
-        noActions: {
-          body: "You have no role action right now, or it has already closed.",
-          title: "No private actions",
-        },
-        noRoom: {
-          body: "Join a room to load role-specific prompts.",
-          title: "No private actions",
-        },
-        waitingForStart: {
-          body: "Private actions appear here after the host starts the game.",
-          title: "Waiting for start",
-        },
-      },
-      execution: "Execution action",
-      night: "Night action",
-      vote: "Vote action",
-    },
     phase: {
       day: "Day",
       execution: "Execution",
@@ -194,15 +160,6 @@ export const enLocalization = {
       },
       votingPrepared: "Voting phase prepared with one action per living player.",
     },
-    actionRows: {
-      livingPlayers: "Living players",
-      status: {
-        done: "Done",
-        locked: "Locked",
-        open: "Open",
-        pending: "Pending",
-      },
-    },
     aria: {
       appSurface: (title: string) => `${title} surface`,
       commandPanel: "Host and player controls",
@@ -248,13 +205,11 @@ export const enLocalization = {
       voting: { detail: "Ballots", label: "Voting", mobileLabel: "Vote" },
     },
     panel: {
-      actionStatus: "Action status",
       alive: (count: number) => `${count} alive`,
       ended: "Ended",
       hostControls: "Host controls",
       live: "Live",
       out: "Out",
-      selectedPlayer: "Selected player",
       selectedSeatRole: (seatNumber: number, roleName: string) =>
         `Seat ${seatNumber} / ${roleName}`,
     },
@@ -337,8 +292,13 @@ export const enLocalization = {
     },
   },
   live: {
+    actionGuide: {
+      closedWithoutReceipt: "This action is no longer available.",
+      irreversibleWarning: "This cannot be changed after confirmation.",
+      reselect: "Choose again",
+      submitting: "Submitting...",
+    },
     aria: {
-      actionTarget: (actionName: string) => `Target for ${actionName}`,
       commonPhaseTiming: "Game timing",
       currentPhase: "Current scene",
       entryMode: "Choose how to enter a room",
@@ -394,10 +354,6 @@ export const enLocalization = {
       title: "Public log",
     },
     effects: {
-      action: {
-        announcement: (actionName: string) => `${actionName} was confirmed.`,
-        confirmed: "Confirmed",
-      },
       death: {
         kicker: "DEATH REPORT",
         message: (playerNames: readonly string[]) => {

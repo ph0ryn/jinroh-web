@@ -1,9 +1,10 @@
 import "server-only";
 import type {
-  ActionPresentation,
   LocalizedText,
   RoleOptionValues,
   RolePresentation,
+  SinglePlayerActionPresentation,
+  TargetlessActionPresentation,
 } from "@/lib/shared/game";
 
 export type RoleId = string;
@@ -127,12 +128,26 @@ export enum ActionTargetStateRequirement {
   Assigned = "assigned",
 }
 
-export type RoleActionDefinition = {
+export type AvailableRoleAction = {
   kind: GameActionKind;
   roleGroupRoleId: RoleId | null;
   target: RoleTargetKind;
   targetStateRequirement: ActionTargetStateRequirement;
 };
+
+export type RoleActionDefinition =
+  | {
+      kind: GameActionKind;
+      presentation: TargetlessActionPresentation;
+      target: RoleTargetKind.None;
+      targetStateRequirement: ActionTargetStateRequirement;
+    }
+  | {
+      kind: GameActionKind;
+      presentation: SinglePlayerActionPresentation;
+      target: RoleTargetKind.SinglePlayer;
+      targetStateRequirement: ActionTargetStateRequirement;
+    };
 
 export type RolePublicMetadata = {
   id: RoleId;
@@ -142,8 +157,6 @@ export type RolePublicMetadata = {
   presentation: RolePresentation;
   specificOptions: readonly RoleSpecificOptionDefinition[];
 };
-
-export type RoleActionPresentation = ActionPresentation;
 
 export type RoleDefaultCountContext = {
   assignedRoleCount: number;

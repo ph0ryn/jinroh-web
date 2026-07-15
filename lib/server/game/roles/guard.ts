@@ -11,6 +11,7 @@ import { Role } from "./base";
 import { VILLAGE_TEAM } from "./villager";
 
 import type {
+  AvailableRoleAction,
   GameActionKind,
   GameEffect,
   PlayerId,
@@ -25,8 +26,34 @@ const GUARD_ACTION_KIND: GameActionKind = "guard";
 const CONSECUTIVE_TARGET_OPTION_KEY = "consecutive_target";
 const ALLOW_CONSECUTIVE_TARGET = "allow";
 const DENY_CONSECUTIVE_TARGET = "deny";
+const GUARD_ACTION_DEFINITION = {
+  kind: GUARD_ACTION_KIND,
+  presentation: {
+    en: {
+      label: "Select a player to protect.",
+      submitLabel: "Protect",
+      submittedMessage: "Your protection has been submitted.",
+      targetConfirmation: {
+        afterTarget: "?",
+        beforeTarget: "Protect ",
+      },
+    },
+    ja: {
+      label: "護衛するプレイヤーを選択してください",
+      submitLabel: "護衛する",
+      submittedMessage: "護衛済みです",
+      targetConfirmation: {
+        afterTarget: "を護衛しますか？",
+        beforeTarget: "",
+      },
+    },
+  },
+  target: RoleTargetKind.SinglePlayer,
+  targetStateRequirement: ActionTargetStateRequirement.Alive,
+} as const satisfies RoleActionDefinition;
 
 export class GuardRole extends Role {
+  override readonly actionDefinitions = [GUARD_ACTION_DEFINITION];
   override readonly id: RoleId = "guard";
   override readonly maxCount = 1;
   override readonly order = 40;
@@ -44,17 +71,6 @@ export class GuardRole extends Role {
   };
   override readonly team = VILLAGE_TEAM;
   override readonly version = 2;
-
-  override getActionPresentation(actionKind: GameActionKind) {
-    if (actionKind !== GUARD_ACTION_KIND) {
-      return super.getActionPresentation(actionKind);
-    }
-
-    return {
-      en: { label: "Choose someone to protect", submitLabel: "Protect" },
-      ja: { label: "護衛する相手を選ぶ", submitLabel: "護衛する" },
-    };
-  }
 
   override getDefaultCount(context: RoleDefaultCountContext): number {
     return context.playerCount >= 5 ? 1 : 0;
@@ -83,23 +99,16 @@ export class GuardRole extends Role {
     ];
   }
 
-  override getActions(context: PlayerRoleContext): readonly RoleActionDefinition[] {
+  override getActions(context: PlayerRoleContext): readonly AvailableRoleAction[] {
     if (context.state.phase !== GamePhase.Night || context.state.nightNumber === 1) {
       return [];
     }
 
-    return [
-      {
-        kind: GUARD_ACTION_KIND,
-        roleGroupRoleId: null,
-        target: RoleTargetKind.SinglePlayer,
-        targetStateRequirement: ActionTargetStateRequirement.Alive,
-      },
-    ];
+    return [this.createAvailableAction(GUARD_ACTION_KIND, null)];
   }
 
   override getEligibleTargets(
-    action: RoleActionDefinition,
+    action: AvailableRoleAction,
     context: PlayerRoleContext,
   ): readonly string[] {
     if (action.kind !== GUARD_ACTION_KIND) {

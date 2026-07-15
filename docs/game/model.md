@@ -42,8 +42,10 @@ Team ID の allowlist にならない。
 
 ## Action の所有関係
 
-`RoleActionDefinition` は、各 `Role` が通常の phase action を宣言するための template。
-Engine はこの定義と game state から、現在受け付ける `CurrentAction` を具体化する。
+`RoleActionDefinition` は、各 `Role` が所有する静的 action manifest。
+opaque kind、target policy、localized presentation を1つの定義にまとめる。
+`AvailableRoleAction` は、その定義を現在の phase で誰に公開するかだけを表す。
+Engine は manifest と game state から、現在受け付ける `CurrentAction` を具体化する。
 
 `CurrentAction` は受付単位の runtime state。
 
@@ -78,7 +80,21 @@ export enum ActionTargetStateRequirement {
   Assigned = "assigned",
 }
 
-export type RoleActionDefinition = {
+export type RoleActionDefinition =
+  | {
+      kind: ActionKind;
+      presentation: TargetlessActionPresentation;
+      target: RoleTargetKind.None;
+      targetStateRequirement: ActionTargetStateRequirement;
+    }
+  | {
+      kind: ActionKind;
+      presentation: SinglePlayerActionPresentation;
+      target: RoleTargetKind.SinglePlayer;
+      targetStateRequirement: ActionTargetStateRequirement;
+    };
+
+export type AvailableRoleAction = {
   kind: ActionKind;
   roleGroupRoleId: RoleId | null;
   target: RoleTargetKind;
@@ -124,12 +140,20 @@ completeness gate として使わない。
 core resolver へ渡す。これにより、同じ effect を持つ別 Role が独自の action kind を定義しても、
 common engine、persistence、view adapter の変更を必要としない。
 
-Role action の fallback label と submit label も Role module が所有する。
-View adapter は `resolverRoleId` と opaque action kind から `RoleRegistry` の presentation を解決し、
-API に渡す。Role metadata、option、message、night conversation の localized fallback も
-Role module が持ち、shared localization を role identifier の completeness gate にしない。
+Role action の guide label、submit label、target confirmation、submitted message も
+manifest 内で Role module が所有する。target confirmation は Player 名の前後を別 text
+として提供し、common UI は user-supplied display name を text node として間に挿入する。
+対象を持たない definition の presentation は target confirmation field 自体を持たない。
+`RoleRegistry` は duplicate kind、target と presentation の不整合、空文言を起動時に拒否し、
+action manifest 全体を registry version に含める。action presentation の変更だけを理由に
+Role の手動 version を増やす必要はない。
+View adapter は `resolverRoleId` と opaque action kind から `RoleRegistry` の definition を解決し、
+API に渡す。未登録 kind を generic copy へ fallback してはならない。Role metadata、option、
+message、night conversation の localized fallback も Role module が持ち、shared localization を
+role identifier の completeness gate にしない。
 
-`getActions()` を呼ぶ phase は Role 自身が判断する。現在の role action はすべて
+`getActions()` を呼ぶ phase は Role 自身が判断する。Role は manifest の kind と owner Role
+だけを `createAvailableAction()` に渡し、target policy を再記述しない。現在の role action はすべて
 phase-end 解決かつ first-submit-wins であり、変更できない policy を定義 field として重複させない。
 `roleGroupRoleId` がある action は Role group 所有、ない action は各 Player 所有として具体化する。
 Role hook 向け `CurrentAction` view も `actorStateRequirement`、
@@ -149,6 +173,9 @@ Engine が effect resolution を通したあと、`actorPlayerId` / `actorRoleId
 owner に変換する。
 `emitterRoleId` は effect を発行した Role、`resolverRoleId` は action を解決する Role、
 `actorPlayerId` / `actorRoleId` は提出権限を表す。これらを暗黙に同一視しない。
+effect が指定する opaque kind は resolver Role の manifest に存在しなければならず、Engine は
+永続化前に target と target-state policy も definition と照合する。Role の
+`createCurrentActionEffect()` helper はこれらの field を manifest から構築する。
 
 effect resolution 後に有効な `CurrentAction` が具体化された場合、Engine は同じ
 user-visible phase の follow-up window を開く。follow-up は game end と core phase

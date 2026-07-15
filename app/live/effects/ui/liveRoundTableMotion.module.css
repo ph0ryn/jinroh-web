@@ -3,7 +3,7 @@
   position: absolute;
   top: var(--seat-y);
   transform: translate(-50%, -50%);
-  z-index: 3;
+  z-index: 10;
 }
 
 .seatMotion {

@@ -109,10 +109,12 @@ test("players complete the primary create-to-first-day journey", async ({ browse
     );
 
     for (const player of players) {
-      const actionRow = player.page.locator('[data-live-action-kind="first_night_ready"]');
+      const actionGuide = player.page.locator(
+        '[data-live-action-guide][data-live-action-kind="first_night_ready"]',
+      );
 
-      await expect(actionRow).toHaveCount(1);
-      await actionRow.locator("[data-live-action-submit]").click();
+      await expect(actionGuide).toHaveCount(1);
+      await actionGuide.locator("[data-live-action-submit]").click();
     }
 
     await Promise.all(

@@ -33,6 +33,7 @@ import type {
   GameEffect,
   PlayerId,
   ResolvedRoleSetup,
+  RoleActionDefinition,
   RoleId,
   Team,
   WinnerJudgementContribution,
@@ -59,8 +60,82 @@ const FUTURE_TEAM = {
 const VILLAGE_TEAM = roleRegistry.get("villager").team;
 
 describe("role action extension contract", () => {
+  it("rejects action kinds that are absent from the resolver manifest", () => {
+    const role = new ActionManifestRole("missing_action_definition", [
+      DECLARED_PHASE_ACTION_DEFINITION,
+    ]);
+
+    expect(() => role.getActionDefinition("undeclared_action")).toThrow(
+      "Role missing_action_definition does not define action: undeclared_action",
+    );
+  });
+
+  it("rejects duplicate action kinds and meaningless targetless confirmation copy", () => {
+    expect(
+      () =>
+        new RoleRegistry([
+          new ActionManifestRole("duplicate_action_definition", [
+            DECLARED_PHASE_ACTION_DEFINITION,
+            DECLARED_PHASE_ACTION_DEFINITION,
+          ]),
+        ]),
+    ).toThrow("Duplicate role action kinds: duplicate_action_definition");
+
+    const invalidTargetlessDefinition = {
+      ...DECLARED_PHASE_ACTION_DEFINITION,
+      presentation: {
+        en: {
+          ...DECLARED_PHASE_ACTION_DEFINITION.presentation.en,
+          targetConfirmation: { afterTarget: "?", beforeTarget: "Choose " },
+        },
+        ja: {
+          ...DECLARED_PHASE_ACTION_DEFINITION.presentation.ja,
+          targetConfirmation: { afterTarget: "を選びますか？", beforeTarget: "" },
+        },
+      },
+    } as unknown as RoleActionDefinition;
+
+    expect(
+      () =>
+        new RoleRegistry([
+          new ActionManifestRole("invalid_targetless_presentation", [invalidTargetlessDefinition]),
+        ]),
+    ).toThrow(
+      "Invalid role action definition: invalid_targetless_presentation:declared_phase_action",
+    );
+  });
+
+  it("includes static action presentation in the registry version", () => {
+    const changedDefinition: RoleActionDefinition = {
+      ...DECLARED_PHASE_ACTION_DEFINITION,
+      presentation: {
+        ...DECLARED_PHASE_ACTION_DEFINITION.presentation,
+        en: {
+          ...DECLARED_PHASE_ACTION_DEFINITION.presentation.en,
+          label: "Changed action guide",
+        },
+      },
+    };
+    const originalRegistry = new RoleRegistry([
+      new ActionManifestRole("versioned_action", [DECLARED_PHASE_ACTION_DEFINITION]),
+    ]);
+    const changedRegistry = new RoleRegistry([
+      new ActionManifestRole("versioned_action", [changedDefinition]),
+    ]);
+
+    expect(changedRegistry.version).not.toBe(originalRegistry.version);
+  });
+
   it("opens registered role declarations during the first-night start window", () => {
     const villagerRole = roleRegistry.get("villager");
+    const originalGetActionDefinition = villagerRole.getActionDefinition.bind(villagerRole);
+    const getActionDefinitionSpy = vi
+      .spyOn(villagerRole, "getActionDefinition")
+      .mockImplementation((actionKind) =>
+        actionKind === DECLARED_PHASE_ACTION_KIND
+          ? DECLARED_PHASE_ACTION_DEFINITION
+          : originalGetActionDefinition(actionKind),
+      );
     const getActionsSpy = vi.spyOn(villagerRole, "getActions").mockImplementation((context) =>
       context.state.phase === "night" && context.state.nightNumber === 1
         ? [
@@ -107,6 +182,7 @@ describe("role action extension contract", () => {
       }
     } finally {
       getActionsSpy.mockRestore();
+      getActionDefinitionSpy.mockRestore();
     }
   });
 
@@ -855,6 +931,60 @@ describe("role action extension contract", () => {
     ).toThrow("Invalid public message effect");
   });
 
+  it("rejects role-emitted current actions that are absent from the resolver manifest", () => {
+    const portableRole = new PortableWindowRole();
+    const roles = new RoleRegistry([...roleRegistry.getAll(), portableRole]);
+    const players: PlayerRuntimeState[] = [
+      { alive: true, playerId: "1", roleId: "werewolf" },
+      { alive: true, playerId: "2", roleId: portableRole.id },
+      { alive: true, playerId: "3", roleId: "villager" },
+    ];
+
+    vi.spyOn(portableRole, "onActionResolved").mockReturnValue([
+      {
+        actionKey: "undeclared-follow-up:2",
+        actionKind: "undeclared_follow_up",
+        actorPlayerId: "2",
+        actorRoleId: null,
+        actorStateRequirement: ActionActorStateRequirement.Alive,
+        eligibleTargetPlayerIds: [],
+        emitterRoleId: portableRole.id,
+        id: "undeclared-follow-up:2",
+        kind: GameEffectKind.CurrentAction,
+        layer: GameEffectLayer.Action,
+        priority: 200,
+        resolverRoleId: portableRole.id,
+        sourceActionId: null,
+        tags: [],
+        target: RoleTargetKind.None,
+        targetStateRequirement: ActionTargetStateRequirement.Assigned,
+      },
+    ]);
+
+    expect(() =>
+      resolvePhase({
+        actions: [
+          {
+            actionKey: "portable:undeclared-follow-up",
+            actorPlayerId: "2",
+            currentActionId: "portable-current:undeclared-follow-up",
+            kind: SYNTHETIC_ACTION_KIND,
+            resolverRoleId: portableRole.id,
+            submittedAt: "2099-01-01T00:00:01.000Z",
+            targetPlayerId: null,
+          },
+        ],
+        currentPhase: "day",
+        dayNumber: 1,
+        nightNumber: 1,
+        players,
+        resolvedRoleSetup: createResolvedRoleSetup(players),
+        roles,
+        ruleSet: makeDefaultRuleSetForPlayers(players.length),
+      }),
+    ).toThrow("Role portable_window does not define action: undeclared_follow_up");
+  });
+
   it("runs generic death-resolved hooks until a causal effect chain settles", () => {
     const cascadingRole = new CascadingDeathRole();
     const roles = new RoleRegistry([...roleRegistry.getAll(), cascadingRole]);
@@ -1249,7 +1379,141 @@ const DOOMED_FOLLOW_UP_ACTION_KIND = "doomed_follow_up";
 const DOOMED_TARGET_ACTION_KIND = "doomed_target";
 const DECLARED_PHASE_FOLLOW_UP_ACTION_KIND = "declared_phase_follow_up";
 
+const DECLARED_PHASE_ACTION_DEFINITION = createTargetlessActionDefinition(
+  DECLARED_PHASE_ACTION_KIND,
+  ActionTargetStateRequirement.Assigned,
+);
+const DECLARED_PHASE_FOLLOW_UP_ACTION_DEFINITION = createTargetlessActionDefinition(
+  DECLARED_PHASE_FOLLOW_UP_ACTION_KIND,
+  ActionTargetStateRequirement.Assigned,
+);
+const SHARED_GROUP_ACTION_DEFINITION = createTargetlessActionDefinition(
+  SHARED_GROUP_ACTION_KIND,
+  ActionTargetStateRequirement.Assigned,
+);
+const PORTABLE_TRIGGER_ACTION_DEFINITION = createTargetlessActionDefinition(
+  PORTABLE_TRIGGER_ACTION_KIND,
+  ActionTargetStateRequirement.Assigned,
+);
+const PORTABLE_FOLLOW_UP_ACTION_DEFINITION = createTargetlessActionDefinition(
+  PORTABLE_FOLLOW_UP_ACTION_KIND,
+  ActionTargetStateRequirement.Assigned,
+);
+const CASCADE_ACTION_DEFINITION = createSinglePlayerActionDefinition(CASCADE_ACTION_KIND);
+const DOOMED_FOLLOW_UP_ACTION_DEFINITION = createTargetlessActionDefinition(
+  DOOMED_FOLLOW_UP_ACTION_KIND,
+  ActionTargetStateRequirement.Assigned,
+);
+const DOOMED_TARGET_ACTION_DEFINITION =
+  createSinglePlayerActionDefinition(DOOMED_TARGET_ACTION_KIND);
+const SYNTHETIC_ACTION_DEFINITION = {
+  kind: SYNTHETIC_ACTION_KIND,
+  presentation: {
+    en: {
+      label: "Choose an echo target",
+      submitLabel: "Echo",
+      submittedMessage: "Echo submitted.",
+      targetConfirmation: {
+        afterTarget: " as the echo target?",
+        beforeTarget: "Choose ",
+      },
+    },
+    ja: {
+      label: "反響の対象を選ぶ",
+      submitLabel: "反響する",
+      submittedMessage: "反響済みです",
+      targetConfirmation: {
+        afterTarget: "を反響の対象にしますか？",
+        beforeTarget: "",
+      },
+    },
+  },
+  target: RoleTargetKind.SinglePlayer,
+  targetStateRequirement: ActionTargetStateRequirement.Alive,
+} as const satisfies RoleActionDefinition;
+
+function createTargetlessActionDefinition(
+  kind: string,
+  targetStateRequirement: ActionTargetStateRequirement,
+): Extract<RoleActionDefinition, { target: RoleTargetKind.None }> {
+  return {
+    kind,
+    presentation: {
+      en: {
+        label: `Submit ${kind}`,
+        submitLabel: "Submit",
+        submittedMessage: "Submitted.",
+      },
+      ja: {
+        label: `${kind}を送信する`,
+        submitLabel: "送信",
+        submittedMessage: "送信済みです",
+      },
+    },
+    target: RoleTargetKind.None,
+    targetStateRequirement,
+  };
+}
+
+function createSinglePlayerActionDefinition(
+  kind: string,
+): Extract<RoleActionDefinition, { target: RoleTargetKind.SinglePlayer }> {
+  return {
+    kind,
+    presentation: {
+      en: {
+        label: `Choose a target for ${kind}`,
+        submitLabel: "Submit",
+        submittedMessage: "Submitted.",
+        targetConfirmation: {
+          afterTarget: "?",
+          beforeTarget: "Choose ",
+        },
+      },
+      ja: {
+        label: `${kind}の対象を選ぶ`,
+        submitLabel: "送信",
+        submittedMessage: "送信済みです",
+        targetConfirmation: {
+          afterTarget: "を対象にしますか？",
+          beforeTarget: "",
+        },
+      },
+    },
+    target: RoleTargetKind.SinglePlayer,
+    targetStateRequirement: ActionTargetStateRequirement.Alive,
+  };
+}
+
+class ActionManifestRole extends Role {
+  override readonly actionDefinitions: readonly RoleActionDefinition[];
+  override readonly id: RoleId;
+  override readonly presentation = {
+    en: {
+      description: "Exercises role action manifest validation.",
+      name: "Action manifest",
+      shortLabel: "A",
+    },
+    ja: {
+      description: "Role action manifest の検証に使用します。",
+      name: "Action manifest",
+      shortLabel: "A",
+    },
+  };
+  override readonly team = VILLAGE_TEAM;
+
+  constructor(id: RoleId, actionDefinitions: readonly RoleActionDefinition[]) {
+    super();
+    this.id = id;
+    this.actionDefinitions = actionDefinitions;
+  }
+}
+
 class PhaseDeclarationRole extends Role {
+  override readonly actionDefinitions = [
+    DECLARED_PHASE_ACTION_DEFINITION,
+    DECLARED_PHASE_FOLLOW_UP_ACTION_DEFINITION,
+  ];
   override readonly id: RoleId;
   readonly observedPhases: PlayerRoleContext["state"]["phase"][] = [];
   override readonly presentation = {
@@ -1274,14 +1538,7 @@ class PhaseDeclarationRole extends Role {
   override getActions(context: PlayerRoleContext) {
     this.observedPhases.push(context.state.phase);
 
-    return [
-      {
-        kind: DECLARED_PHASE_ACTION_KIND,
-        roleGroupRoleId: null,
-        target: RoleTargetKind.None,
-        targetStateRequirement: ActionTargetStateRequirement.Assigned,
-      },
-    ];
+    return [this.createAvailableAction(DECLARED_PHASE_ACTION_KIND, null)];
   }
 
   override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
@@ -1315,6 +1572,7 @@ class PhaseDeclarationRole extends Role {
 }
 
 class OwnerRoutedGroupActionRole extends Role {
+  override readonly actionDefinitions = [SHARED_GROUP_ACTION_DEFINITION];
   override readonly id: RoleId = "owner_routed_group";
   override readonly presentation = {
     en: {
@@ -1332,17 +1590,20 @@ class OwnerRoutedGroupActionRole extends Role {
 
   override getActions(context: PlayerRoleContext) {
     return [
-      {
-        kind: SHARED_GROUP_ACTION_KIND,
-        roleGroupRoleId: context.playerId === "2" ? "werewolf" : "villager",
-        target: RoleTargetKind.None,
-        targetStateRequirement: ActionTargetStateRequirement.Assigned,
-      },
+      this.createAvailableAction(
+        SHARED_GROUP_ACTION_KIND,
+        context.playerId === "2" ? "werewolf" : "villager",
+      ),
     ];
   }
 }
 
 class CascadingDeathRole extends Role {
+  override readonly actionDefinitions = [
+    CASCADE_ACTION_DEFINITION,
+    DOOMED_FOLLOW_UP_ACTION_DEFINITION,
+    DOOMED_TARGET_ACTION_DEFINITION,
+  ];
   override readonly id: RoleId = "cascading_death";
   override readonly presentation = {
     en: {
@@ -1468,6 +1729,11 @@ class CascadingDeathRole extends Role {
 }
 
 class PortableWindowRole extends Role {
+  override readonly actionDefinitions = [
+    PORTABLE_TRIGGER_ACTION_DEFINITION,
+    PORTABLE_FOLLOW_UP_ACTION_DEFINITION,
+    SYNTHETIC_ACTION_DEFINITION,
+  ];
   override readonly id: RoleId = "portable_window";
   override readonly presentation = {
     en: {
@@ -1540,6 +1806,7 @@ class PortableWindowRole extends Role {
 }
 
 class SharedGroupActionRole extends Role {
+  override readonly actionDefinitions = [SHARED_GROUP_ACTION_DEFINITION];
   override readonly id: RoleId;
   override readonly presentation = {
     en: {
@@ -1563,18 +1830,12 @@ class SharedGroupActionRole extends Role {
   override getActions(context: PlayerRoleContext) {
     void context;
 
-    return [
-      {
-        kind: SHARED_GROUP_ACTION_KIND,
-        roleGroupRoleId: "werewolf",
-        target: RoleTargetKind.None,
-        targetStateRequirement: ActionTargetStateRequirement.Assigned,
-      },
-    ];
+    return [this.createAvailableAction(SHARED_GROUP_ACTION_KIND, "werewolf")];
   }
 }
 
 abstract class SyntheticEchoRole extends Role {
+  override readonly actionDefinitions = [SYNTHETIC_ACTION_DEFINITION];
   override readonly presentation = {
     en: {
       description: "Exercises the opaque role action extension contract.",
@@ -1588,15 +1849,6 @@ abstract class SyntheticEchoRole extends Role {
     },
   };
   override readonly team = VILLAGE_TEAM;
-
-  override getActionPresentation(actionKind: string) {
-    return actionKind === SYNTHETIC_ACTION_KIND
-      ? {
-          en: { label: "Choose an echo target", submitLabel: "Echo" },
-          ja: { label: "反響の対象を選ぶ", submitLabel: "反響する" },
-        }
-      : super.getActionPresentation(actionKind);
-  }
 
   override onActionResolved(context: RoleActionResolvedContext): readonly GameEffect[] {
     if (context.actionKind !== SYNTHETIC_ACTION_KIND || context.targetId === null) {

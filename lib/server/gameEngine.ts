@@ -15,7 +15,7 @@ import {
   type Team,
 } from "@/lib/shared/game";
 
-import { CoreActionKind } from "./game/coreActions";
+import { CoreActionKind, getCoreActionDefinition } from "./game/coreActions";
 import {
   assertRoleOwnsEffects,
   collectDeathResolvedEffects,
@@ -104,6 +104,25 @@ export type EngineAction = {
   targetStateRequirement: ActionTargetStateRequirement;
   eligibleTargetPlayerIds: string[];
 };
+
+type CoreEngineActionInput = Omit<
+  EngineAction,
+  "resolverRoleId" | "targetKind" | "targetStateRequirement"
+> & {
+  kind: CoreActionKind;
+};
+
+function createCoreEngineAction(input: CoreEngineActionInput): EngineAction {
+  const definition = getCoreActionDefinition(input.kind);
+
+  return {
+    ...input,
+    kind: definition.kind,
+    resolverRoleId: null,
+    targetKind: definition.targetKind,
+    targetStateRequirement: definition.targetStateRequirement,
+  };
+}
 
 export type EngineEvent = {
   kind: string;
@@ -226,17 +245,16 @@ export function startGame(
   const resolvedRoleSetup = makeResolvedRoleSetupForPlayers(ruleSet, runtimePlayers);
   const actions = materializeEngineActions(
     [
-      ...players.map((player) => ({
-        actorPlayerId: player.id,
-        actorRoleId: null,
-        actorStateRequirement: ActionActorStateRequirement.Alive,
-        eligibleTargetPlayerIds: [],
-        key: `first-night-ready:${player.id}`,
-        kind: CoreActionKind.FirstNightReady,
-        resolverRoleId: null,
-        targetKind: "none" as const,
-        targetStateRequirement: ActionTargetStateRequirement.Assigned,
-      })),
+      ...players.map((player) =>
+        createCoreEngineAction({
+          actorPlayerId: player.id,
+          actorRoleId: null,
+          actorStateRequirement: ActionActorStateRequirement.Alive,
+          eligibleTargetPlayerIds: [],
+          key: `first-night-ready:${player.id}`,
+          kind: CoreActionKind.FirstNightReady,
+        }),
+      ),
       ...getAvailableNightActions(runtimePlayers, 1, ruleSet, resolvedRoleSetup),
     ],
     runtimePlayers,
@@ -347,8 +365,25 @@ function materializeEngineActions(
 
     actionKeys.add(action.key);
 
-    if (action.resolverRoleId !== null) {
-      roles.get(action.resolverRoleId);
+    if (action.resolverRoleId === null) {
+      const definition = getCoreActionDefinition(action.kind);
+
+      if (
+        definition.targetKind !== action.targetKind ||
+        definition.targetStateRequirement !== action.targetStateRequirement
+      ) {
+        throw new Error(`Core action does not match its definition: ${action.key}`);
+      }
+    } else {
+      const definition = roles.get(action.resolverRoleId).getActionDefinition(action.kind);
+      const definitionTargetKind = toSharedTargetKind(definition.target);
+
+      if (
+        definitionTargetKind !== action.targetKind ||
+        definition.targetStateRequirement !== action.targetStateRequirement
+      ) {
+        throw new Error(`Role action does not match its definition: ${action.key}`);
+      }
     }
 
     if (action.actorRoleId !== null) {
@@ -459,14 +494,23 @@ function getAvailableRoleActions(input: AvailableRoleActionsInput): EngineAction
 
     for (const [actionIndex, roleAction] of role.getActions(playerRoleContext).entries()) {
       const kind = roleAction.kind;
-      const targetKind = toSharedTargetKind(roleAction.target);
 
       if (!isActionKind(kind)) {
         throw new Error(`Role ${role.id} returned an invalid action kind.`);
       }
 
+      const definition = role.getActionDefinition(kind);
+      const targetKind = toSharedTargetKind(definition.target);
+
       if (targetKind === null) {
         throw new Error(`Role ${role.id} returned an unsupported action target kind.`);
+      }
+
+      if (
+        roleAction.target !== definition.target ||
+        roleAction.targetStateRequirement !== definition.targetStateRequirement
+      ) {
+        throw new Error(`Role ${role.id} returned an action that differs from its definition.`);
       }
 
       const ownerRoleId = roleAction.roleGroupRoleId;
@@ -506,13 +550,13 @@ function getAvailableRoleActions(input: AvailableRoleActionsInput): EngineAction
         !isActionTargetStateRequirement(roleAction.targetStateRequirement) ||
         eligibleTargetIds.size !== eligibleTargetPlayerIds.length ||
         eligibleTargetPlayerIds.some((playerId) => !playerIds.has(playerId)) ||
-        (roleAction.target === RegisteredRoleTargetKind.None && eligibleTargetIds.size !== 0)
+        (definition.target === RegisteredRoleTargetKind.None && eligibleTargetIds.size !== 0)
       ) {
         throw new Error(`Role ${role.id} returned invalid eligible targets.`);
       }
 
       if (
-        roleAction.target !== RegisteredRoleTargetKind.None &&
+        definition.target !== RegisteredRoleTargetKind.None &&
         eligibleTargetPlayerIds.length === 0
       ) {
         continue;
@@ -527,7 +571,7 @@ function getAvailableRoleActions(input: AvailableRoleActionsInput): EngineAction
         kind,
         resolverRoleId: role.id,
         targetKind,
-        targetStateRequirement: roleAction.targetStateRequirement,
+        targetStateRequirement: definition.targetStateRequirement,
       });
       openedRoleGroupActionKeys.add(actionKey);
     }
@@ -991,7 +1035,17 @@ function assertGameEffectContracts(effects: readonly GameEffect[], context: Role
           throw new Error(`Invalid current action effect: ${effect.id}`);
         }
 
-        context.roles.get(effect.resolverRoleId);
+        const definition = context.roles
+          .get(effect.resolverRoleId)
+          .getActionDefinition(effect.actionKind);
+
+        if (
+          definition.target !== effect.target ||
+          definition.targetStateRequirement !== effect.targetStateRequirement
+        ) {
+          throw new Error(`Current action effect differs from its definition: ${effect.id}`);
+        }
+
         actionKeys.add(effect.actionKey);
         break;
       }
@@ -1282,17 +1336,16 @@ function openDay(
   const coreActionsToOpen =
     input.ruleSet.dayMode === "ordered_speech" && firstSpeechSlot !== undefined
       ? [toOrderedSpeechAction(firstSpeechSlot, nextDayNumber)]
-      : alivePlayers.map((player) => ({
-          actorPlayerId: player.playerId,
-          actorRoleId: null,
-          actorStateRequirement: ActionActorStateRequirement.Alive,
-          eligibleTargetPlayerIds: [],
-          key: `day-ready:${nextDayNumber}:${player.playerId}`,
-          kind: CoreActionKind.ReadyForVoting,
-          resolverRoleId: null,
-          targetKind: "none" as const,
-          targetStateRequirement: ActionTargetStateRequirement.Assigned,
-        }));
+      : alivePlayers.map((player) =>
+          createCoreEngineAction({
+            actorPlayerId: player.playerId,
+            actorRoleId: null,
+            actorStateRequirement: ActionActorStateRequirement.Alive,
+            eligibleTargetPlayerIds: [],
+            key: `day-ready:${nextDayNumber}:${player.playerId}`,
+            kind: CoreActionKind.ReadyForVoting,
+          }),
+        );
   const actionsToOpen = [
     ...coreActionsToOpen,
     ...getAvailableRoleActions({
@@ -1440,17 +1493,14 @@ function createOrderedSpeechSlots(
 }
 
 function toOrderedSpeechAction(slot: OrderedSpeechSlot, dayNumber: number): EngineAction {
-  return {
+  return createCoreEngineAction({
     actorPlayerId: slot.speakerPlayerId,
     actorRoleId: null,
     actorStateRequirement: ActionActorStateRequirement.Alive,
     eligibleTargetPlayerIds: [],
     key: `end-speech:${dayNumber}:${slot.slotIndex}:${slot.speakerPlayerId}`,
     kind: CoreActionKind.EndSpeech,
-    resolverRoleId: null,
-    targetKind: "none",
-    targetStateRequirement: ActionTargetStateRequirement.Assigned,
-  };
+  });
 }
 
 function parseSpeechSlotIndex(actionKey: string | null | undefined): number | null {
@@ -1490,17 +1540,16 @@ function openVoting(
 
   return {
     actionsToOpen: [
-      ...alivePlayers.map((player) => ({
-        actorPlayerId: player.playerId,
-        actorRoleId: null,
-        actorStateRequirement: ActionActorStateRequirement.Alive,
-        eligibleTargetPlayerIds: alivePlayers.map((target) => target.playerId),
-        key: `vote:${input.dayNumber}:${player.playerId}`,
-        kind: CoreActionKind.Vote,
-        resolverRoleId: null,
-        targetKind: "single_player" as const,
-        targetStateRequirement: ActionTargetStateRequirement.Alive,
-      })),
+      ...alivePlayers.map((player) =>
+        createCoreEngineAction({
+          actorPlayerId: player.playerId,
+          actorRoleId: null,
+          actorStateRequirement: ActionActorStateRequirement.Alive,
+          eligibleTargetPlayerIds: alivePlayers.map((target) => target.playerId),
+          key: `vote:${input.dayNumber}:${player.playerId}`,
+          kind: CoreActionKind.Vote,
+        }),
+      ),
       ...getAvailableRoleActions({
         dayNumber: input.dayNumber,
         nightNumber: input.nightNumber,
@@ -1580,17 +1629,14 @@ function resolveVoting(input: PhaseResolutionInput): PhaseResolutionDraft {
 
   return {
     actionsToOpen: [
-      {
+      createCoreEngineAction({
         actorPlayerId: top[0],
         actorRoleId: null,
         actorStateRequirement: ActionActorStateRequirement.Alive,
         eligibleTargetPlayerIds: [],
         key: `execution-skip:${input.dayNumber}:${top[0]}`,
         kind: CoreActionKind.ExecutionSkip,
-        resolverRoleId: null,
-        targetKind: "none",
-        targetStateRequirement: ActionTargetStateRequirement.Assigned,
-      },
+      }),
       ...getAvailableRoleActions({
         dayNumber: input.dayNumber,
         nightNumber: input.nightNumber,

@@ -1,7 +1,7 @@
 import { formatPhaseTitle, formatWinner } from "./liveEventPresentation";
 
 import type { Locale, Localization } from "@/lib/i18n/localization";
-import type { PublicAction, RoomSummary } from "@/lib/shared/game";
+import type { RoomSummary } from "@/lib/shared/game";
 
 export type LiveMood = "day" | "execution" | "night" | "result" | "setup" | "voting" | "waiting";
 
@@ -52,26 +52,6 @@ export function getLiveTableTitle(summary: RoomSummary, t: Localization): string
   }
 
   return formatPhaseTitle(summary.game?.phase ?? null, t);
-}
-
-export function getActionPanelTitle(summary: RoomSummary, t: Localization): string {
-  if (summary.game?.phase === "night") {
-    return t.game.actions.night;
-  }
-
-  if (summary.game?.phase === "day") {
-    return t.game.actions.day;
-  }
-
-  if (summary.game?.phase === "voting") {
-    return t.game.actions.vote;
-  }
-
-  if (summary.game?.phase === "execution") {
-    return t.game.actions.execution;
-  }
-
-  return t.game.actions.action;
 }
 
 export function getPlayerInitial(displayName: string): string {
@@ -210,23 +190,6 @@ export function getLobbyPlayers(summary: Pick<RoomSummary, "players">): RoomSumm
 
 function isLobbyStatus(status: RoomSummary["status"]): boolean {
   return status === "waiting" || status === "ended";
-}
-
-export function getActionButtonLabel(
-  action: PublicAction,
-  isSubmitting: boolean,
-  locale: Locale,
-  t: Localization,
-): string {
-  if (action.status === "submitted") {
-    return t.game.actions.button.submitted;
-  }
-
-  if (isSubmitting) {
-    return t.game.actions.button.submitting;
-  }
-
-  return action.presentation[locale].submitLabel;
 }
 
 export function formatRoomStatus(summary: RoomSummary, t: Localization): string {

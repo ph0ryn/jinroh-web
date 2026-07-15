@@ -891,70 +891,6 @@ a {
   transform: translateY(-1px);
 }
 
-.selectedPlayer {
-  align-items: center;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto minmax(0, 1fr);
-}
-
-.selectedPlayer div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.selectedPlayer strong,
-.selectedPlayer span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.selectedPlayer span {
-  color: var(--muted);
-  font-size: 0.86rem;
-}
-
-.actionList {
-  display: grid;
-}
-
-.actionRow {
-  align-items: center;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  min-height: 40px;
-}
-
-.actionRow:first-child {
-  border-top: 0;
-}
-
-.actionRow span {
-  color: var(--paper-200);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.actionRow strong {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.actionRow strong[data-status="done"] {
-  color: var(--green-400);
-}
-
-.actionRow strong[data-status="open"],
-.actionRow strong[data-status="pending"] {
-  color: var(--brass-300);
-}
-
 .roleLegend {
   align-items: center;
   border-top: 1px solid var(--line);
@@ -1780,7 +1716,6 @@ a {
   text-align: center;
 }
 
-.liveActionRow select,
 .liveNightChatComposer input,
 .liveRuleSetField input,
 .liveRuleSetField select {
@@ -1892,18 +1827,6 @@ a {
   font-size: 0.82rem;
   font-style: normal;
   grid-column: 1 / -1;
-}
-
-.liveNightActionStack {
-  display: grid;
-  gap: 10px;
-  max-block-size: min(42dvh, 20rem);
-  min-width: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 1px;
-  scrollbar-color: rgba(var(--live-accent-rgb), 0.42) rgba(7, 11, 10, 0.18);
-  scrollbar-width: thin;
 }
 
 .liveSelfRolePanel {
@@ -2129,7 +2052,6 @@ a {
 }
 
 .livePlayerList,
-.liveActionList,
 .liveEventList,
 .liveControlStack {
   display: grid;
@@ -2168,7 +2090,6 @@ a {
 
 .livePlayerRow small,
 .livePlayerRow em,
-.liveActionRow span,
 .liveEventList time,
 .liveEventList p,
 .liveEmptyState p {
@@ -3220,7 +3141,6 @@ a {
   font-weight: 850;
 }
 
-.liveActionRow,
 .liveEmptyState {
   background: var(--live-soft-surface);
   border: 1px solid var(--live-panel-border);
@@ -3327,45 +3247,6 @@ a {
   color: var(--live-muted);
   font-size: 0.76rem;
   justify-self: end;
-}
-
-.liveActionRow {
-  align-items: end;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.liveActionRow.submitted {
-  border-color: rgba(var(--live-accent-rgb), 0.36);
-}
-
-.liveActionRow div {
-  display: grid;
-  gap: 3px;
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
-.liveActionRow strong {
-  overflow-wrap: anywhere;
-}
-
-.liveActionRow span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.liveActionRow select {
-  min-width: 0;
-}
-
-.liveActionState {
-  color: var(--paper-200);
-  font-size: 0.88rem;
-  font-weight: 760;
-  justify-self: start;
 }
 
 .liveEventList {
@@ -3531,7 +3412,6 @@ a {
     text-align: left;
   }
 
-  .liveActionRow,
   .liveConfirmationActions,
   .liveInviteTools,
   .liveWaitingActions,

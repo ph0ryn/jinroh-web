@@ -120,9 +120,15 @@ export class LivePage {
     await this.page.locator("[data-live-effect]").waitFor({ state: "detached", timeout: 10_000 });
   }
 
-  actionRow(action: PublicAction): Locator {
+  actionGuide(action: PublicAction): Locator {
     return this.page.locator(
-      `[data-live-action-key="${action.key}"][data-live-action-kind="${action.kind}"]`,
+      `[data-live-action-guide][data-live-action-key="${action.key}"][data-live-action-kind="${action.kind}"]`,
+    );
+  }
+
+  actionTarget(playerId: string): Locator {
+    return this.page.locator(
+      `[data-live-player-id="${playerId}"][data-live-action-target-state="eligible"]`,
     );
   }
 
