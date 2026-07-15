@@ -148,6 +148,10 @@ export class LivePage {
     });
   }
 
+  lobbyReadinessButton(): Locator {
+    return this.page.locator("[data-live-readiness-toggle]");
+  }
+
   leaveButton(): Locator {
     return this.page.getByRole("button", { name: this.t.live.buttons.leaveRoom, exact: true });
   }

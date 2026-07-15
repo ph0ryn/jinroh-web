@@ -3,7 +3,7 @@ import { expect, test } from "playwright/test";
 import { apiFetch, createApiPlayer, readJsonResponse, type ApiPlayer } from "../fixtures/apiClient";
 import { requirePlayer } from "../fixtures/roomScenario";
 import {
-  createContractStartedRoom,
+  createRoomWithStartedGame,
   finishThreePlayerGame,
   readCurrentRoom,
   requireCurrentPlayerId,
@@ -169,7 +169,7 @@ test("confirmed room switching is atomic across failure, success, and stale sour
 test("a playing member can rejoin the same room but cannot leave, switch, or admit outsiders", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Gale",
     "Harbor",
     "Iris",
@@ -223,10 +223,10 @@ test("a playing member can rejoin the same room but cannot leave, switch, or adm
   await expectCurrentRoom(request, host, roomCode);
 });
 
-test("an ended room remains current until explicit leave or confirmed switch", async ({
+test("a result-lobby Room remains current until explicit leave or confirmed switch", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, ["Lark", "Maple", "Nori"]);
+  const { players, roomCode } = await createRoomWithStartedGame(request, ["Lark", "Maple", "Nori"]);
   const ended = await finishThreePlayerGame(request, roomCode, players);
   const host = requirePlayer(players, 0);
   const leaver = requirePlayer(players, 1);

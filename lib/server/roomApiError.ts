@@ -2,15 +2,30 @@ import "server-only";
 import {
   CurrentRoomChangedError,
   CurrentRoomExistsError,
-  RoomExpiredError,
+  RoomClosedError,
   RoomFullError,
   RoomNotFoundError,
   RoomNotJoinableError,
+  RoomRosterNotReadyError,
   RoomSwitchForbiddenError,
+  StaleGameIdError,
+  StaleRosterRevisionError,
 } from "./gameRepositoryErrors";
 import { jsonError } from "./http";
 
 export function roomApiErrorResponse(error: unknown): Response | null {
+  if (error instanceof StaleRosterRevisionError) {
+    return jsonError("roster_changed", "The room roster changed. Reload and try again.", 409);
+  }
+
+  if (error instanceof RoomRosterNotReadyError) {
+    return jsonError("players_not_ready", "Every connected player must be ready to start.", 409);
+  }
+
+  if (error instanceof StaleGameIdError) {
+    return jsonError("game_changed", "The current game changed. Reload and try again.", 409);
+  }
+
   if (error instanceof CurrentRoomExistsError) {
     return jsonError("current_room_exists", "This account is already in another room.", 409);
   }
@@ -31,8 +46,8 @@ export function roomApiErrorResponse(error: unknown): Response | null {
     );
   }
 
-  if (error instanceof RoomExpiredError) {
-    return jsonError("room_expired", "The room has expired.", 410);
+  if (error instanceof RoomClosedError) {
+    return jsonError("room_closed", "The room is closed.", 410);
   }
 
   if (error instanceof RoomFullError) {

@@ -24,9 +24,14 @@ Engine だけが game state を更新する。
 `Engine` はそれを集約して確定状態にする。
 
 Room membership と game roster は別の境界。ゲーム開始時に
-`role_assignments` と `game_player_states` を全員分固定し、以後の Engine input は
-この roster だけから作る。開始後の game actor、target、speaker、result owner を
+Game ID に属する `game_players` を全員分固定し、Role、alive state、final result を
+その Game Player に持たせる。以後の Engine input はこの roster だけから作る。
+開始後の game actor、target、speaker、result owner を
 単なる `players` membership row から補完しない。
+
+同じ Room の Game は別 Game ID を持つ。phase instance、action、event、night conversation、
+resolved history は Game ID で分離し、phase resolver は計算元 Game がまだ
+`Room.currentGameId` であることを compare-and-swap transaction で確認する。
 
 ## GameState
 

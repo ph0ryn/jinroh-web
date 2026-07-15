@@ -1,7 +1,10 @@
+import { isSameLiveRoomViewerSession } from "../liveGameSession";
+
 import type { GamePhase, PlayerResult, RoleId, RoomSummary, Team } from "@/lib/shared/game";
 
 type LiveEffectCueBase = {
   readonly eventIds: readonly string[];
+  readonly gameId: string;
   readonly id: string;
   readonly roomCode: string;
 };
@@ -106,6 +109,12 @@ function projectVoteCues(
 }
 
 function makeVoteCue(next: RoomSummary, voteResolvedEvent: PublicEvent): LiveVoteEffectCue | null {
+  const gameId = next.game?.gameId;
+
+  if (gameId === undefined) {
+    return null;
+  }
+
   const publicPlayerIds = new Set(next.players.map((player) => player.id));
   const counts = parseVoteCounts(voteResolvedEvent.payload["voteCountsByTarget"], publicPlayerIds);
 
@@ -160,7 +169,8 @@ function makeVoteCue(next: RoomSummary, voteResolvedEvent: PublicEvent): LiveVot
     dayNumber:
       parsePositiveInteger(voteResolvedEvent.payload["dayNumber"]) ?? next.game?.dayNumber ?? 0,
     eventIds: [voteResolvedEvent.id],
-    id: `${next.code}:vote:${voteResolvedEvent.id}`,
+    gameId,
+    id: `${next.code}:${gameId}:vote:${voteResolvedEvent.id}`,
     kind: "vote",
     outcome,
     roomCode: next.code,
@@ -281,16 +291,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isSameEffectSession(
-  previous: RoomSummary | null,
-  next: RoomSummary,
-): previous is RoomSummary {
-  return (
-    previous !== null &&
-    previous.code === next.code &&
-    previous.currentPlayerId === next.currentPlayerId
-  );
-}
+const isSameEffectSession = isSameLiveRoomViewerSession;
 
 function projectInitialSnapshot(next: RoomSummary): readonly LiveEffectCue[] {
   if (next.status !== "playing") {
@@ -303,6 +304,10 @@ function projectInitialSnapshot(next: RoomSummary): readonly LiveEffectCue[] {
 }
 
 function getNewEvents(previous: RoomSummary, next: RoomSummary): readonly PublicEvent[] {
+  if (previous.game?.gameId !== next.game?.gameId) {
+    return next.game?.events ?? [];
+  }
+
   const previousEventIds = new Set(previous.game?.events.map((event) => event.id) ?? []);
 
   return (next.game?.events ?? []).filter((event) => !previousEventIds.has(event.id));
@@ -318,9 +323,12 @@ function projectRoleCue(
   }
 
   const enteredPlaying = previous.status !== "playing";
+  const enteredNewGame = previous.game?.gameId !== next.game?.gameId;
   const roleBecameAvailable = previous.self?.roleId !== next.self.roleId;
 
-  return enteredPlaying || roleBecameAvailable ? makeRoleCue(next, newEvents) : null;
+  return enteredPlaying || enteredNewGame || roleBecameAvailable
+    ? makeRoleCue(next, newEvents)
+    : null;
 }
 
 function makeRoleCue(
@@ -329,8 +337,9 @@ function makeRoleCue(
 ): LiveRoleEffectCue | null {
   const roleId = summary.self?.roleId;
   const playerId = summary.self?.playerId ?? summary.currentPlayerId;
+  const gameId = summary.game?.gameId;
 
-  if (roleId === null || roleId === undefined || playerId === null) {
+  if (roleId === null || roleId === undefined || playerId === null || gameId === undefined) {
     return null;
   }
 
@@ -339,7 +348,8 @@ function makeRoleCue(
 
   return {
     eventIds: gameStartedEvent === undefined ? [] : [gameStartedEvent.id],
-    id: `${summary.code}:role:${playerId}:${roleId}:${sourceKey}`,
+    gameId,
+    id: `${summary.code}:${gameId}:role:${playerId}:${roleId}:${sourceKey}`,
     kind: "role",
     playerId,
     roleId,
@@ -352,6 +362,12 @@ function projectDeathCue(
   next: RoomSummary,
   newEvents: readonly PublicEvent[],
 ): LiveDeathEffectCue | null {
+  const gameId = next.game?.gameId;
+
+  if (gameId === undefined) {
+    return null;
+  }
+
   const publicPlayerIds = new Set(next.players.map((player) => player.id));
   const deathEvents = newEvents.filter(
     (event) => event.kind === "player_died" || event.kind === "player_executed",
@@ -374,7 +390,8 @@ function projectDeathCue(
 
   return {
     eventIds,
-    id: `${next.code}:death:${eventIds.join("+")}`,
+    gameId,
+    id: `${next.code}:${gameId}:death:${eventIds.join("+")}`,
     kind: "death",
     playerIds,
     roomCode: next.code,
@@ -392,7 +409,7 @@ function projectPhaseCue(
     next.status !== "playing" ||
     nextGame?.phase === null ||
     nextGame?.phase === undefined ||
-    previous.game?.phase === nextGame.phase
+    (previous.game?.gameId === nextGame.gameId && previous.game.phase === nextGame.phase)
   ) {
     return null;
   }
@@ -408,7 +425,8 @@ function projectPhaseCue(
   return {
     dayNumber: nextGame.dayNumber,
     eventIds: phaseChangedEvent === undefined ? [] : [phaseChangedEvent.id],
-    id: `${next.code}:phase:${enteredPlaying ? "initial-" : ""}${sourceKey}`,
+    gameId: nextGame.gameId,
+    id: `${next.code}:${nextGame.gameId}:phase:${enteredPlaying ? "initial-" : ""}${sourceKey}`,
     kind: "phase",
     nightNumber: nextGame.nightNumber,
     phase: nextGame.phase,
@@ -421,6 +439,12 @@ function projectVictoryCue(
   next: RoomSummary,
   newEvents: readonly PublicEvent[],
 ): LiveVictoryEffectCue | null {
+  const gameId = next.game?.gameId;
+
+  if (gameId === undefined) {
+    return null;
+  }
+
   const gameEndedEvent = newEvents.findLast((event) => event.kind === "game_ended");
   const enteredEnded = previous.status !== "ended" && next.status === "ended";
 
@@ -432,7 +456,8 @@ function projectVictoryCue(
 
   return {
     eventIds: gameEndedEvent === undefined ? [] : [gameEndedEvent.id],
-    id: `${next.code}:victory:${sourceKey}`,
+    gameId,
+    id: `${next.code}:${gameId}:victory:${sourceKey}`,
     kind: "victory",
     playerResult: next.self?.result ?? null,
     roomCode: next.code,

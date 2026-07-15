@@ -100,12 +100,12 @@ Sending a message happens in one server-side transaction.
 
 - Authenticate Account token.
 - Resolve the Player in the room.
-- Lock the current `game_states` row.
+- Lock the exact current `games` row identified by the request Game ID.
 - Confirm room and game status are `playing`.
 - Confirm phase is `night`.
 - Confirm the sender is `joined` and alive.
 - Confirm request `phaseInstanceId` and `nightNumber` match current state.
-- Resolve sender role from `role_assignments`.
+- Resolve sender role from the current Game's `game_players` roster.
 - Confirm sender role is in the requested conversation group.
 - Validate message body length and group id shape.
 - Insert one row into `night_conversation_messages`.

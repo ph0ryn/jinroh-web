@@ -7,7 +7,7 @@ type LiveLobbyProgressSummary = Pick<
   "code" | "currentPlayerId" | "players" | "status" | "targetPlayerCount"
 >;
 
-export type LiveLobbyProgressState = "overfilled" | "ready" | "waiting";
+export type LiveLobbyProgressState = "full" | "overfilled" | "waiting";
 
 export type LiveLobbyProgressSnapshot = {
   readonly joinedPlayerCount: number;
@@ -19,7 +19,7 @@ export type LiveLobbyProgressSnapshot = {
 
 export type LiveLobbyProgressChange = {
   readonly direction: "decrease" | "increase";
-  readonly kind: "decrease" | "increase" | "ready";
+  readonly kind: "decrease" | "full" | "increase";
   readonly previousJoinedPlayerCount: number;
 };
 
@@ -51,7 +51,7 @@ export function getLiveLobbyProgressState(
     return "overfilled";
   }
 
-  return snapshot.joinedPlayerCount === snapshot.targetPlayerCount ? "ready" : "waiting";
+  return snapshot.joinedPlayerCount === snapshot.targetPlayerCount ? "full" : "waiting";
 }
 
 export function getLiveLobbyProgressRatio(snapshot: LiveLobbyProgressSnapshot): number {
@@ -83,7 +83,7 @@ export function getLiveLobbyProgressChange(
 
   return {
     direction,
-    kind: nextSnapshot.joinedPlayerCount === nextSnapshot.targetPlayerCount ? "ready" : direction,
+    kind: nextSnapshot.joinedPlayerCount === nextSnapshot.targetPlayerCount ? "full" : direction,
     previousJoinedPlayerCount: previousSnapshot.joinedPlayerCount,
   };
 }

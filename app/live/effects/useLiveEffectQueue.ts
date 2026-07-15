@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
+import { isSameLiveRoomViewerSession } from "../liveGameSession";
 import {
   projectLiveEffectCues,
   type LiveEffectCue,
@@ -51,8 +52,11 @@ export function reconcileLiveEffectQueueForSummary(
     return { activeCue: null, pendingCues: [] };
   }
 
+  const currentGameId = summary.game?.gameId ?? null;
   let retainedPendingCues = pendingCues.filter(
-    (pendingCue) => pendingCue.kind !== "phase" || doesPhaseCueMatchSummary(pendingCue, summary),
+    (pendingCue) =>
+      pendingCue.gameId === currentGameId &&
+      (pendingCue.kind !== "phase" || doesPhaseCueMatchSummary(pendingCue, summary)),
   );
 
   if (hasIncomingAutomaticCue || isRoleReplayCue(activeCue)) {
@@ -62,9 +66,13 @@ export function reconcileLiveEffectQueueForSummary(
   const shouldSupersedeActivePhase =
     activeCue?.kind === "phase" && !doesPhaseCueMatchSummary(activeCue, summary);
   const shouldSupersedeActiveReplay = hasIncomingAutomaticCue && isRoleReplayCue(activeCue);
+  const shouldSupersedeActiveGame = activeCue !== null && activeCue.gameId !== currentGameId;
 
   return {
-    activeCue: shouldSupersedeActivePhase || shouldSupersedeActiveReplay ? null : activeCue,
+    activeCue:
+      shouldSupersedeActiveGame || shouldSupersedeActivePhase || shouldSupersedeActiveReplay
+        ? null
+        : activeCue,
     pendingCues: retainedPendingCues,
   };
 }
@@ -89,8 +97,7 @@ export function useLiveEffectQueue(): LiveEffectQueue {
     setActiveCue(nextCue);
   }, []);
 
-  const resetQueue = useCallback(() => {
-    acceptedSummaryRef.current = null;
+  const resetQueuedEffects = useCallback(() => {
     activeCueRef.current = null;
     queuedCuesRef.current = [];
     seenCueIdsRef.current.clear();
@@ -99,6 +106,11 @@ export function useLiveEffectQueue(): LiveEffectQueue {
     setActiveCue(null);
   }, []);
 
+  const resetQueue = useCallback(() => {
+    acceptedSummaryRef.current = null;
+    resetQueuedEffects();
+  }, [resetQueuedEffects]);
+
   const clearEffects = useCallback(() => {
     resetQueue();
   }, [resetQueue]);
@@ -106,13 +118,12 @@ export function useLiveEffectQueue(): LiveEffectQueue {
   const acceptSummary = useCallback(
     (summary: RoomSummary) => {
       const acceptedSummary = acceptedSummaryRef.current;
-      const changedEffectSession =
-        acceptedSummary !== null &&
-        (acceptedSummary.code !== summary.code ||
-          acceptedSummary.currentPlayerId !== summary.currentPlayerId);
+      const changedEffectSession = !isSameLiveRoomViewerSession(acceptedSummary, summary);
+      const changedGameSession =
+        !changedEffectSession && acceptedSummary.game?.gameId !== summary.game?.gameId;
 
-      if (changedEffectSession) {
-        resetQueue();
+      if (changedEffectSession || changedGameSession) {
+        resetQueuedEffects();
       }
 
       const previous = changedEffectSession ? null : acceptedSummary;
@@ -174,7 +185,7 @@ export function useLiveEffectQueue(): LiveEffectQueue {
       summary.game?.events.forEach((event) => seenEventIdsRef.current.add(event.id));
       activateNextCue();
     },
-    [activateNextCue, resetQueue],
+    [activateNextCue, resetQueuedEffects],
   );
 
   const completeActiveCue = useCallback(
@@ -196,13 +207,15 @@ export function useLiveEffectQueue(): LiveEffectQueue {
     const summary = acceptedSummaryRef.current;
     const roleId = summary?.self?.roleId;
     const playerId = summary?.self?.playerId ?? summary?.currentPlayerId;
+    const gameId = summary?.game?.gameId;
 
     if (
       summary === null ||
       roleId === null ||
       roleId === undefined ||
       playerId === null ||
-      playerId === undefined
+      playerId === undefined ||
+      gameId === undefined
     ) {
       return;
     }
@@ -215,7 +228,8 @@ export function useLiveEffectQueue(): LiveEffectQueue {
 
     const cue: LiveRoleEffectCue = {
       eventIds: [],
-      id: `${summary.code}:role-replay:${playerId}:${roleId}:${replaySequenceRef.current}`,
+      gameId,
+      id: `${summary.code}:${gameId}:role-replay:${playerId}:${roleId}:${replaySequenceRef.current}`,
       kind: "role",
       playerId,
       roleId,
@@ -247,9 +261,12 @@ function doesPhaseCueMatchSummary(
 ): boolean {
   const currentPhase = summary.status === "playing" ? summary.game : null;
 
+  if (currentPhase?.phase === null || currentPhase?.phase === undefined) {
+    return false;
+  }
+
   return (
-    currentPhase?.phase !== null &&
-    currentPhase?.phase !== undefined &&
+    cue.gameId === currentPhase.gameId &&
     cue.phase === currentPhase.phase &&
     cue.dayNumber === currentPhase.dayNumber &&
     cue.nightNumber === currentPhase.nightNumber

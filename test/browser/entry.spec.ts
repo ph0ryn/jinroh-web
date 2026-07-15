@@ -92,6 +92,12 @@ test("players complete the primary create-to-first-day journey", async ({ browse
       exact: true,
     });
 
+    await expect(startButton).toBeDisabled();
+
+    for (const player of players) {
+      await player.live.lobbyReadinessButton().click();
+    }
+
     await expect(startButton).toBeEnabled();
     await startButton.click();
 

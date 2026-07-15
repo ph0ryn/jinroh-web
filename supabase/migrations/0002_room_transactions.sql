@@ -2,21 +2,21 @@ create function private.random_identifier(p_prefix text, p_byte_count integer)
 returns text
 language plpgsql
 volatile
-security definer
 set search_path = ''
 as $$
 declare
   v_random_hex text := '';
 begin
-  if p_byte_count < 1 then
-    raise exception 'Random identifier byte count must be positive.';
+  if p_prefix is null or p_byte_count is null or p_byte_count < 8 or p_byte_count > 48 then
+    raise exception using errcode = '22023', message = 'invalid_identifier_request';
   end if;
 
-  for v_index in 1..ceil(p_byte_count / 16.0)::integer loop
-    v_random_hex := v_random_hex || replace(gen_random_uuid()::text, '-', '');
+  for v_index in 1..pg_catalog.ceil(p_byte_count / 16.0)::integer loop
+    v_random_hex := v_random_hex
+      || pg_catalog.replace(pg_catalog.gen_random_uuid()::text, '-', '');
   end loop;
 
-  return p_prefix || left(v_random_hex, p_byte_count * 2);
+  return p_prefix || pg_catalog.left(v_random_hex, p_byte_count * 2);
 end;
 $$;
 
@@ -38,69 +38,78 @@ begin
 end;
 $$;
 
-create function private.end_waiting_room(
+create function private.expire_open_room(
   p_room_id bigint,
-  p_reason text,
-  p_actor_player_id bigint default null
+  p_now timestamptz default pg_catalog.clock_timestamp()
 )
-returns void
+returns boolean
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  v_now timestamptz := clock_timestamp();
+  v_active_count integer;
+  v_room public.rooms%rowtype;
 begin
+  select rooms.*
+  into v_room
+  from public.rooms as rooms
+  where rooms.id = p_room_id
+  for update;
+
+  if not found
+    or v_room.closed_at is not null
+    or v_room.lobby_expires_at > p_now
+    or exists (
+      select 1
+      from public.games as games
+      where games.id = v_room.current_game_id
+        and games.ended_at is null
+    )
+  then
+    return false;
+  end if;
+
+  select pg_catalog.count(*)::integer
+  into v_active_count
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.left_at is null;
+
   update public.players as players
-  set disconnected_at = null,
-      left_at = coalesce(
-        players.left_at,
-        greatest(players.last_seen_at, v_now)
-      )
-  where players.room_id = p_room_id
+  set left_at = p_now,
+      disconnected_at = null
+  where players.room_id = v_room.id
     and players.left_at is null;
 
   update public.realtime_grants as grants
-  set revoked_at = coalesce(
-    grants.revoked_at,
-    greatest(grants.created_at, v_now)
-  )
-  where grants.room_id = p_room_id
+  set revoked_at = p_now
+  where grants.room_id = v_room.id
     and grants.revoked_at is null;
 
   update public.rooms as rooms
-  set ended_at = v_now,
+  set closed_at = p_now,
+      roster_revision = rooms.roster_revision + case when v_active_count > 0 then 1 else 0 end,
       snapshot_revision = rooms.snapshot_revision + 1,
-      updated_at = v_now
-  where rooms.id = p_room_id
-    and rooms.started_at is null
-    and rooms.ended_at is null;
+      updated_at = p_now
+  where rooms.id = v_room.id;
 
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_joinable';
-  end if;
-
-  insert into public.room_events (
-    actor_player_id,
-    event_kind,
-    payload,
-    room_id
-  )
+  insert into public.room_events (room_id, event_kind, payload, created_at)
   values (
-    p_actor_player_id,
-    'room_ended',
-    jsonb_build_object('reason', p_reason),
-    p_room_id
+    v_room.id,
+    'room_closed',
+    pg_catalog.jsonb_build_object('reason', 'expired'),
+    p_now
   );
+
+  return true;
 end;
 $$;
 
-create function private.create_room(
+create function private.expire_current_room_before_membership_change(
   p_account_id bigint,
-  p_display_name text,
-  p_target_player_count integer,
-  p_waiting_expires_at timestamptz,
-  p_excluded_room_code text default null
+  p_target_room_code text,
+  p_now timestamptz default pg_catalog.clock_timestamp()
 )
 returns table (
   room_id bigint,
@@ -112,27 +121,82 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_display_name text := btrim(p_display_name);
+  v_current_room_id bigint;
+  v_player_id bigint;
+  v_target_room_id bigint;
+begin
+  select players.room_id, players.id
+  into v_current_room_id, v_player_id
+  from public.players as players
+  where players.account_id = p_account_id
+    and players.left_at is null;
+
+  if not found then
+    return;
+  end if;
+
+  if p_target_room_code is not null then
+    select rooms.id
+    into v_target_room_id
+    from public.rooms as rooms
+    where rooms.public_room_code = pg_catalog.btrim(p_target_room_code)
+      and rooms.closed_at is null
+    order by rooms.created_at desc, rooms.id desc
+    limit 1;
+  end if;
+
+  -- Every multi-Room membership path locks Room rows in ascending ID order.
+  perform rooms.id
+  from public.rooms as rooms
+  where rooms.id = v_current_room_id
+    or rooms.id = v_target_room_id
+  order by rooms.id
+  for update;
+
+  select players.room_id, players.id
+  into v_current_room_id, v_player_id
+  from public.players as players
+  where players.account_id = p_account_id
+    and players.left_at is null;
+
+  if found
+    and v_current_room_id is distinct from v_target_room_id
+    and private.expire_open_room(v_current_room_id, p_now)
+  then
+    return query select v_current_room_id, v_player_id, 'room_closed'::text;
+  end if;
+end;
+$$;
+
+create function private.create_room(
+  p_account_id bigint,
+  p_display_name text,
+  p_target_player_count integer,
+  p_lobby_expires_at timestamptz
+)
+returns table (
+  room_id bigint,
+  actor_player_id bigint,
+  notification_reason text
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_now timestamptz := pg_catalog.clock_timestamp();
   v_player_id bigint;
   v_public_room_code text;
   v_room_id bigint;
 begin
-  if p_target_player_count is null
-    or p_target_player_count < 3
-    or p_target_player_count > 10
+  if p_display_name is null
+    or p_display_name <> pg_catalog.btrim(p_display_name)
+    or pg_catalog.char_length(p_display_name) not between 1 and 32
+    or p_target_player_count not between 3 and 10
+    or p_lobby_expires_at is null
+    or p_lobby_expires_at <= v_now
   then
-    raise exception using errcode = 'P0001', message = 'invalid_target_player_count';
-  end if;
-
-  if v_display_name is null
-    or char_length(v_display_name) < 1
-    or char_length(v_display_name) > 32
-  then
-    raise exception using errcode = 'P0001', message = 'invalid_display_name';
-  end if;
-
-  if p_waiting_expires_at is null or p_waiting_expires_at <= clock_timestamp() then
-    raise exception using errcode = 'P0001', message = 'invalid_waiting_expiration';
+    raise exception using errcode = 'P0001', message = 'invalid_room_request';
   end if;
 
   if exists (
@@ -144,82 +208,98 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_exists';
   end if;
 
-  for v_attempt in 1..100 loop
-    v_public_room_code := lpad(floor(random() * 1000000)::integer::text, 6, '0');
-
-    if v_public_room_code = btrim(p_excluded_room_code) then
-      continue;
-    end if;
+  for v_attempt in 1..64 loop
+    v_public_room_code := pg_catalog.lpad(
+      pg_catalog.floor(pg_catalog.random() * 1000000)::integer::text,
+      6,
+      '0'
+    );
 
     begin
       insert into public.rooms (
-        host_account_id,
         public_room_code,
+        host_account_id,
         target_player_count,
-        waiting_expires_at
+        lobby_expires_at,
+        roster_revision,
+        snapshot_revision,
+        created_at,
+        updated_at
       )
       values (
-        p_account_id,
         v_public_room_code,
+        p_account_id,
         p_target_player_count,
-        p_waiting_expires_at
+        p_lobby_expires_at,
+        1,
+        1,
+        v_now,
+        v_now
       )
       returning rooms.id into v_room_id;
 
       exit;
     exception
       when unique_violation then
-        if v_attempt = 100 then
-          raise exception using errcode = 'P0001', message = 'room_code_exhausted';
-        end if;
+        v_room_id := null;
     end;
   end loop;
 
+  if v_room_id is null then
+    raise exception using errcode = 'P0001', message = 'room_code_exhausted';
+  end if;
+
   insert into public.players (
+    room_id,
     account_id,
-    display_name,
     public_player_id,
-    room_id
+    display_name,
+    joined_at,
+    last_seen_at
   )
   values (
+    v_room_id,
     p_account_id,
-    v_display_name,
-    private.random_identifier('pl_', 12),
-    v_room_id
+    private.random_identifier('pl_', 18),
+    p_display_name,
+    v_now,
+    v_now
   )
   returning players.id into v_player_id;
 
-  insert into public.realtime_topics (room_id, scope, topic)
-  values (
-    v_room_id,
-    'room',
-    private.random_identifier('room:', 24)
-  );
+  insert into public.realtime_topics (topic, room_id, scope)
+  values (private.random_identifier('room:', 24), v_room_id, 'room');
 
-  insert into public.realtime_topics (player_id, room_id, scope, topic)
+  insert into public.realtime_topics (topic, room_id, scope, player_id)
   values (
-    v_player_id,
+    private.random_identifier('player:', 24),
     v_room_id,
     'player_private',
-    private.random_identifier('player:', 24)
+    v_player_id
   );
 
   insert into public.room_events (
-    actor_player_id,
+    room_id,
     event_kind,
+    actor_player_id,
     payload,
-    room_id
+    created_at
   )
-  values (v_player_id, 'room_created', '{}'::jsonb, v_room_id);
+  values (
+    v_room_id,
+    'room_created',
+    v_player_id,
+    pg_catalog.jsonb_build_object('targetPlayerCount', p_target_player_count),
+    v_now
+  );
 
-  return query
-  select v_room_id, v_player_id, 'room_created'::text;
+  return query select v_room_id, v_player_id, 'room_created'::text;
 end;
 $$;
 
 create function private.join_room(
   p_account_id bigint,
-  p_room_id bigint,
+  p_room_code text,
   p_display_name text
 )
 returns table (
@@ -232,35 +312,46 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_active_player_count integer;
-  v_display_name text := btrim(p_display_name);
+  v_active_count integer;
+  v_current_game public.games%rowtype;
+  v_detach_game boolean := false;
+  v_effective_change boolean := false;
   v_event_kind text;
-  v_now timestamptz := clock_timestamp();
-  v_player public.players%rowtype;
+  v_in_current_game_roster boolean := false;
+  v_membership public.players%rowtype;
+  v_now timestamptz := pg_catalog.clock_timestamp();
   v_room public.rooms%rowtype;
 begin
-  if v_display_name is null
-    or char_length(v_display_name) < 1
-    or char_length(v_display_name) > 32
+  if p_room_code is null
+    or p_display_name is null
+    or p_display_name <> pg_catalog.btrim(p_display_name)
+    or pg_catalog.char_length(p_display_name) not between 1 and 32
   then
-    raise exception using errcode = 'P0001', message = 'invalid_display_name';
+    raise exception using errcode = 'P0001', message = 'invalid_room_request';
   end if;
 
   select rooms.*
   into v_room
   from public.rooms as rooms
-  where rooms.id = p_room_id;
+  where rooms.public_room_code = pg_catalog.btrim(p_room_code)
+    and rooms.closed_at is null
+  for update;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'room_not_found';
   end if;
 
-  if v_room.status = 'waiting' and v_room.waiting_expires_at <= v_now then
-    raise exception using errcode = 'P0001', message = 'room_expired';
-  end if;
-
-  if v_room.status not in ('waiting', 'playing') then
-    raise exception using errcode = 'P0001', message = 'room_not_joinable';
+  if v_room.lobby_expires_at <= v_now
+    and not exists (
+      select 1
+      from public.games as games
+      where games.id = v_room.current_game_id
+        and games.ended_at is null
+    )
+  then
+    perform private.expire_open_room(v_room.id, v_now);
+    return query select v_room.id, null::bigint, 'room_closed'::text;
+    return;
   end if;
 
   if exists (
@@ -268,99 +359,274 @@ begin
     from public.players as players
     where players.account_id = p_account_id
       and players.left_at is null
-      and players.room_id <> p_room_id
+      and players.room_id <> v_room.id
   ) then
     raise exception using errcode = 'P0001', message = 'current_room_exists';
+  end if;
+
+  if v_room.current_game_id is not null then
+    select games.*
+    into v_current_game
+    from public.games as games
+    where games.id = v_room.current_game_id
+    for update;
+  end if;
+
+  select players.*
+  into v_membership
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.account_id = p_account_id
+  for update;
+
+  if found and v_membership.left_at is null then
+    v_effective_change := v_membership.disconnected_at is not null;
+    v_event_kind := case
+      when v_membership.disconnected_at is not null then 'player_reconnected'
+      else null
+    end;
+
+    update public.players as players
+    set disconnected_at = null,
+        last_seen_at = v_now
+    where players.id = v_membership.id;
+
+    if v_effective_change then
+      update public.rooms as rooms
+      set snapshot_revision = rooms.snapshot_revision + 1,
+          updated_at = v_now
+      where rooms.id = v_room.id;
+    end if;
+
+    if v_event_kind is not null then
+      insert into public.room_events (
+        room_id,
+        event_kind,
+        actor_player_id,
+        created_at
+      )
+      values (v_room.id, v_event_kind, v_membership.id, v_now);
+    end if;
+
+    return query
+    select
+      v_room.id,
+      v_membership.id,
+      case when v_effective_change then coalesce(v_event_kind, 'room_state_changed') end;
+    return;
+  end if;
+
+  if v_current_game.id is not null and v_current_game.ended_at is null then
+    raise exception using errcode = 'P0001', message = 'room_not_joinable';
+  end if;
+
+  select pg_catalog.count(*)::integer
+  into v_active_count
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.left_at is null;
+
+  if v_active_count >= v_room.target_player_count then
+    raise exception using errcode = 'P0001', message = 'room_full';
+  end if;
+
+  if v_membership.id is not null and v_current_game.id is not null then
+    select exists (
+      select 1
+      from public.game_players as game_players
+      where game_players.game_id = v_current_game.id
+        and game_players.player_id = v_membership.id
+    )
+    into v_in_current_game_roster;
+  end if;
+
+  v_detach_game := v_current_game.id is not null and not v_in_current_game_roster;
+
+  if v_membership.id is null then
+    insert into public.players (
+      room_id,
+      account_id,
+      public_player_id,
+      display_name,
+      joined_at,
+      last_seen_at
+    )
+    values (
+      v_room.id,
+      p_account_id,
+      private.random_identifier('pl_', 18),
+      p_display_name,
+      v_now,
+      v_now
+    )
+    returning players.* into v_membership;
+
+    insert into public.realtime_topics (topic, room_id, scope, player_id)
+    values (
+      private.random_identifier('player:', 24),
+      v_room.id,
+      'player_private',
+      v_membership.id
+    );
+
+    v_event_kind := 'player_joined';
+  else
+    update public.players as players
+    set ready_roster_revision = null,
+        left_at = null,
+        disconnected_at = null,
+        last_seen_at = v_now
+    where players.id = v_membership.id
+    returning players.* into v_membership;
+
+    v_event_kind := 'player_rejoined';
+  end if;
+
+  update public.rooms as rooms
+  set current_game_id = case when v_detach_game then null else rooms.current_game_id end,
+      lobby_expires_at = case
+        when v_detach_game then v_now + interval '30 minutes'
+        else rooms.lobby_expires_at
+      end,
+      roster_revision = rooms.roster_revision + 1,
+      snapshot_revision = rooms.snapshot_revision + 1,
+      updated_at = v_now
+  where rooms.id = v_room.id;
+
+  insert into public.room_events (
+    room_id,
+    event_kind,
+    actor_player_id,
+    game_id,
+    payload,
+    created_at
+  )
+  values (
+    v_room.id,
+    v_event_kind,
+    v_membership.id,
+    case when v_detach_game then v_current_game.id end,
+    pg_catalog.jsonb_build_object('detachedCompletedGame', v_detach_game),
+    v_now
+  );
+
+  return query select v_room.id, v_membership.id, v_event_kind;
+end;
+$$;
+
+create function private.leave_room(
+  p_account_id bigint,
+  p_room_code text
+)
+returns table (
+  room_id bigint,
+  actor_player_id bigint,
+  notification_reason text
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_next_host_account_id bigint;
+  v_now timestamptz := pg_catalog.clock_timestamp();
+  v_player public.players%rowtype;
+  v_room public.rooms%rowtype;
+begin
+  select rooms.*
+  into v_room
+  from public.rooms as rooms
+  join public.players as players
+    on players.room_id = rooms.id
+  where players.account_id = p_account_id
+    and players.left_at is null
+    and rooms.public_room_code = pg_catalog.btrim(p_room_code)
+  for update of rooms;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
   select players.*
   into v_player
   from public.players as players
-  where players.room_id = p_room_id
+  where players.room_id = v_room.id
     and players.account_id = p_account_id
+    and players.left_at is null
   for update;
 
-  if found then
-    if v_player.left_at is not null and v_room.status <> 'waiting' then
-      raise exception using errcode = 'P0001', message = 'room_not_joinable';
-    end if;
-
-    if v_player.left_at is not null then
-      select count(*)
-      into v_active_player_count
-      from public.players as players
-      where players.room_id = p_room_id
-        and players.left_at is null;
-
-      if v_active_player_count >= v_room.target_player_count then
-        raise exception using errcode = 'P0001', message = 'room_full';
-      end if;
-
-      v_event_kind := 'player_joined';
-    else
-      v_event_kind := 'player_reconnected';
-    end if;
-
-    update public.players as players
-    set disconnected_at = null,
-        last_seen_at = greatest(players.last_seen_at, v_now),
-        left_at = null
-    where players.id = v_player.id;
-  else
-    if v_room.status <> 'waiting' then
-      raise exception using errcode = 'P0001', message = 'room_not_joinable';
-    end if;
-
-    select count(*)
-    into v_active_player_count
-    from public.players as players
-    where players.room_id = p_room_id
-      and players.left_at is null;
-
-    if v_active_player_count >= v_room.target_player_count then
-      raise exception using errcode = 'P0001', message = 'room_full';
-    end if;
-
-    insert into public.players (
-      account_id,
-      display_name,
-      public_player_id,
-      room_id
-    )
-    values (
-      p_account_id,
-      v_display_name,
-      private.random_identifier('pl_', 12),
-      p_room_id
-    )
-    returning players.* into v_player;
-
-    insert into public.realtime_topics (player_id, room_id, scope, topic)
-    values (
-      v_player.id,
-      p_room_id,
-      'player_private',
-      private.random_identifier('player:', 24)
-    );
-
-    v_event_kind := 'player_joined';
+  if private.expire_open_room(v_room.id, v_now) then
+    return query select v_room.id, v_player.id, 'room_closed'::text;
+    return;
   end if;
 
+  if exists (
+    select 1
+    from public.games as games
+    where games.id = v_room.current_game_id
+      and games.ended_at is null
+  ) then
+    raise exception using errcode = 'P0001', message = 'room_switch_forbidden';
+  end if;
+
+  update public.players as players
+  set ready_roster_revision = null,
+      left_at = v_now,
+      disconnected_at = null
+  where players.id = v_player.id;
+
+  update public.realtime_grants as grants
+  set revoked_at = v_now
+  where grants.room_id = v_room.id
+    and grants.player_id = v_player.id
+    and grants.revoked_at is null;
+
+  select players.account_id
+  into v_next_host_account_id
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.left_at is null
+  order by players.joined_at, players.id
+  limit 1
+  for update;
+
   update public.rooms as rooms
-  set snapshot_revision = rooms.snapshot_revision + 1,
+  set host_account_id = coalesce(v_next_host_account_id, rooms.host_account_id),
+      roster_revision = rooms.roster_revision + 1,
+      snapshot_revision = rooms.snapshot_revision + 1,
+      closed_at = case when v_next_host_account_id is null then v_now else rooms.closed_at end,
       updated_at = v_now
-  where rooms.id = p_room_id;
+  where rooms.id = v_room.id;
 
   insert into public.room_events (
-    actor_player_id,
+    room_id,
     event_kind,
+    actor_player_id,
     payload,
-    room_id
+    created_at
   )
-  values (v_player.id, v_event_kind, '{}'::jsonb, p_room_id);
+  values (
+    v_room.id,
+    'player_left',
+    v_player.id,
+    pg_catalog.jsonb_build_object(
+      'roomClosed',
+      v_next_host_account_id is null
+    ),
+    v_now
+  );
 
-  return query
-  select p_room_id, v_player.id, v_event_kind;
+  if v_next_host_account_id is null then
+    insert into public.room_events (room_id, event_kind, payload, created_at)
+    values (
+      v_room.id,
+      'room_closed',
+      pg_catalog.jsonb_build_object('reason', 'empty'),
+      v_now
+    );
+  end if;
+
+  return query select v_room.id, v_player.id, 'player_left'::text;
 end;
 $$;
 
@@ -379,12 +645,8 @@ begin
   insert into public.accounts default values
   returning accounts.id into v_account_id;
 
-  insert into public.account_tokens (
-    account_id,
-    token_hash,
-    token_hash_key_id
-  )
-  values (v_account_id, p_token_hash, p_token_hash_key_id);
+  insert into public.account_tokens (token_hash, account_id, token_hash_key_id)
+  values (p_token_hash, v_account_id, p_token_hash_key_id);
 
   return query select v_account_id;
 end;
@@ -399,22 +661,22 @@ as $$
 declare
   v_allowed boolean := true;
   v_available_tokens numeric;
-  v_cleanup_now timestamptz := clock_timestamp();
+  v_cleanup_now timestamptz := pg_catalog.clock_timestamp();
   v_now timestamptz;
   v_retry_after_seconds integer := 0;
   v_rule record;
 begin
   if p_rules is null
-    or jsonb_typeof(p_rules) <> 'array'
-    or jsonb_array_length(p_rules) < 1
-    or jsonb_array_length(p_rules) > 12
+    or pg_catalog.jsonb_typeof(p_rules) <> 'array'
+    or pg_catalog.jsonb_array_length(p_rules) < 1
+    or pg_catalog.jsonb_array_length(p_rules) > 12
   then
     raise exception using errcode = '22023', message = 'invalid_rate_limit_rules';
   end if;
 
   if (
-    select count(*) <> count(distinct rules.value ->> 'key')
-    from jsonb_array_elements(p_rules) as rules(value)
+    select pg_catalog.count(*) <> pg_catalog.count(distinct rules.value ->> 'key')
+    from pg_catalog.jsonb_array_elements(p_rules) as rules(value)
   ) then
     raise exception using errcode = '22023', message = 'duplicate_rate_limit_rule';
   end if;
@@ -435,7 +697,7 @@ begin
       rules.value ->> 'key' as bucket_key,
       (rules.value ->> 'capacity')::integer as capacity,
       (rules.value ->> 'refillSeconds')::integer as refill_seconds
-    from jsonb_array_elements(p_rules) as rules(value)
+    from pg_catalog.jsonb_array_elements(p_rules) as rules(value)
     order by rules.value ->> 'key'
   loop
     if v_rule.bucket_key is null
@@ -460,7 +722,7 @@ begin
       v_rule.bucket_key,
       v_rule.capacity,
       v_cleanup_now,
-      v_cleanup_now + make_interval(secs => v_rule.refill_seconds * 2)
+      v_cleanup_now + pg_catalog.make_interval(secs => v_rule.refill_seconds * 2)
     )
     on conflict (bucket_key) do nothing;
 
@@ -470,16 +732,14 @@ begin
     for update;
   end loop;
 
-  -- A transaction may wait while acquiring a bucket lock. Fix the decision
-  -- timestamp only after every lock is held so updated_at never moves backward.
-  v_now := clock_timestamp();
+  v_now := pg_catalog.clock_timestamp();
 
   for v_rule in
     select
       rules.value ->> 'key' as bucket_key,
       (rules.value ->> 'capacity')::integer as capacity,
       (rules.value ->> 'refillSeconds')::integer as refill_seconds
-    from jsonb_array_elements(p_rules) as rules(value)
+    from pg_catalog.jsonb_array_elements(p_rules) as rules(value)
     order by rules.value ->> 'key'
   loop
     select least(
@@ -497,7 +757,7 @@ begin
       v_allowed := false;
       v_retry_after_seconds := greatest(
         v_retry_after_seconds,
-        ceil(
+        pg_catalog.ceil(
           (1 - v_available_tokens)
           * v_rule.refill_seconds::numeric
           / v_rule.capacity::numeric
@@ -512,7 +772,7 @@ begin
       rules.value ->> 'key' as bucket_key,
       (rules.value ->> 'capacity')::integer as capacity,
       (rules.value ->> 'refillSeconds')::integer as refill_seconds
-    from jsonb_array_elements(p_rules) as rules(value)
+    from pg_catalog.jsonb_array_elements(p_rules) as rules(value)
     order by rules.value ->> 'key'
   loop
     update private.rate_limit_buckets as buckets
@@ -524,7 +784,8 @@ begin
               / v_rule.refill_seconds::numeric
         ) - case when v_allowed then 1 else 0 end,
         updated_at = v_now,
-        expires_at = v_now + make_interval(secs => v_rule.refill_seconds * 2)
+        expires_at = v_now
+          + pg_catalog.make_interval(secs => v_rule.refill_seconds * 2)
     where buckets.bucket_key = v_rule.bucket_key;
   end loop;
 
@@ -553,11 +814,11 @@ begin
   end if;
 
   update public.account_tokens as tokens
-  set last_used_at = statement_timestamp()
+  set last_used_at = pg_catalog.statement_timestamp()
   where tokens.token_hash = p_token_hash
     and (
       tokens.last_used_at is null
-      or tokens.last_used_at < statement_timestamp() - interval '5 minutes'
+      or tokens.last_used_at < pg_catalog.statement_timestamp() - interval '5 minutes'
     );
 
   return query select v_account_id;
@@ -580,26 +841,14 @@ begin
   select rooms.id
   into v_room_id
   from public.rooms as rooms
-  where rooms.public_room_code = btrim(p_room_code)
-  order by
-    exists (
-      select 1
-      from public.players as players
-      where players.room_id = rooms.id
-        and players.account_id = p_account_id
-        and players.left_at is null
-    ) desc,
-    case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
-    rooms.created_at desc,
-    rooms.id desc
+  where rooms.public_room_code = pg_catalog.btrim(p_room_code)
+    and rooms.closed_at is null
+  order by rooms.created_at desc, rooms.id desc
   limit 1;
 
   if not found then
     return query select 'not_found'::text;
-    return;
-  end if;
-
-  if exists (
+  elsif exists (
     select 1
     from public.players as players
     where players.room_id = v_room_id
@@ -617,7 +866,7 @@ create function public.app_create_room(
   p_account_id bigint,
   p_display_name text,
   p_target_player_count integer,
-  p_waiting_expires_at timestamptz
+  p_lobby_expires_at timestamptz
 )
 returns table (
   result_kind text,
@@ -630,86 +879,40 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_source_settled boolean := false;
-  v_now timestamptz;
-  v_source_player public.players%rowtype;
-  v_source_room public.rooms%rowtype;
-  v_target_result record;
+  v_source_actor_player_id bigint;
+  v_source_notification_reason text;
+  v_source_room_id bigint;
 begin
   perform private.lock_account(p_account_id);
 
-  select players.*
-  into v_source_player
-  from public.players as players
-  where players.account_id = p_account_id
-    and players.left_at is null;
+  select expired.room_id, expired.actor_player_id, expired.notification_reason
+  into v_source_room_id, v_source_actor_player_id, v_source_notification_reason
+  from private.expire_current_room_before_membership_change(
+    p_account_id,
+    null
+  ) as expired;
 
   if found then
-    select rooms.*
-    into v_source_room
-    from public.rooms as rooms
-    where rooms.id = v_source_player.room_id
-    for update;
-
-    if not found then
-      raise exception using errcode = 'P0001', message = 'current_room_changed';
-    end if;
-
-    select players.*
-    into v_source_player
-    from public.players as players
-    where players.id = v_source_player.id
-      and players.account_id = p_account_id
-      and players.room_id = v_source_room.id
-      and players.left_at is null
-    for update;
-
-    v_now := clock_timestamp();
-
-    if not found then
-      if v_source_room.started_at is not null
-        or v_source_room.ended_at is null
-        or v_source_room.waiting_expires_at > v_now
-      then
-        raise exception using errcode = 'P0001', message = 'current_room_changed';
-      end if;
-    elsif v_source_room.status = 'waiting'
-      and v_source_room.waiting_expires_at <= v_now
-    then
-      perform private.end_waiting_room(
-        v_source_room.id,
-        'waiting_room_expired',
-        v_source_player.id
-      );
-
-      v_source_settled := true;
-    end if;
-  end if;
-
-  select *
-  into v_target_result
-  from private.create_room(
-    p_account_id,
-    p_display_name,
-    p_target_player_count,
-    p_waiting_expires_at
-  );
-
-  if v_source_settled then
     return query
     select
       'source'::text,
-      v_source_room.id,
-      v_source_player.id,
-      'waiting_room_ended'::text;
+      v_source_room_id,
+      v_source_actor_player_id,
+      v_source_notification_reason;
   end if;
 
   return query
   select
     'target'::text,
-    v_target_result.room_id,
-    v_target_result.actor_player_id,
-    v_target_result.notification_reason;
+    created.room_id,
+    created.actor_player_id,
+    created.notification_reason
+  from private.create_room(
+    p_account_id,
+    p_display_name,
+    p_target_player_count,
+    p_lobby_expires_at
+  ) as created;
 end;
 $$;
 
@@ -729,263 +932,35 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_source_settled boolean := false;
-  v_now timestamptz;
-  v_source_player public.players%rowtype;
-  v_source_room public.rooms%rowtype;
-  v_target_result record;
-  v_room public.rooms%rowtype;
-  v_room_id bigint;
+  v_source_actor_player_id bigint;
+  v_source_notification_reason text;
+  v_source_room_id bigint;
 begin
   perform private.lock_account(p_account_id);
 
-  select rooms.id
-  into v_room_id
-  from public.rooms as rooms
-  where rooms.public_room_code = btrim(p_room_code)
-  order by
-    case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
-    rooms.created_at desc
-  limit 1;
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
-  end if;
+  select expired.room_id, expired.actor_player_id, expired.notification_reason
+  into v_source_room_id, v_source_actor_player_id, v_source_notification_reason
+  from private.expire_current_room_before_membership_change(
+    p_account_id,
+    p_room_code
+  ) as expired;
 
-  select players.*
-  into v_source_player
-  from public.players as players
-  where players.account_id = p_account_id
-    and players.left_at is null;
-
-  perform rooms.id
-  from public.rooms as rooms
-  where rooms.id in (v_room_id, v_source_player.room_id)
-  order by rooms.id
-  for update;
-
-  select rooms.*
-  into v_room
-  from public.rooms as rooms
-  where rooms.id = v_room_id;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
-  end if;
-
-  if v_source_player.id is not null then
-    select rooms.*
-    into v_source_room
-    from public.rooms as rooms
-    where rooms.id = v_source_player.room_id;
-
-    if not found then
-      raise exception using errcode = 'P0001', message = 'current_room_changed';
-    end if;
-
-    select players.*
-    into v_source_player
-    from public.players as players
-    where players.id = v_source_player.id
-      and players.account_id = p_account_id
-      and players.room_id = v_source_room.id
-      and players.left_at is null
-    for update;
-
-    v_now := clock_timestamp();
-
-    if not found then
-      if v_source_room.started_at is not null
-        or v_source_room.ended_at is null
-        or v_source_room.waiting_expires_at > v_now
-      then
-        raise exception using errcode = 'P0001', message = 'current_room_changed';
-      end if;
-    elsif v_source_room.status = 'waiting'
-      and v_source_room.waiting_expires_at <= v_now
-    then
-      perform private.end_waiting_room(
-        v_source_room.id,
-        'waiting_room_expired',
-        v_source_player.id
-      );
-
-      v_source_settled := true;
-    end if;
-  else
-    v_now := clock_timestamp();
-  end if;
-
-  if v_room.started_at is null
-    and v_room.waiting_expires_at <= v_now
-  then
-    if v_room.ended_at is null
-      and not (v_source_settled and v_source_room.id = v_room.id)
-    then
-      perform private.end_waiting_room(v_room.id, 'waiting_room_expired');
-    end if;
-
-    if v_source_settled then
-      return query
-      select
-        'source'::text,
-        v_source_room.id,
-        v_source_player.id,
-        'waiting_room_ended'::text;
-    end if;
-
-    return query
-    select
-      'target'::text,
-      v_room.id,
-      null::bigint,
-      'waiting_room_ended'::text;
-    return;
-  end if;
-
-  select *
-  into v_target_result
-  from private.join_room(p_account_id, v_room_id, p_display_name);
-
-  if v_source_settled then
+  if found then
     return query
     select
       'source'::text,
-      v_source_room.id,
-      v_source_player.id,
-      'waiting_room_ended'::text;
+      v_source_room_id,
+      v_source_actor_player_id,
+      v_source_notification_reason;
   end if;
 
   return query
   select
     'target'::text,
-    v_target_result.room_id,
-    v_target_result.actor_player_id,
-    v_target_result.notification_reason;
-end;
-$$;
-
-create function private.leave_room(
-  p_account_id bigint,
-  p_room_id bigint
-)
-returns table (
-  room_id bigint,
-  actor_player_id bigint,
-  notification_reason text
-)
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_now timestamptz := clock_timestamp();
-  v_notification_reason text := 'player_left';
-  v_player public.players%rowtype;
-  v_remaining_account_id bigint;
-  v_room public.rooms%rowtype;
-begin
-  select rooms.*
-  into v_room
-  from public.rooms as rooms
-  where rooms.id = p_room_id;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
-  end if;
-
-  select players.*
-  into v_player
-  from public.players as players
-  where players.room_id = p_room_id
-    and players.account_id = p_account_id
-    and players.left_at is null
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  if v_room.status = 'playing' then
-    raise exception using errcode = 'P0001', message = 'room_switch_forbidden';
-  end if;
-
-  if v_room.status = 'waiting' and v_room.waiting_expires_at <= v_now then
-    perform private.end_waiting_room(
-      p_room_id,
-      'waiting_room_expired',
-      v_player.id
-    );
-
-    return query
-    select p_room_id, v_player.id, 'waiting_room_ended'::text;
-    return;
-  end if;
-
-  update public.players as players
-  set disconnected_at = null,
-      left_at = greatest(players.last_seen_at, v_now)
-  where players.id = v_player.id;
-
-  update public.realtime_grants as grants
-  set revoked_at = coalesce(
-    grants.revoked_at,
-    greatest(grants.created_at, v_now)
-  )
-  where grants.player_id = v_player.id
-    and grants.revoked_at is null;
-
-  insert into public.room_events (
-    actor_player_id,
-    event_kind,
-    payload,
-    room_id
-  )
-  values (v_player.id, 'player_left', '{}'::jsonb, p_room_id);
-
-  select players.account_id
-  into v_remaining_account_id
-  from public.players as players
-  where players.room_id = p_room_id
-    and players.left_at is null
-  order by players.joined_at, players.id
-  limit 1;
-
-  if v_room.status = 'waiting' and v_remaining_account_id is null then
-    update public.rooms as rooms
-    set ended_at = v_now,
-        snapshot_revision = rooms.snapshot_revision + 1,
-        updated_at = v_now
-    where rooms.id = p_room_id;
-
-    insert into public.room_events (
-      actor_player_id,
-      event_kind,
-      payload,
-      room_id
-    )
-    values (
-      v_player.id,
-      'room_ended',
-      '{"reason":"last_player_left_waiting_room"}'::jsonb,
-      p_room_id
-    );
-
-    v_notification_reason := 'waiting_room_ended';
-  else
-    update public.rooms as rooms
-    set host_account_id = case
-          when rooms.host_account_id = p_account_id
-            and v_remaining_account_id is not null
-            then v_remaining_account_id
-          else rooms.host_account_id
-        end,
-        snapshot_revision = rooms.snapshot_revision + 1,
-        updated_at = v_now
-    where rooms.id = p_room_id;
-  end if;
-
-  return query
-  select p_room_id, v_player.id, v_notification_reason;
+    joined.room_id,
+    joined.actor_player_id,
+    joined.notification_reason
+  from private.join_room(p_account_id, p_room_code, p_display_name) as joined;
 end;
 $$;
 
@@ -1002,35 +977,12 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
-declare
-  v_room_id bigint;
 begin
   perform private.lock_account(p_account_id);
 
-  select rooms.id
-  into v_room_id
-  from public.rooms as rooms
-  join public.players as players
-    on players.room_id = rooms.id
-    and players.account_id = p_account_id
-    and players.left_at is null
-  where rooms.public_room_code = btrim(p_room_code);
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  perform rooms.id
-  from public.rooms as rooms
-  where rooms.id = v_room_id
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
-  end if;
-
   return query
-  select * from private.leave_room(p_account_id, v_room_id);
+  select left_room.room_id, left_room.actor_player_id, left_room.notification_reason
+  from private.leave_room(p_account_id, p_room_code) as left_room;
 end;
 $$;
 
@@ -1045,65 +997,31 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_now timestamptz;
-  v_player public.players%rowtype;
-  v_room public.rooms%rowtype;
+  v_player_id bigint;
+  v_room_id bigint;
 begin
   perform private.lock_account(p_account_id);
 
-  select players.*
-  into v_player
+  select players.room_id, players.id
+  into v_room_id, v_player_id
   from public.players as players
   where players.account_id = p_account_id
-    and players.left_at is null;
-
-  if not found then
-    return;
-  end if;
-
-  select rooms.*
-  into v_room
-  from public.rooms as rooms
-  where rooms.id = v_player.room_id
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  select players.*
-  into v_player
-  from public.players as players
-  where players.id = v_player.id
-    and players.account_id = p_account_id
-    and players.room_id = v_room.id
     and players.left_at is null
   for update;
 
   if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  v_now := clock_timestamp();
-
-  if v_room.status = 'waiting' and v_room.waiting_expires_at <= v_now then
-    perform private.end_waiting_room(
-      v_room.id,
-      'waiting_room_expired',
-      v_player.id
-    );
-
-    return query
-    select v_room.id, v_player.id, 'waiting_room_ended'::text;
     return;
   end if;
 
-  return query
-  select v_room.id, v_player.id, null::text;
+  if private.expire_open_room(v_room_id) then
+    return query select v_room_id, v_player_id, 'room_closed'::text;
+  else
+    return query select v_room_id, v_player_id, null::text;
+  end if;
 end;
 $$;
 
-create function public.app_expire_waiting_room_if_needed(p_room_id bigint)
+create function public.app_expire_room_if_needed(p_room_id bigint)
 returns table (
   room_id bigint,
   actor_player_id bigint,
@@ -1113,35 +1031,20 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
-declare
-  v_room public.rooms%rowtype;
 begin
-  select rooms.*
-  into v_room
-  from public.rooms as rooms
-  where rooms.id = p_room_id
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
+  if p_room_id is null then
+    raise exception using errcode = '22023', message = 'invalid_room_id';
   end if;
 
-  if v_room.status = 'waiting'
-    and v_room.waiting_expires_at <= clock_timestamp()
-  then
-    perform private.end_waiting_room(p_room_id, 'waiting_room_expired');
-
-    return query
-    select p_room_id, null::bigint, 'waiting_room_ended'::text;
-    return;
+  if private.expire_open_room(p_room_id) then
+    return query select p_room_id, null::bigint, 'room_closed'::text;
+  else
+    return query select p_room_id, null::bigint, null::text;
   end if;
-
-  return query
-  select p_room_id, null::bigint, null::text;
 end;
 $$;
 
-create function public.app_cleanup_expired_waiting_rooms(p_limit integer default 50)
+create function public.app_cleanup_expired_rooms(p_limit integer default 50)
 returns table (
   room_id bigint,
   actor_player_id bigint,
@@ -1152,23 +1055,27 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 500);
   v_room_id bigint;
 begin
+  if p_limit is null or p_limit not between 1 and 500 then
+    raise exception using errcode = '22023', message = 'invalid_cleanup_limit';
+  end if;
+
   for v_room_id in
     select rooms.id
     from public.rooms as rooms
-    where rooms.started_at is null
-      and rooms.ended_at is null
-      and rooms.waiting_expires_at <= clock_timestamp()
-    order by rooms.waiting_expires_at, rooms.id
-    limit v_limit
-    for update skip locked
+    left join public.games as games
+      on games.id = rooms.current_game_id
+    where rooms.closed_at is null
+      and rooms.lobby_expires_at <= pg_catalog.clock_timestamp()
+      and (games.id is null or games.ended_at is not null)
+    order by rooms.lobby_expires_at, rooms.id
+    limit p_limit
+    for update of rooms skip locked
   loop
-    perform private.end_waiting_room(v_room_id, 'waiting_room_expired');
-
-    return query
-    select v_room_id, null::bigint, 'waiting_room_ended'::text;
+    if private.expire_open_room(v_room_id) then
+      return query select v_room_id, null::bigint, 'room_closed'::text;
+    end if;
   end loop;
 end;
 $$;
@@ -1178,9 +1085,9 @@ create function public.app_switch_room(
   p_expected_current_room_code text,
   p_kind text,
   p_display_name text,
-  p_target_room_code text default null,
-  p_target_player_count integer default null,
-  p_waiting_expires_at timestamptz default null
+  p_target_room_code text,
+  p_target_player_count integer,
+  p_lobby_expires_at timestamptz
 )
 returns table (
   result_kind text,
@@ -1193,178 +1100,73 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_now timestamptz;
-  v_source_expired boolean;
-  v_source_player public.players%rowtype;
+  v_source_room_id bigint;
   v_source_result record;
-  v_source_room public.rooms%rowtype;
-  v_target_result record;
-  v_target_room public.rooms%rowtype;
   v_target_room_id bigint;
+  v_target_result record;
 begin
-  if p_expected_current_room_code is null
-    or btrim(p_expected_current_room_code) !~ '^[0-9]{6}$'
+  if p_kind not in ('create', 'join')
+    or p_expected_current_room_code is null
+    or (p_kind = 'create' and (
+      p_target_room_code is not null
+      or p_target_player_count is null
+      or p_lobby_expires_at is null
+    ))
+    or (p_kind = 'join' and (
+      p_target_room_code is null
+      or p_target_player_count is not null
+      or p_lobby_expires_at is not null
+    ))
   then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  if p_kind is null or p_kind not in ('create', 'join') then
-    raise exception using errcode = 'P0001', message = 'invalid_room_switch_kind';
+    raise exception using errcode = '22023', message = 'invalid_room_switch';
   end if;
 
   perform private.lock_account(p_account_id);
 
-  select players.*
-  into v_source_player
+  select players.room_id
+  into v_source_room_id
   from public.players as players
+  join public.rooms as rooms
+    on rooms.id = players.room_id
   where players.account_id = p_account_id
-    and players.left_at is null;
+    and players.left_at is null
+    and rooms.public_room_code = pg_catalog.btrim(p_expected_current_room_code)
+  for update of players;
 
   if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  select rooms.*
-  into v_source_room
-  from public.rooms as rooms
-  where rooms.id = v_source_player.room_id;
-
-  if not found
-    or v_source_room.public_room_code <> btrim(p_expected_current_room_code)
-  then
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
   if p_kind = 'join' then
-    if btrim(p_target_room_code) = v_source_room.public_room_code then
-      raise exception using errcode = 'P0001', message = 'current_room_exists';
-    end if;
-
     select rooms.id
     into v_target_room_id
     from public.rooms as rooms
-    where rooms.public_room_code = btrim(p_target_room_code)
-    order by
-      case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
-      rooms.created_at desc
-    limit 1;
+    where rooms.public_room_code = pg_catalog.btrim(p_target_room_code)
+      and rooms.closed_at is null;
 
     if not found then
       raise exception using errcode = 'P0001', message = 'room_not_found';
     end if;
 
-    if v_target_room_id = v_source_room.id then
-      raise exception using errcode = 'P0001', message = 'current_room_exists';
+    if v_target_room_id = v_source_room_id then
+      raise exception using errcode = 'P0001', message = 'current_room_changed';
     end if;
 
     perform rooms.id
     from public.rooms as rooms
-    where rooms.id in (v_source_room.id, v_target_room_id)
+    where rooms.id in (v_source_room_id, v_target_room_id)
     order by rooms.id
     for update;
-
-    select rooms.*
-    into v_target_room
-    from public.rooms as rooms
-    where rooms.id = v_target_room_id;
-
-    if not found then
-      raise exception using errcode = 'P0001', message = 'room_not_found';
-    end if;
-
   else
     perform rooms.id
     from public.rooms as rooms
-    where rooms.id = v_source_room.id
+    where rooms.id = v_source_room_id
     for update;
   end if;
 
-  select rooms.*
-  into v_source_room
-  from public.rooms as rooms
-  where rooms.id = v_source_player.room_id
-  for update;
-
-  if not found
-    or v_source_room.public_room_code <> btrim(p_expected_current_room_code)
-  then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  select players.*
-  into v_source_player
-  from public.players as players
-  where players.account_id = p_account_id
-    and players.room_id = v_source_room.id
-    and players.left_at is null
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  v_now := clock_timestamp();
-
-  v_source_expired := v_source_room.status = 'waiting'
-    and v_source_room.waiting_expires_at <= v_now;
-
-  if p_kind = 'join'
-    and v_target_room.started_at is null
-    and v_target_room.waiting_expires_at <= v_now
-  then
-    if v_source_expired then
-      perform private.end_waiting_room(
-        v_source_room.id,
-        'waiting_room_expired',
-        v_source_player.id
-      );
-    end if;
-
-    if v_target_room.ended_at is null then
-      perform private.end_waiting_room(
-        v_target_room.id,
-        'waiting_room_expired'
-      );
-    end if;
-
-    return query
-    values
-      (
-        'source'::text,
-        v_source_room.id,
-        v_source_player.id,
-        case when v_source_expired then 'waiting_room_ended'::text end
-      ),
-      (
-        'target'::text,
-        v_target_room.id,
-        null::bigint,
-        'waiting_room_ended'::text
-      );
-    return;
-  end if;
-
-  if v_source_room.status = 'playing' then
-    raise exception using errcode = 'P0001', message = 'room_switch_forbidden';
-  end if;
-
-  if v_source_expired then
-    perform private.end_waiting_room(
-      v_source_room.id,
-      'waiting_room_expired',
-      v_source_player.id
-    );
-
-    select
-      v_source_room.id as room_id,
-      v_source_player.id as actor_player_id,
-      'waiting_room_ended'::text as notification_reason
-    into v_source_result;
-  else
-    select *
-    into v_source_result
-    from private.leave_room(p_account_id, v_source_room.id);
-  end if;
+  select *
+  into v_source_result
+  from private.leave_room(p_account_id, p_expected_current_room_code);
 
   if p_kind = 'create' then
     select *
@@ -1373,13 +1175,16 @@ begin
       p_account_id,
       p_display_name,
       p_target_player_count,
-      p_waiting_expires_at,
-      v_source_room.public_room_code
+      p_lobby_expires_at
     );
   else
     select *
     into v_target_result
-    from private.join_room(p_account_id, v_target_room_id, p_display_name);
+    from private.join_room(p_account_id, p_target_room_code, p_display_name);
+
+    if v_target_result.notification_reason = 'room_closed' then
+      raise exception using errcode = 'P0001', message = 'room_closed';
+    end if;
   end if;
 
   return query
@@ -1402,7 +1207,7 @@ $$;
 create function public.app_heartbeat_room_player(
   p_account_id bigint,
   p_room_code text,
-  p_disconnect_after_seconds integer default 45
+  p_disconnect_after_seconds integer
 )
 returns table (
   room_id bigint,
@@ -1414,42 +1219,38 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_cutoff timestamptz;
-  v_disconnect_after_seconds integer := least(
-    greatest(coalesce(p_disconnect_after_seconds, 45), 10),
-    300
-  );
+  v_changed_count integer := 0;
   v_disconnected_count integer := 0;
-  v_now timestamptz;
-  v_notification_reason text;
+  v_now timestamptz := pg_catalog.clock_timestamp();
   v_player public.players%rowtype;
   v_reconnected boolean;
   v_room public.rooms%rowtype;
-  v_room_id bigint;
 begin
+  if p_disconnect_after_seconds is null
+    or p_disconnect_after_seconds not between 10 and 600
+  then
+    raise exception using errcode = '22023', message = 'invalid_heartbeat_request';
+  end if;
+
   perform private.lock_account(p_account_id);
 
-  select rooms.id
-  into v_room_id
+  select rooms.*
+  into v_room
   from public.rooms as rooms
   join public.players as players
     on players.room_id = rooms.id
-    and players.account_id = p_account_id
+  where players.account_id = p_account_id
     and players.left_at is null
-  where rooms.public_room_code = btrim(p_room_code);
+    and rooms.public_room_code = pg_catalog.btrim(p_room_code)
+  for update of rooms;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
-  select rooms.*
-  into v_room
-  from public.rooms as rooms
-  where rooms.id = v_room_id
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
+  if private.expire_open_room(v_room.id, v_now) then
+    return query select v_room.id, null::bigint, 'room_closed'::text;
+    return;
   end if;
 
   select players.*
@@ -1460,86 +1261,174 @@ begin
     and players.left_at is null
   for update;
 
-  if not found then
-    raise exception using errcode = 'P0001', message = 'current_room_changed';
-  end if;
-
-  v_now := clock_timestamp();
-
-  if v_room.status = 'waiting' and v_room.waiting_expires_at <= v_now then
-    perform private.end_waiting_room(
-      v_room.id,
-      'waiting_room_expired',
-      v_player.id
-    );
-
-    return query
-    select v_room.id, v_player.id, 'waiting_room_ended'::text;
-    return;
-  end if;
-
   v_reconnected := v_player.disconnected_at is not null;
-  v_cutoff := v_now - make_interval(secs => v_disconnect_after_seconds);
 
   update public.players as players
-  set disconnected_at = null,
-      last_seen_at = greatest(players.last_seen_at, v_now)
+  set last_seen_at = v_now,
+      disconnected_at = null
   where players.id = v_player.id;
 
-  if v_room.status <> 'ended' then
-    with disconnected_players as (
-      update public.players as players
-      set disconnected_at = v_now
-      where players.room_id = v_room.id
-        and players.id <> v_player.id
-        and players.left_at is null
-        and players.disconnected_at is null
-        and players.last_seen_at < v_cutoff
-      returning players.id
-    ), inserted_events as (
-      insert into public.room_events (
-        actor_player_id,
-        event_kind,
-        payload,
-        room_id
-      )
-      select
-        disconnected_players.id,
-        'player_disconnected',
-        '{}'::jsonb,
-        v_room.id
-      from disconnected_players
-      returning 1
-    )
-    select count(*) into v_disconnected_count
-    from inserted_events;
-  end if;
+  update public.players as players
+  set disconnected_at = v_now
+  where players.room_id = v_room.id
+    and players.id <> v_player.id
+    and players.left_at is null
+    and players.disconnected_at is null
+    and players.last_seen_at
+      <= v_now - pg_catalog.make_interval(secs => p_disconnect_after_seconds);
 
-  if v_reconnected then
-    insert into public.room_events (
-      actor_player_id,
-      event_kind,
-      payload,
-      room_id
-    )
-    values (v_player.id, 'player_reconnected', '{}'::jsonb, v_room.id);
+  get diagnostics v_disconnected_count = row_count;
+  v_changed_count := v_disconnected_count + case when v_reconnected then 1 else 0 end;
 
-    v_notification_reason := 'player_reconnected';
-  elsif v_disconnected_count > 0 then
-    v_notification_reason := 'player_disconnected';
-  else
-    v_notification_reason := null;
-  end if;
-
-  if v_notification_reason is not null then
+  if v_changed_count > 0 then
     update public.rooms as rooms
     set snapshot_revision = rooms.snapshot_revision + 1,
         updated_at = v_now
     where rooms.id = v_room.id;
   end if;
 
+  if v_reconnected then
+    insert into public.room_events (
+      room_id,
+      event_kind,
+      actor_player_id,
+      created_at
+    )
+    values (v_room.id, 'player_reconnected', v_player.id, v_now);
+  end if;
+
+  insert into public.room_events (
+    room_id,
+    event_kind,
+    actor_player_id,
+    created_at
+  )
+  select v_room.id, 'player_disconnected', players.id, v_now
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.disconnected_at = v_now
+    and players.id <> v_player.id;
+
   return query
-  select v_room.id, v_player.id, v_notification_reason;
+  select
+    v_room.id,
+    v_player.id,
+    case when v_changed_count > 0 then 'presence_changed'::text end;
+end;
+$$;
+
+create function public.app_set_room_player_ready(
+  p_account_id bigint,
+  p_room_code text,
+  p_is_ready boolean,
+  p_expected_roster_revision bigint
+)
+returns table (
+  room_id bigint,
+  actor_player_id bigint,
+  notification_reason text
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_currently_ready boolean;
+  v_now timestamptz := pg_catalog.clock_timestamp();
+  v_player public.players%rowtype;
+  v_room public.rooms%rowtype;
+begin
+  if p_is_ready is null
+    or p_expected_roster_revision is null
+    or p_expected_roster_revision < 0
+  then
+    raise exception using errcode = '22023', message = 'invalid_readiness_request';
+  end if;
+
+  perform private.lock_account(p_account_id);
+
+  select rooms.*
+  into v_room
+  from public.rooms as rooms
+  join public.players as players
+    on players.room_id = rooms.id
+  where players.account_id = p_account_id
+    and players.left_at is null
+    and players.disconnected_at is null
+    and rooms.public_room_code = pg_catalog.btrim(p_room_code)
+  for update of rooms;
+
+  if not found or v_room.closed_at is not null then
+    raise exception using errcode = 'P0001', message = 'current_room_changed';
+  end if;
+
+  select players.*
+  into v_player
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.account_id = p_account_id
+    and players.status = 'joined'
+  for update;
+
+  if private.expire_open_room(v_room.id, v_now) then
+    return query select v_room.id, v_player.id, 'room_closed'::text;
+    return;
+  end if;
+
+  if exists (
+    select 1
+    from public.games as games
+    where games.id = v_room.current_game_id
+      and games.ended_at is null
+  ) then
+    raise exception using errcode = 'P0001', message = 'room_in_progress';
+  end if;
+
+  if v_room.roster_revision <> p_expected_roster_revision then
+    raise exception using errcode = 'P0001', message = 'stale_roster_revision';
+  end if;
+
+  v_currently_ready :=
+    v_player.ready_roster_revision is not distinct from p_expected_roster_revision;
+
+  if v_currently_ready = p_is_ready then
+    return query select v_room.id, v_player.id, null::text;
+    return;
+  end if;
+
+  update public.players as players
+  set ready_roster_revision = case
+        when p_is_ready then p_expected_roster_revision
+        else null
+      end
+  where players.id = v_player.id;
+
+  update public.rooms as rooms
+  set snapshot_revision = rooms.snapshot_revision + 1,
+      updated_at = v_now
+  where rooms.id = v_room.id;
+
+  insert into public.room_events (
+    room_id,
+    event_kind,
+    actor_player_id,
+    payload,
+    created_at
+  )
+  values (
+    v_room.id,
+    'player_ready_changed',
+    v_player.id,
+    pg_catalog.jsonb_build_object(
+      'isReady',
+      p_is_ready,
+      'rosterRevision',
+      p_expected_roster_revision
+    ),
+    v_now
+  );
+
+  return query select v_room.id, v_player.id, 'player_ready_changed'::text;
 end;
 $$;
 
@@ -1556,8 +1445,11 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_room_id bigint;
+  v_current_game_id uuid;
+  v_project_current_game boolean := false;
+  v_room public.rooms%rowtype;
   v_viewer_player_id bigint;
+  v_viewer_private_revision bigint := 0;
   v_viewer_role_id text;
 begin
   if p_include_engine_history is null
@@ -1567,26 +1459,17 @@ begin
   end if;
 
   if p_room_id is not null then
-    select rooms.id
-    into v_room_id
+    select rooms.*
+    into v_room
     from public.rooms as rooms
     where rooms.id = p_room_id;
   else
-    select rooms.id
-    into v_room_id
+    select rooms.*
+    into v_room
     from public.rooms as rooms
-    where rooms.public_room_code = btrim(p_room_code)
-    order by
-      exists (
-        select 1
-        from public.players as players
-        where players.room_id = rooms.id
-          and players.account_id = p_account_id
-          and players.left_at is null
-      ) desc,
-      case when rooms.status in ('waiting', 'playing') then 0 else 1 end,
-      rooms.created_at desc,
-      rooms.id desc
+    where rooms.public_room_code = pg_catalog.btrim(p_room_code)
+      and rooms.closed_at is null
+    order by rooms.created_at desc, rooms.id desc
     limit 1;
   end if;
 
@@ -1594,62 +1477,73 @@ begin
     raise exception using errcode = 'P0001', message = 'room_not_found';
   end if;
 
-  select players.id, assignments.role_id
-  into v_viewer_player_id, v_viewer_role_id
-  from public.players as players
-  left join public.role_assignments as assignments
-    on assignments.room_id = players.room_id
-    and assignments.player_id = players.id
-  where players.room_id = v_room_id
-    and players.account_id = p_account_id
-    and players.left_at is null;
+  v_current_game_id := v_room.current_game_id;
+
+  if p_account_id is not null then
+    select players.id, players.private_snapshot_revision
+    into v_viewer_player_id, v_viewer_private_revision
+    from public.players as players
+    where players.room_id = v_room.id
+      and players.account_id = p_account_id
+      and players.left_at is null;
+  end if;
+
+  if v_current_game_id is not null and (
+    p_account_id is null
+    or (
+      v_viewer_player_id is not null
+      and exists (
+        select 1
+        from public.game_players as game_players
+        where game_players.game_id = v_current_game_id
+          and game_players.player_id = v_viewer_player_id
+      )
+    )
+  ) then
+    v_project_current_game := true;
+  end if;
+
+  if v_project_current_game and v_viewer_player_id is not null then
+    select game_players.role_id
+    into v_viewer_role_id
+    from public.game_players as game_players
+    where game_players.game_id = v_current_game_id
+      and game_players.player_id = v_viewer_player_id;
+  end if;
 
   return query
-  select jsonb_build_object(
-    'version', 1,
-    'room', (
-      select jsonb_build_object(
-        'created_at', rooms.created_at,
-        'ended_at', rooms.ended_at,
-        'host_account_id', rooms.host_account_id,
-        'id', rooms.id,
-        'public_room_code', rooms.public_room_code,
-        'snapshot_revision',
-        rooms.snapshot_revision
-          + coalesce(
-            (
-              select topics.snapshot_revision
-              from public.realtime_topics as topics
-              where topics.room_id = rooms.id
-                and topics.scope = 'player_private'
-                and topics.player_id = v_viewer_player_id
-            ),
-            0
-          )
-          + coalesce(
-            (
-              select topics.snapshot_revision
-              from public.realtime_topics as topics
-              where topics.room_id = rooms.id
-                and topics.scope = 'role_private'
-                and topics.role_id = v_viewer_role_id
-            ),
-            0
-          ),
-        'started_at', rooms.started_at,
-        'status', rooms.status,
-        'target_player_count', rooms.target_player_count,
-        'updated_at', rooms.updated_at,
-        'waiting_expires_at', rooms.waiting_expires_at
-      )
-      from public.rooms as rooms
-      where rooms.id = v_room_id
+  select pg_catalog.jsonb_build_object(
+    'version', 2,
+    'room', pg_catalog.jsonb_build_object(
+      'closed_at', v_room.closed_at,
+      'created_at', v_room.created_at,
+      'current_game_id', v_room.current_game_id,
+      'host_account_id', v_room.host_account_id,
+      'id', v_room.id,
+      'public_room_code', v_room.public_room_code,
+      'roster_revision', v_room.roster_revision,
+      'snapshot_revision',
+        v_room.snapshot_revision + coalesce(v_viewer_private_revision, 0),
+      'status', case
+        when v_room.closed_at is not null then 'closed'
+        when v_room.current_game_id is null then 'waiting'
+        when exists (
+          select 1
+          from public.games as games
+          where games.id = v_room.current_game_id
+            and games.ended_at is null
+        ) then 'playing'
+        else 'ended'
+      end,
+      'target_player_count', v_room.target_player_count,
+      'updated_at', v_room.updated_at,
+      'lobby_expires_at', v_room.lobby_expires_at
     ),
     'viewerPlayerId', v_viewer_player_id,
-    'players', (
+    'lobbyPlayers', (
       select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
+        pg_catalog.jsonb_agg(
+          pg_catalog.jsonb_build_object(
             'account_id', players.account_id,
             'disconnected_at', players.disconnected_at,
             'display_name', players.display_name,
@@ -1657,7 +1551,9 @@ begin
             'joined_at', players.joined_at,
             'last_seen_at', players.last_seen_at,
             'left_at', players.left_at,
+            'private_snapshot_revision', players.private_snapshot_revision,
             'public_player_id', players.public_player_id,
+            'ready_roster_revision', players.ready_roster_revision,
             'room_id', players.room_id,
             'status', players.status
           )
@@ -1666,362 +1562,301 @@ begin
         '[]'::jsonb
       )
       from public.players as players
-      where players.room_id = v_room_id
-        and (
-          not exists (
-            select 1
-            from public.game_states as states
-            where states.room_id = v_room_id
-          )
-          or exists (
-            select 1
-            from public.role_assignments as assignments
-            where assignments.room_id = players.room_id
-              and assignments.player_id = players.id
-          )
-        )
+      where players.room_id = v_room.id
     ),
-    'gameState', (
-      select jsonb_build_object(
-        'action_revision', states.action_revision,
-        'day_number', states.day_number,
-        'ended_at', states.ended_at,
-        'night_number', states.night_number,
-        'phase', states.phase,
-        'phase_ends_at', states.phase_ends_at,
-        'phase_instance_id', states.phase_instance_id,
-        'phase_started_at', states.phase_started_at,
-        'revision', states.revision,
-        'status', states.status
-      )
-      from public.game_states as states
-      where states.room_id = v_room_id
-    ),
-    'ruleSet', (
-      select jsonb_build_object(
-        'engine_version', rule_sets.engine_version,
-        'options', rule_sets.options,
-        'resolved_role_setup', rule_sets.resolved_role_setup,
-        'role_counts', rule_sets.role_counts,
-        'role_registry_version', rule_sets.role_registry_version
-      )
-      from public.game_rule_sets as rule_sets
-      where rule_sets.room_id = v_room_id
-    ),
-    'assignments', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'player_id', assignments.player_id,
-            'role_id', assignments.role_id
+    'currentGame', case
+      when not v_project_current_game then null
+      else pg_catalog.jsonb_build_object(
+        'game', (
+          select pg_catalog.jsonb_build_object(
+            'action_revision', games.action_revision,
+            'day_number', games.day_number,
+            'ended_at', games.ended_at,
+            'id', games.id,
+            'night_number', games.night_number,
+            'phase', games.phase,
+            'phase_ends_at', games.phase_ends_at,
+            'phase_instance_id', games.phase_instance_id,
+            'phase_started_at', games.phase_started_at,
+            'revision', games.revision,
+            'started_at', games.started_at,
+            'status', games.status,
+            'winner_team', games.winner_team
           )
-          order by assignments.player_id
+          from public.games as games
+          where games.id = v_current_game_id
         ),
-        '[]'::jsonb
-      )
-      from public.role_assignments as assignments
-      where assignments.room_id = v_room_id
-    ),
-    'playerStates', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'player_id', states.player_id,
-            'alive', states.alive
+        'ruleSet', (
+          select pg_catalog.jsonb_build_object(
+            'engine_version', rule_sets.engine_version,
+            'options', rule_sets.options,
+            'resolved_role_setup', rule_sets.resolved_role_setup,
+            'role_counts', rule_sets.role_counts,
+            'role_registry_version', rule_sets.role_registry_version
           )
-          order by states.player_id
+          from public.game_rule_sets as rule_sets
+          where rule_sets.game_id = v_current_game_id
         ),
-        '[]'::jsonb
-      )
-      from public.game_player_states as states
-      where states.room_id = v_room_id
-    ),
-    'currentActions', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'action_key', actions.action_key,
-            'action_kind', actions.action_kind,
-            'actor_player_id', actions.actor_player_id,
-            'actor_role_id', actions.actor_role_id,
-            'actor_state_requirement', actions.actor_state_requirement,
-            'closes_at', actions.closes_at,
-            'created_at', actions.created_at,
-            'eligible_target_player_ids', actions.eligible_target_player_ids,
-            'id', actions.id,
-            'phase_instance_id', actions.phase_instance_id,
-            'resolver_role_id', actions.resolver_role_id,
-            'target_kind', actions.target_kind,
-            'target_state_requirement', actions.target_state_requirement
+        'gamePlayers', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'alive', game_players.alive,
+                'player_id', game_players.player_id,
+                'result', game_players.result,
+                'role_id', game_players.role_id
+              )
+              order by game_players.player_id
+            ),
+            '[]'::jsonb
           )
-          order by actions.id
+          from public.game_players as game_players
+          where game_players.game_id = v_current_game_id
         ),
-        '[]'::jsonb
-      )
-      from (
-        select
-          actions.id,
-          actions.phase_instance_id,
-          actions.action_key,
-          actions.action_kind,
-          actions.resolver_role_id,
-          actions.actor_player_id,
-          actions.actor_role_id,
-          actions.actor_state_requirement,
-          actions.target_state_requirement,
-          actions.target_kind,
-          actions.closes_at,
-          actions.created_at,
-          coalesce(
-            array_agg(eligible.player_id order by eligible.player_id)
-              filter (where eligible.player_id is not null),
-            '{}'::bigint[]
-          ) as eligible_target_player_ids
-        from public.current_actions as actions
-        left join public.current_action_eligible_players as eligible
-          on eligible.room_id = actions.room_id
-          and eligible.current_action_id = actions.id
-        where actions.room_id = v_room_id
-        group by actions.id
-      ) as actions
-    ),
-    'pendingActions', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'current_action_id', actions.current_action_id,
-            'submitted_at', actions.submitted_at,
-            'submitter_player_id', actions.submitter_player_id,
-            'target_player_id', actions.target_player_id
+        'currentActions', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'action_key', actions.action_key,
+                'action_kind', actions.action_kind,
+                'actor_player_id', actions.actor_player_id,
+                'actor_role_id', actions.actor_role_id,
+                'actor_state_requirement', actions.actor_state_requirement,
+                'closes_at', actions.closes_at,
+                'created_at', actions.created_at,
+                'eligible_target_player_ids', actions.eligible_target_player_ids,
+                'id', actions.id,
+                'phase_instance_id', actions.phase_instance_id,
+                'resolver_role_id', actions.resolver_role_id,
+                'target_kind', actions.target_kind,
+                'target_state_requirement', actions.target_state_requirement
+              )
+              order by actions.id
+            ),
+            '[]'::jsonb
           )
-          order by actions.current_action_id
+          from (
+            select
+              actions.id,
+              actions.phase_instance_id,
+              actions.action_key,
+              actions.action_kind,
+              actions.resolver_role_id,
+              actions.actor_player_id,
+              actions.actor_role_id,
+              actions.actor_state_requirement,
+              actions.target_state_requirement,
+              actions.target_kind,
+              actions.closes_at,
+              actions.created_at,
+              coalesce(
+                pg_catalog.array_agg(eligible.player_id order by eligible.player_id)
+                  filter (where eligible.player_id is not null),
+                '{}'::bigint[]
+              ) as eligible_target_player_ids
+            from public.current_actions as actions
+            left join public.current_action_eligible_players as eligible
+              on eligible.game_id = actions.game_id
+             and eligible.current_action_id = actions.id
+            where actions.game_id = v_current_game_id
+            group by actions.id
+          ) as actions
         ),
-        '[]'::jsonb
-      )
-      from public.pending_actions as actions
-      where actions.room_id = v_room_id
-    ),
-    'daySpeechSlots', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'slot_index', slots.slot_index,
-            'speaker_player_id', slots.speaker_player_id
+        'pendingActions', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'current_action_id', actions.current_action_id,
+                'submitted_at', actions.submitted_at,
+                'submitter_player_id', actions.submitter_player_id,
+                'target_player_id', actions.target_player_id
+              )
+              order by actions.current_action_id
+            ),
+            '[]'::jsonb
           )
-          order by slots.slot_index
+          from public.pending_actions as actions
+          where actions.game_id = v_current_game_id
         ),
-        '[]'::jsonb
-      )
-      from public.day_speech_slots as slots
-      join public.game_states as states
-        on states.room_id = slots.room_id
-        and states.phase_instance_id = slots.phase_instance_id
-      where slots.room_id = v_room_id
-    ),
-    'publicEvents', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'created_at', events.created_at,
-            'event_kind', events.event_kind,
-            'id', events.id,
-            'payload', events.payload,
-            'phase_instance_id', events.phase_instance_id,
-            'visibility', events.visibility
-          )
-          order by events.created_at, events.id
-        ),
-        '[]'::jsonb
-      )
-      from (
-        select
-          events.id,
-          events.event_kind,
-          events.visibility,
-          events.payload,
-          events.phase_instance_id,
-          events.created_at
-        from public.game_events as events
-        where events.room_id = v_room_id
-          and events.visibility = 'public'
-        order by events.created_at desc, events.id desc
-        limit 250
-      ) as events
-    ),
-    'privateEvents', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'created_at', events.created_at,
-            'event_kind', events.event_kind,
-            'id', events.id,
-            'payload', events.payload,
-            'phase_instance_id', events.phase_instance_id,
-            'visibility', events.visibility
-          )
-          order by events.created_at, events.id
-        ),
-        '[]'::jsonb
-      )
-      from (
-        select
-          events.id,
-          events.event_kind,
-          events.visibility,
-          events.payload,
-          events.phase_instance_id,
-          events.created_at
-        from public.game_events as events
-        where events.room_id = v_room_id
-          and events.visibility = 'private'
-          and v_viewer_player_id is not null
-          and (
-            exists (
-              select 1
-              from public.game_event_visible_players as visible_players
-              where visible_players.room_id = events.room_id
-                and visible_players.game_event_id = events.id
-                and visible_players.player_id = v_viewer_player_id
+        'resolvedActions', case
+          when p_include_engine_history then (
+            select coalesce(
+              pg_catalog.jsonb_agg(
+                pg_catalog.jsonb_build_object(
+                  'action_key', actions.action_key,
+                  'action_kind', actions.action_kind,
+                  'actor_player_id', actions.actor_player_id,
+                  'actor_role_id', actions.actor_role_id,
+                  'day_number', phase_instances.day_number,
+                  'id', actions.id,
+                  'night_number', phase_instances.night_number,
+                  'phase', actions.phase,
+                  'phase_instance_id', actions.phase_instance_id,
+                  'resolution_status', actions.resolution_status,
+                  'resolved_at', actions.resolved_at,
+                  'resolver_role_id', actions.resolver_role_id,
+                  'target_player_id', actions.target_player_id
+                )
+                order by actions.resolved_at, actions.id
+              ),
+              '[]'::jsonb
             )
-            or (
-              v_viewer_role_id is not null
+            from public.resolved_actions as actions
+            join public.game_phase_instances as phase_instances
+              on phase_instances.game_id = actions.game_id
+             and phase_instances.id = actions.phase_instance_id
+            where actions.game_id = v_current_game_id
+          )
+          else '[]'::jsonb
+        end,
+        'daySpeechSlots', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'slot_index', slots.slot_index,
+                'speaker_player_id', slots.speaker_player_id
+              )
+              order by slots.slot_index
+            ),
+            '[]'::jsonb
+          )
+          from public.day_speech_slots as slots
+          join public.games as games
+            on games.id = slots.game_id
+           and games.phase_instance_id = slots.phase_instance_id
+          where slots.game_id = v_current_game_id
+        ),
+        'publicEvents', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'created_at', events.created_at,
+                'event_kind', events.event_kind,
+                'id', events.id,
+                'payload', events.payload,
+                'phase_instance_id', events.phase_instance_id,
+                'visibility', events.visibility
+              )
+              order by events.created_at, events.id
+            ),
+            '[]'::jsonb
+          )
+          from (
+            select events.*
+            from public.game_events as events
+            where events.game_id = v_current_game_id
+              and events.visibility = 'public'
+            order by events.created_at desc, events.id desc
+            limit 250
+          ) as events
+        ),
+        'privateEvents', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'created_at', events.created_at,
+                'event_kind', events.event_kind,
+                'id', events.id,
+                'payload', events.payload,
+                'phase_instance_id', events.phase_instance_id,
+                'visibility', events.visibility
+              )
+              order by events.created_at, events.id
+            ),
+            '[]'::jsonb
+          )
+          from (
+            select events.*
+            from public.game_events as events
+            where events.game_id = v_current_game_id
+              and events.visibility = 'private'
+              and v_viewer_player_id is not null
+              and (
+                exists (
+                  select 1
+                  from public.game_event_visible_players as visible_players
+                  where visible_players.game_id = events.game_id
+                    and visible_players.game_event_id = events.id
+                    and visible_players.player_id = v_viewer_player_id
+                )
+                or (
+                  v_viewer_role_id is not null
+                  and exists (
+                    select 1
+                    from public.game_event_visible_roles as visible_roles
+                    where visible_roles.game_id = events.game_id
+                      and visible_roles.game_event_id = events.id
+                      and visible_roles.role_id = v_viewer_role_id
+                  )
+                )
+              )
+            order by events.created_at desc, events.id desc
+            limit 250
+          ) as events
+        ),
+        'nightConversationMessages', (
+          select coalesce(
+            pg_catalog.jsonb_agg(
+              pg_catalog.jsonb_build_object(
+                'body', messages.body,
+                'conversation_group_id', messages.conversation_group_id,
+                'created_at', messages.created_at,
+                'id', messages.id,
+                'night_number', messages.night_number,
+                'sender_player_id', messages.sender_player_id
+              )
+              order by messages.created_at, messages.id
+            ),
+            '[]'::jsonb
+          )
+          from (
+            select messages.*
+            from public.night_conversation_messages as messages
+            join public.games as games
+              on games.id = messages.game_id
+            where messages.game_id = v_current_game_id
+              and messages.night_number = games.night_number
+              and v_viewer_role_id is not null
               and exists (
                 select 1
-                from public.game_event_visible_roles as visible_roles
-                where visible_roles.room_id = events.room_id
-                  and visible_roles.game_event_id = events.id
-                  and visible_roles.role_id = v_viewer_role_id
+                from public.game_rule_sets as rule_sets
+                cross join lateral pg_catalog.jsonb_array_elements(
+                  rule_sets.resolved_role_setup -> 'nightConversationGroups'
+                ) as conversation_groups
+                where rule_sets.game_id = messages.game_id
+                  and conversation_groups ->> 'groupId' = messages.conversation_group_id
+                  and conversation_groups -> 'roleIds' ? v_viewer_role_id
               )
-            )
-          )
-        order by events.created_at desc, events.id desc
-        limit 250
-      ) as events
-    ),
-    'nightConversationMessages', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'body', messages.body,
-            'conversation_group_id', messages.conversation_group_id,
-            'created_at', messages.created_at,
-            'id', messages.id,
-            'night_number', messages.night_number,
-            'sender_player_id', messages.sender_player_id
-          )
-          order by messages.created_at, messages.id
-        ),
-        '[]'::jsonb
+            order by messages.created_at desc, messages.id desc
+            limit 100
+          ) as messages
+        )
       )
-      from (
-        select
-          messages.id,
-          messages.night_number,
-          messages.conversation_group_id,
-          messages.sender_player_id,
-          messages.body,
-          messages.created_at
-        from public.night_conversation_messages as messages
-        join public.game_states as states on states.room_id = messages.room_id
-        where messages.room_id = v_room_id
-          and messages.night_number = states.night_number
-          and v_viewer_role_id is not null
-          and exists (
-            select 1
-            from public.game_rule_sets as rule_sets
-            cross join lateral jsonb_array_elements(
-              rule_sets.resolved_role_setup -> 'nightConversationGroups'
-            ) as conversation_groups
-            where rule_sets.room_id = messages.room_id
-              and conversation_groups ->> 'groupId' = messages.conversation_group_id
-              and conversation_groups -> 'roleIds' ? v_viewer_role_id
-          )
-        order by messages.created_at desc, messages.id desc
-        limit 100
-      ) as messages
-    ),
-    'finalOutcome', (
-      select jsonb_build_object(
-        'winner_team', outcomes.winner_team
-      )
-      from public.final_outcomes as outcomes
-      where outcomes.room_id = v_room_id
-    ),
-    'playerResults', (
-      select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'player_id', results.player_id,
-            'result', results.result
-          )
-          order by results.player_id
-        ),
-        '[]'::jsonb
-      )
-      from public.player_results as results
-      where results.room_id = v_room_id
-    ),
+    end,
     'realtimeTopics', (
       select coalesce(
-        jsonb_agg(
-          jsonb_build_object(
-            'topic', topics.topic,
-            'scope', topics.scope,
+        pg_catalog.jsonb_agg(
+          pg_catalog.jsonb_build_object(
+            'game_id', topics.game_id,
+            'player_id', topics.player_id,
             'role_id', topics.role_id,
-            'player_id', topics.player_id
+            'scope', topics.scope,
+            'topic', topics.topic
           )
           order by topics.scope, topics.topic
         ),
         '[]'::jsonb
       )
       from public.realtime_topics as topics
-      where topics.room_id = v_room_id
+      where topics.room_id = v_room.id
         and (
-          topics.scope <> 'player_private'
-          or not exists (
-            select 1
-            from public.game_states as states
-            where states.room_id = v_room_id
-          )
-          or exists (
-            select 1
-            from public.game_player_states as player_states
-            where player_states.room_id = topics.room_id
-              and player_states.player_id = topics.player_id
+          topics.scope <> 'role_private'
+          or (
+            v_project_current_game
+            and topics.game_id = v_current_game_id
           )
         )
-    ),
-    'resolvedActions', case
-      when p_include_engine_history then (
-        select coalesce(
-          jsonb_agg(
-            jsonb_build_object(
-              'action_key', actions.action_key,
-              'action_kind', actions.action_kind,
-              'actor_player_id', actions.actor_player_id,
-              'actor_role_id', actions.actor_role_id,
-              'day_number', phase_instances.day_number,
-              'id', actions.id,
-              'night_number', phase_instances.night_number,
-              'phase', actions.phase,
-              'phase_instance_id', actions.phase_instance_id,
-              'resolution_status', actions.resolution_status,
-              'resolved_at', actions.resolved_at,
-              'resolver_role_id', actions.resolver_role_id,
-              'target_player_id', actions.target_player_id
-            )
-            order by actions.resolved_at, actions.id
-          ),
-          '[]'::jsonb
-        )
-        from public.resolved_actions as actions
-        join public.game_phase_instances as phase_instances
-          on phase_instances.room_id = actions.room_id
-         and phase_instances.id = actions.phase_instance_id
-        where actions.room_id = v_room_id
-      )
-      else '[]'::jsonb
-    end
+    )
   );
 end;
 $$;
@@ -2042,9 +1877,9 @@ revoke all on function public.app_leave_room(bigint, text)
   from public, anon, authenticated;
 revoke all on function public.app_get_current_room(bigint)
   from public, anon, authenticated;
-revoke all on function public.app_expire_waiting_room_if_needed(bigint)
+revoke all on function public.app_expire_room_if_needed(bigint)
   from public, anon, authenticated;
-revoke all on function public.app_cleanup_expired_waiting_rooms(integer)
+revoke all on function public.app_cleanup_expired_rooms(integer)
   from public, anon, authenticated;
 revoke all on function public.app_switch_room(
   bigint,
@@ -2056,6 +1891,8 @@ revoke all on function public.app_switch_room(
   timestamptz
 ) from public, anon, authenticated;
 revoke all on function public.app_heartbeat_room_player(bigint, text, integer)
+  from public, anon, authenticated;
+revoke all on function public.app_set_room_player_ready(bigint, text, boolean, bigint)
   from public, anon, authenticated;
 revoke all on function public.app_read_room_runtime_snapshot(bigint, bigint, text, boolean)
   from public, anon, authenticated;
@@ -2069,9 +1906,9 @@ grant execute on function public.app_create_room(bigint, text, integer, timestam
 grant execute on function public.app_join_room(bigint, text, text) to service_role;
 grant execute on function public.app_leave_room(bigint, text) to service_role;
 grant execute on function public.app_get_current_room(bigint) to service_role;
-grant execute on function public.app_expire_waiting_room_if_needed(bigint)
+grant execute on function public.app_expire_room_if_needed(bigint)
   to service_role;
-grant execute on function public.app_cleanup_expired_waiting_rooms(integer)
+grant execute on function public.app_cleanup_expired_rooms(integer)
   to service_role;
 grant execute on function public.app_switch_room(
   bigint,
@@ -2084,7 +1921,7 @@ grant execute on function public.app_switch_room(
 ) to service_role;
 grant execute on function public.app_heartbeat_room_player(bigint, text, integer)
   to service_role;
+grant execute on function public.app_set_room_player_ready(bigint, text, boolean, bigint)
+  to service_role;
 grant execute on function public.app_read_room_runtime_snapshot(bigint, bigint, text, boolean)
   to service_role;
-
-revoke all on all functions in schema private from public, anon, authenticated, service_role;

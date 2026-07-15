@@ -18,6 +18,7 @@ const HOST: PublicPlayer = {
   id: "aster",
   isCurrent: true,
   isHost: true,
+  isLobbyReady: false,
   revealedRoleId: null,
   status: "joined",
 };
@@ -82,7 +83,7 @@ describe("live lobby progress model", () => {
     });
   });
 
-  it("promotes exact target arrival to a ready change", () => {
+  it("promotes exact target arrival to a full change", () => {
     expect(
       getLiveLobbyProgressChange(
         makeSnapshot({ joinedPlayerCount: 2 }),
@@ -90,7 +91,7 @@ describe("live lobby progress model", () => {
       ),
     ).toEqual({
       direction: "increase",
-      kind: "ready",
+      kind: "full",
       previousJoinedPlayerCount: 2,
     });
     expect(
@@ -100,7 +101,7 @@ describe("live lobby progress model", () => {
       ),
     ).toEqual({
       direction: "decrease",
-      kind: "ready",
+      kind: "full",
       previousJoinedPlayerCount: 4,
     });
   });
@@ -139,16 +140,16 @@ describe("live lobby progress model", () => {
     expect(reconcileLiveLobbyProgress(settled.snapshot, second, true).change).toBeNull();
   });
 
-  it("keeps waiting, ready, and overfilled static states truthful", () => {
+  it("keeps waiting, full, and overfilled static states truthful", () => {
     const waiting = makeSnapshot({ joinedPlayerCount: 2 });
-    const ready = makeSnapshot({ joinedPlayerCount: 3 });
+    const full = makeSnapshot({ joinedPlayerCount: 3 });
     const overfilled = makeSnapshot({ joinedPlayerCount: 4 });
 
     expect(getLiveLobbyProgressState(waiting)).toBe("waiting");
-    expect(getLiveLobbyProgressState(ready)).toBe("ready");
+    expect(getLiveLobbyProgressState(full)).toBe("full");
     expect(getLiveLobbyProgressState(overfilled)).toBe("overfilled");
     expect(getLiveLobbyProgressRatio(waiting)).toBeCloseTo(2 / 3);
-    expect(getLiveLobbyProgressRatio(ready)).toBe(1);
+    expect(getLiveLobbyProgressRatio(full)).toBe(1);
     expect(getLiveLobbyProgressRatio(overfilled)).toBe(1);
   });
 });
@@ -182,6 +183,7 @@ function makePlayer(id: string, status: PublicPlayer["status"]): PublicPlayer {
     id,
     isCurrent: false,
     isHost: false,
+    isLobbyReady: false,
     revealedRoleId: null,
     status,
   };

@@ -91,6 +91,34 @@ describe("live list addition motion model", () => {
     ).toEqual([]);
   });
 
+  it("discards held Game additions when the completed Game detaches to a clean lobby", () => {
+    const gameSessionKey = JSON.stringify(["123456", "alice", "game-a", "public-events"]);
+    const cleanLobbySessionKey = JSON.stringify(["123456", "alice", null, "public-events"]);
+    const initial = baseline(["event-a"], { sessionKey: gameSessionKey });
+    const obscured = reconcileLiveListAdditionMotion(
+      initial.state,
+      snapshot(["event-a", "event-b"], {
+        isObscured: true,
+        sessionKey: gameSessionKey,
+      }),
+      true,
+    );
+    const cleanLobby = reconcileLiveListAdditionMotion(
+      obscured.state,
+      snapshot([], { isOpen: false, sessionKey: cleanLobbySessionKey }),
+      true,
+    );
+
+    expect(obscured.state.pendingItemIds).toEqual(["event-b"]);
+    expect(cleanLobby).toEqual({
+      animatedItemIds: [],
+      state: {
+        pendingItemIds: [],
+        snapshot: snapshot([], { isOpen: false, sessionKey: cleanLobbySessionKey }),
+      },
+    });
+  });
+
   it("caps rapid obscured batches at the newest six items", () => {
     const initial = baseline([]);
     const itemIds = Array.from({ length: 9 }, (unusedValue, index) => {

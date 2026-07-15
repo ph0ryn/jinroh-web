@@ -25,6 +25,15 @@ describe("live round table motion model", () => {
     expect(getLiveRoundTableMotionChanges(initial, otherViewer)).toEqual(emptyChanges());
   });
 
+  it("treats Game replacement and result detachment as settled baselines", () => {
+    const ended = makeSnapshot({ gameId: "game-a", seats: [makeSeat("alice", 1, "eliminated")] });
+    const cleanLobby = makeSnapshot({ gameId: null, seats: [makeSeat("alice", 1)] });
+    const replay = makeSnapshot({ gameId: "game-b", seats: [makeSeat("alice", 1)] });
+
+    expect(getLiveRoundTableMotionChanges(ended, cleanLobby)).toEqual(emptyChanges());
+    expect(getLiveRoundTableMotionChanges(ended, replay)).toEqual(emptyChanges());
+  });
+
   it("does not react to revisions or data outside the public seat presentation", () => {
     const firstSummary = makeSummary();
     const secondSummary: RoomSummary = {
@@ -166,16 +175,18 @@ function emptyChanges(): LiveRoundTableMotionChanges {
 
 function makeSnapshot({
   emptySeatNumbers = [],
+  gameId = "game-a",
   roomCode = "123456",
   seats,
   viewerPlayerId = "alice",
 }: {
   readonly emptySeatNumbers?: readonly number[];
+  readonly gameId?: string | null;
   readonly roomCode?: string;
   readonly seats: readonly LiveRoundTableMotionSeat[];
   readonly viewerPlayerId?: string | null;
 }): LiveRoundTableMotionSnapshot {
-  return { emptySeatNumbers, roomCode, seats, viewerPlayerId };
+  return { emptySeatNumbers, gameId, roomCode, seats, viewerPlayerId };
 }
 
 function makeSeat(
@@ -200,6 +211,7 @@ function makeSummary(): RoomSummary {
       id: "alice",
       isCurrent: true,
       isHost: true,
+      isLobbyReady: false,
       revealedRoleId: null,
       status: "joined",
     },
@@ -209,6 +221,7 @@ function makeSummary(): RoomSummary {
       id: "blair",
       isCurrent: false,
       isHost: false,
+      isLobbyReady: false,
       revealedRoleId: null,
       status: "joined",
     },
@@ -222,6 +235,7 @@ function makeSummary(): RoomSummary {
       actionProgress: null,
       dayNumber: 1,
       events: [],
+      gameId: "game-a",
       nightNumber: 1,
       phase: "day",
       phaseEndsAt: null,
@@ -235,12 +249,13 @@ function makeSummary(): RoomSummary {
     isHost: true,
     players,
     roleCatalog: [],
+    rosterRevision: 1,
     teamCatalog: [],
     rolePrivate: null,
     self: null,
     snapshotRevision: 1,
     status: "playing",
     targetPlayerCount: 2,
-    waitingExpiresAt: "2099-01-01T00:00:00.000Z",
+    lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
   };
 }

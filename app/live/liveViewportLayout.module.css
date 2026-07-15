@@ -273,7 +273,8 @@
     padding: 6px;
   }
 
-  .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    :global(.liveWaitingPanel) {
     display: none;
   }
 
@@ -281,7 +282,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .controls[data-live-controls-surface="waiting"] {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"]) {
     align-content: start;
     grid-template-areas:
       "status utilities"
@@ -294,7 +295,8 @@
     display: none;
   }
 
-  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    .controlsScroll {
     display: none;
   }
 
@@ -418,18 +420,21 @@
 }
 
 @media (orientation: landscape) and (min-height: 600px) {
-  .controls[data-live-controls-surface="waiting"] {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"]) {
     align-items: stretch;
     display: flex;
     flex-direction: column;
   }
 
-  .controls[data-live-controls-surface="waiting"] .controlsStatus,
-  .controls[data-live-controls-surface="waiting"] .controlsPrimary {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    .controlsStatus,
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    .controlsPrimary {
     flex: 0 0 auto;
   }
 
-  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    .controlsScroll {
     flex: 0 1 auto;
   }
 
@@ -471,11 +476,12 @@
     display: none;
   }
 
-  .controls[data-live-controls-surface="waiting"] .controlsScroll {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    .controlsScroll {
     display: none;
   }
 
-  .controls[data-live-controls-surface="waiting"] {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"]) {
     align-content: start;
     grid-template-areas:
       "status"
@@ -490,7 +496,8 @@
     padding: 6px;
   }
 
-  .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    :global(.liveWaitingPanel) {
     display: none;
   }
 
@@ -549,7 +556,9 @@
     --live-controls-min-block: 250px;
   }
 
-  .roomLayout:has(.controls[data-live-controls-surface="waiting"]) {
+  .roomLayout:has(
+    .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+  ) {
     --live-controls-min-block: 270px;
   }
 
@@ -595,7 +604,8 @@
     padding: 6px;
   }
 
-  .controls[data-live-controls-surface="waiting"] :global(.liveWaitingPanel) {
+  .controls:is([data-live-controls-surface="waiting"], [data-live-controls-surface="ended"])
+    :global(.liveWaitingPanel) {
     display: none;
   }
 

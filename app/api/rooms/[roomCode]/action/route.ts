@@ -1,11 +1,14 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { submitAction } from "@/lib/server/gameRepository";
-import { jsonError, jsonOk, readJson } from "@/lib/server/http";
+import { isNonNegativeSafeInteger, jsonError, jsonOk, readJson } from "@/lib/server/http";
+import { roomApiErrorResponse } from "@/lib/server/roomApiError";
+import { isGameId } from "@/lib/shared/game";
 
 import type { RoomRouteContext } from "@/lib/server/roomRoute";
 
 type SubmitActionBody = {
   actionKey?: unknown;
+  gameId?: unknown;
   phaseInstanceId?: unknown;
   revision?: unknown;
   targetPlayerId?: unknown;
@@ -22,6 +25,10 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
 
   if (body === null || typeof body.actionKey !== "string") {
     return jsonError("bad_request", "actionKey is required.", 400);
+  }
+
+  if (!isGameId(body.gameId)) {
+    return jsonError("bad_request", "gameId must be a UUID.", 400);
   }
 
   if (typeof body.phaseInstanceId !== "string") {
@@ -43,17 +50,14 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
       await submitAction(
         auth.account,
         roomCode,
+        body.gameId,
         body.actionKey,
         body.phaseInstanceId,
         body.revision,
         targetPlayerId,
       ),
     );
-  } catch {
-    return jsonError("conflict", "Submit failed.", 409);
+  } catch (error) {
+    return roomApiErrorResponse(error) ?? jsonError("conflict", "Submit failed.", 409);
   }
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }

@@ -15,6 +15,12 @@ Game Engine が受け取る Player 一覧は、ゲーム開始時に Role assign
 state を固定した game roster。Room membership history とは別物であり、開始後に
 membership row から game player を追加、補完しない。
 
+Room は複数 Game を開催できる長寿命の membership / invitation 境界とする。
+各 Game は独立した Game ID、Room 内 sequence、RuleSet、固定 roster、phase history、
+action history、event history、final outcome を持つ。Engine input、persistence mutation、
+browser view は `Room.currentGameId` が指す1つの Game だけを扱い、過去 Game を
+Room ID だけで検索して混ぜない。
+
 ## Team の所有関係
 
 Team は closed enum ではなく、Role が提供して `RoleRegistry` に登録する opaque

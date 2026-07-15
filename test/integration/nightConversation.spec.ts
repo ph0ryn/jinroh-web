@@ -5,7 +5,7 @@ import { expect, test } from "playwright/test";
 import { apiFetch, readJsonResponse, readRoomSummary } from "../fixtures/apiClient";
 import { requireOpenAction, sendNightConversationMessage } from "../fixtures/roomScenario";
 import {
-  createContractStartedRoom,
+  createRoomWithStartedGame,
   readRoomEntries,
   submitPhaseActions,
   type ApiErrorResponse,
@@ -15,7 +15,7 @@ import {
 test("night conversation accepts one and one hundred characters only within its private scope", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Mallow",
     "Nettle",
     "Olive",
@@ -46,7 +46,7 @@ test("night conversation accepts one and one hundred characters only within its 
 test("night conversation rejects blank and over-limit bodies without changing stored messages", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Quartz",
     "Reed",
     "Sorrel",
@@ -89,7 +89,7 @@ test("night conversation rejects blank and over-limit bodies without changing st
 test("night conversation rejects outsiders and stale state, then remains readable during day", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Umber",
     "Violet",
     "Willow",
@@ -168,7 +168,7 @@ test("night conversation rejects outsiders and stale state, then remains readabl
 });
 
 test("a dead conversation member keeps a read-only view and cannot send", async ({ request }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Ash",
     "Beech",
     "Clover",
@@ -208,6 +208,7 @@ test("a dead conversation member keeps a read-only view and cannot send", async 
   await apiFetch(request, `/api/rooms/${roomCode}/action`, {
     body: {
       actionKey: executionAction.key,
+      gameId: executionSummary.game.gameId,
       phaseInstanceId: executionAction.phaseInstanceId,
       revision: executionSummary.game.revision,
       targetPlayerId: null,
@@ -278,10 +279,17 @@ function sendNightConversationRequest(
   phaseInstanceId: string,
   nightNumber: number,
 ) {
+  const gameId = entry.summary.game?.gameId;
+
+  if (gameId === undefined) {
+    throw new Error("Night conversation Game ID is unavailable.");
+  }
+
   return readJsonResponse<ApiErrorResponse>(request, `/api/rooms/${roomCode}/night-conversation`, {
     body: {
       body,
       conversationGroupId: groupId,
+      gameId,
       nightNumber,
       phaseInstanceId,
     },

@@ -16,6 +16,7 @@ type LiveToastController = {
   readonly completeEntry: (toastId: number) => void;
   readonly completeExit: (toastId: number) => void;
   readonly dismiss: (toastId: number) => void;
+  readonly discardScope: (scope: LiveToastScope) => void;
   readonly request: (request: LiveToastRequest) => void;
 };
 
@@ -34,9 +35,12 @@ export function useLiveToastController(): LiveToastController {
   const dismiss = useCallback((toastId: number) => {
     dispatch({ toastId, type: "dismiss" });
   }, []);
+  const discardScope = useCallback((scope: LiveToastScope) => {
+    dispatch({ scope, type: "discardScope" });
+  }, []);
   const request = useCallback((request: LiveToastRequest) => {
     dispatch({ request, type: "request" });
   }, []);
 
-  return { clearScope, completeEntry, completeExit, dismiss, request, state };
+  return { clearScope, completeEntry, completeExit, dismiss, discardScope, request, state };
 }

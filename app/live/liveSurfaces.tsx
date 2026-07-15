@@ -57,6 +57,7 @@ type LiveWaitingSurfaceProps = {
   readonly onCopyRoomCode: (roomCode: string) => void;
   readonly onOpenSettings: () => void;
   readonly onRequestLeaveRoom: () => void;
+  readonly onSetLobbyReady: (isReady: boolean) => void;
   readonly onShareRoom: (roomCode: string) => void;
   readonly onStartGame: () => void;
 };
@@ -85,15 +86,23 @@ type LivePlayingSurfaceProps = {
 };
 
 type LiveEndedSurfaceProps = {
+  readonly copiedRoomCode: string | null;
   readonly isBusy: boolean;
+  readonly isSettingsOpen: boolean;
   readonly isPublicLogOpen: boolean;
   readonly isCinematicObscured: boolean;
   readonly locale: Locale;
+  readonly roomUrl: string | null;
   readonly summary: RoomSummary;
   readonly t: Localization;
   readonly onClosePublicLog: () => void;
+  readonly onCopyRoomCode: (roomCode: string) => void;
+  readonly onOpenSettings: () => void;
   readonly onOpenPublicLog: () => void;
   readonly onRequestLeaveRoom: () => void;
+  readonly onSetLobbyReady: (isReady: boolean) => void;
+  readonly onShareRoom: (roomCode: string) => void;
+  readonly onStartGame: () => void;
 };
 
 type LiveEntrySurfaceProps = {
@@ -757,6 +766,7 @@ export function LiveWaitingSurface({
   onCopyRoomCode,
   onOpenSettings,
   onRequestLeaveRoom,
+  onSetLobbyReady,
   onShareRoom,
   onStartGame,
 }: LiveWaitingSurfaceProps) {
@@ -768,63 +778,19 @@ export function LiveWaitingSurface({
     <>
       <LiveRoomControls
         primary={
-          <section className="livePanel liveControlPanel" aria-label={t.live.aria.waitingControls}>
-            <div className="livePanelHeading">
-              <span>
-                {summary.isHost ? t.live.waiting.hostControls : t.live.waiting.playerControls}
-              </span>
-              <div className="liveWaitingHeadingActions">
-                <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
-                {summary.isHost ? (
-                  <button
-                    aria-controls="start-settings-dialog"
-                    aria-label={t.live.buttons.settings}
-                    aria-expanded={isSettingsOpen}
-                    aria-haspopup="dialog"
-                    className="secondaryButton liveSettingsUtilityButton"
-                    type="button"
-                    onClick={onOpenSettings}
-                  >
-                    <span aria-hidden="true">⚙</span>
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            <div className="liveWaitingPanel">
-              <strong>
-                {summary.isHost
-                  ? t.live.waiting.startWhenEveryoneSeated
-                  : t.live.waiting.waitingForHost}
-              </strong>
-              {canStartGame ? null : <p>{controlHint}</p>}
-            </div>
-            <div className="liveWaitingActions">
-              {summary.isHost ? (
-                <button
-                  className="primaryLiveButton"
-                  aria-describedby={canStartGame ? undefined : "control-hint"}
-                  type="button"
-                  onClick={onStartGame}
-                  disabled={!canStartGame}
-                >
-                  {t.live.buttons.startGame}
-                </button>
-              ) : null}
-              <button
-                className="dangerButton"
-                type="button"
-                onClick={onRequestLeaveRoom}
-                disabled={isBusy}
-              >
-                {t.live.buttons.leaveRoom}
-              </button>
-            </div>
-            {canStartGame ? null : (
-              <p className="srOnly" id="control-hint">
-                {controlHint}
-              </p>
-            )}
-          </section>
+          <LiveLobbyControlPanel
+            canStartGame={canStartGame}
+            controlHint={controlHint}
+            isBusy={isBusy}
+            isSettingsOpen={isSettingsOpen}
+            summary={summary}
+            t={t}
+            variant="waiting"
+            onOpenSettings={onOpenSettings}
+            onRequestLeaveRoom={onRequestLeaveRoom}
+            onSetLobbyReady={onSetLobbyReady}
+            onStartGame={onStartGame}
+          />
         }
         scroll={
           <section className="livePanel liveInviteDetailsPanel" aria-label={t.live.aria.invite}>
@@ -1033,6 +999,7 @@ export function LivePlayingSurface({
           <NightConversationPanel
             conversation={nightConversation}
             draft={nightConversationDraft}
+            gameId={summary.game?.gameId ?? null}
             isBusy={isBusy}
             isObscured={isCinematicObscured}
             isOpen={isNightConversationOpen}
@@ -1059,33 +1026,59 @@ export function LivePlayingSurface({
 }
 
 export function LiveEndedSurface({
+  copiedRoomCode,
   isBusy,
+  isSettingsOpen,
   isPublicLogOpen,
   isCinematicObscured,
   locale,
+  roomUrl,
   summary,
   t,
   onClosePublicLog,
+  onCopyRoomCode,
+  onOpenSettings,
   onOpenPublicLog,
   onRequestLeaveRoom,
+  onSetLobbyReady,
+  onShareRoom,
+  onStartGame,
 }: LiveEndedSurfaceProps) {
   const publicEventCount = summary.game?.events.length ?? 0;
   const selfResult = summary.self?.result ?? null;
   const winner = formatWinner(summary.game?.winnerTeam ?? null, summary.teamCatalog, locale, t);
+  const canStartGame = !isBusy && canStartRoom(summary);
+  const controlHint = getControlHint(summary, isBusy, t);
+  const [isInviteQrOpen, setIsInviteQrOpen] = useState(false);
 
   return (
     <>
       <LiveRoomControls
         primary={
-          <section className="livePanel liveEndedActions" aria-label={t.live.buttons.leaveRoom}>
-            <button
-              className="dangerButton"
-              type="button"
-              onClick={onRequestLeaveRoom}
-              disabled={isBusy}
-            >
-              {t.live.buttons.leaveRoom}
-            </button>
+          <LiveLobbyControlPanel
+            canStartGame={canStartGame}
+            controlHint={controlHint}
+            isBusy={isBusy}
+            isSettingsOpen={isSettingsOpen}
+            summary={summary}
+            t={t}
+            variant="result"
+            onOpenSettings={onOpenSettings}
+            onRequestLeaveRoom={onRequestLeaveRoom}
+            onSetLobbyReady={onSetLobbyReady}
+            onStartGame={onStartGame}
+          />
+        }
+        scroll={
+          <section className="livePanel liveInviteDetailsPanel" aria-label={t.live.aria.invite}>
+            <RoomInviteTools
+              copiedRoomCode={copiedRoomCode}
+              roomUrl={roomUrl}
+              summary={summary}
+              t={t}
+              onCopyRoomCode={onCopyRoomCode}
+              onShareRoom={onShareRoom}
+            />
           </section>
         }
         status={
@@ -1110,14 +1103,39 @@ export function LiveEndedSurface({
         }
         surface="ended"
         utilities={
-          <div className="livePopupActions" aria-label={t.live.aria.popupPanels} role="group">
-            <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
-              {t.live.buttons.publicLog}
-              <em>{publicEventCount}</em>
-            </button>
+          <div className="liveEndedUtilities">
+            <CompactRoomInviteSummary
+              copiedRoomCode={copiedRoomCode}
+              isQrOpen={isInviteQrOpen}
+              summary={summary}
+              t={t}
+              onCopyRoomCode={onCopyRoomCode}
+              onOpenQr={() => setIsInviteQrOpen(true)}
+              onShareRoom={onShareRoom}
+            />
+            <div className="livePopupActions" aria-label={t.live.aria.popupPanels} role="group">
+              <button className="secondaryButton" type="button" onClick={onOpenPublicLog}>
+                {t.live.buttons.publicLog}
+                <em>{publicEventCount}</em>
+              </button>
+            </div>
           </div>
         }
       />
+
+      <LivePopupDialog
+        dialogClassName="liveInviteModal"
+        id="room-invite-dialog"
+        isOpen={isInviteQrOpen}
+        meta={t.live.invite.codeLabel}
+        t={t}
+        title={t.live.aria.roomInviteTools}
+        onClose={() => setIsInviteQrOpen(false)}
+      >
+        <div className="liveInviteQrModalContent">
+          <RoomInviteQr roomUrl={roomUrl} />
+        </div>
+      </LivePopupDialog>
 
       <PublicLogDialog
         isOpen={isPublicLogOpen}
@@ -1128,6 +1146,103 @@ export function LiveEndedSurface({
         onClose={onClosePublicLog}
       />
     </>
+  );
+}
+
+function LiveLobbyControlPanel({
+  canStartGame,
+  controlHint,
+  isBusy,
+  isSettingsOpen,
+  summary,
+  t,
+  variant,
+  onOpenSettings,
+  onRequestLeaveRoom,
+  onSetLobbyReady,
+  onStartGame,
+}: {
+  readonly canStartGame: boolean;
+  readonly controlHint: string;
+  readonly isBusy: boolean;
+  readonly isSettingsOpen: boolean;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+  readonly variant: "result" | "waiting";
+  readonly onOpenSettings: () => void;
+  readonly onRequestLeaveRoom: () => void;
+  readonly onSetLobbyReady: (isReady: boolean) => void;
+  readonly onStartGame: () => void;
+}) {
+  const currentPlayer = summary.players.find((player) => player.id === summary.currentPlayerId);
+  const isLobbyReady = currentPlayer?.isLobbyReady ?? false;
+  const canChangeReadiness = !isBusy && currentPlayer?.status === "joined";
+  const controlHintId = `live-${variant}-control-hint`;
+
+  return (
+    <section className="livePanel liveControlPanel" aria-label={t.live.aria.lobbyControls}>
+      <div className="livePanelHeading">
+        <span>{summary.isHost ? t.live.waiting.hostControls : t.live.waiting.playerControls}</span>
+        <div className="liveWaitingHeadingActions">
+          <strong>{summary.isHost ? t.live.waiting.host : t.live.waiting.player}</strong>
+          {summary.isHost ? (
+            <button
+              aria-controls="start-settings-dialog"
+              aria-label={t.live.buttons.settings}
+              aria-expanded={isSettingsOpen}
+              aria-haspopup="dialog"
+              className="secondaryButton liveSettingsUtilityButton"
+              type="button"
+              onClick={onOpenSettings}
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="liveWaitingPanel" role="status">
+        <strong>
+          {variant === "result" ? t.live.waiting.prepareNextGame : t.live.waiting.prepareToPlay}
+        </strong>
+        <p>{controlHint}</p>
+      </div>
+      <div className="liveWaitingActions">
+        <button
+          aria-pressed={isLobbyReady}
+          className="secondaryButton liveReadinessButton"
+          data-live-lobby-ready={isLobbyReady}
+          data-live-readiness-toggle
+          disabled={!canChangeReadiness}
+          type="button"
+          onClick={() => onSetLobbyReady(!isLobbyReady)}
+        >
+          {isLobbyReady ? t.live.buttons.cancelReadiness : t.live.buttons.markReady}
+        </button>
+        {summary.isHost ? (
+          <button
+            aria-describedby={controlHintId}
+            className="primaryLiveButton"
+            data-live-start-game
+            type="button"
+            onClick={onStartGame}
+            disabled={!canStartGame}
+          >
+            {t.live.buttons.startGame}
+          </button>
+        ) : null}
+        <button
+          className="dangerButton"
+          type="button"
+          onClick={onRequestLeaveRoom}
+          disabled={isBusy}
+        >
+          {t.live.buttons.leaveRoom}
+        </button>
+      </div>
+      <p className="srOnly" id={controlHintId}>
+        {controlHint}
+      </p>
+    </section>
   );
 }
 
@@ -1185,6 +1300,7 @@ function PhaseCountdown({
 function NightConversationPanel({
   conversation,
   draft,
+  gameId,
   isBusy,
   isObscured,
   isOpen,
@@ -1197,6 +1313,7 @@ function NightConversationPanel({
 }: {
   readonly conversation: NightConversationView;
   readonly draft: string;
+  readonly gameId: string | null;
   readonly isBusy: boolean;
   readonly isObscured: boolean;
   readonly isOpen: boolean;
@@ -1218,6 +1335,7 @@ function NightConversationPanel({
     sessionKey: JSON.stringify([
       roomCode,
       viewerPlayerId,
+      gameId,
       conversation.groupId,
       conversation.nightNumber,
     ]),
@@ -1308,7 +1426,12 @@ function EventLog({
     isOpen,
     itemIds: events.map((event) => event.id),
     motionKind: "event",
-    sessionKey: JSON.stringify([summary.code, summary.currentPlayerId, "public-events"]),
+    sessionKey: JSON.stringify([
+      summary.code,
+      summary.currentPlayerId,
+      summary.game?.gameId ?? null,
+      "public-events",
+    ]),
   });
 
   if (events.length === 0) {

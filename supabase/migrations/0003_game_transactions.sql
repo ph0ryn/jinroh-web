@@ -18,7 +18,7 @@ as $$
 $$;
 
 create function private.insert_current_actions(
-  p_room_id bigint,
+  p_game_id uuid,
   p_phase_instance_id uuid,
   p_closes_at timestamptz,
   p_actions jsonb
@@ -34,7 +34,6 @@ declare
   v_action_key text;
   v_action_keys text[] := array[]::text[];
   v_action_kind text;
-  v_resolver_role_id text;
   v_actor_player_id bigint;
   v_actor_role_id text;
   v_actor_state_requirement text;
@@ -42,29 +41,28 @@ declare
   v_eligible_player_ids bigint[];
   v_expected_created_at timestamptz;
   v_expected_closes_at timestamptz;
-  v_key_count integer;
+  v_resolver_role_id text;
   v_target_count integer;
   v_target_kind text;
   v_target_state_requirement text;
   v_valid_target_count integer;
 begin
-  if p_phase_instance_id is null
+  if p_game_id is null
+    or p_phase_instance_id is null
     or p_actions is null
     or pg_catalog.jsonb_typeof(p_actions) <> 'array'
   then
     raise exception using errcode = 'P0001', message = 'invalid_actions';
   end if;
 
-  select states.phase_started_at, states.phase_ends_at
+  select games.phase_started_at, games.phase_ends_at
   into v_expected_created_at, v_expected_closes_at
-  from public.game_states as states
-  where states.room_id = p_room_id
-    and states.phase_instance_id = p_phase_instance_id
-    and states.status = 'playing';
+  from public.games as games
+  where games.id = p_game_id
+    and games.phase_instance_id = p_phase_instance_id
+    and games.ended_at is null;
 
-  if not found
-    or p_closes_at is distinct from v_expected_closes_at
-  then
+  if not found or p_closes_at is distinct from v_expected_closes_at then
     raise exception using errcode = 'P0001', message = 'invalid_actions';
   end if;
 
@@ -72,15 +70,11 @@ begin
     select items.value
     from pg_catalog.jsonb_array_elements(p_actions) as items(value)
   loop
-    if pg_catalog.jsonb_typeof(v_action) <> 'object' then
-      raise exception using errcode = 'P0001', message = 'invalid_actions';
-    end if;
-
-    select count(*)
-    into v_key_count
-    from pg_catalog.jsonb_object_keys(v_action);
-
-    if v_key_count <> 9
+    if pg_catalog.jsonb_typeof(v_action) <> 'object'
+      or (
+        select pg_catalog.count(*)
+        from pg_catalog.jsonb_object_keys(v_action)
+      ) <> 9
       or not (
         v_action ? 'action_key'
         and v_action ? 'action_kind'
@@ -105,27 +99,29 @@ begin
     v_target_state_requirement := v_action ->> 'target_state_requirement';
 
     if pg_catalog.jsonb_typeof(v_action -> 'action_key') <> 'string'
-      or v_action_key is null
       or v_action_key !~ '^[a-z0-9][a-z0-9:_-]{0,127}$'
       or pg_catalog.jsonb_typeof(v_action -> 'action_kind') <> 'string'
-      or v_action_kind is null
       or v_action_kind !~ '^[a-z][a-z0-9_]{0,63}$'
       or pg_catalog.jsonb_typeof(v_action -> 'resolver_role_id') not in ('string', 'null')
+      or (
+        v_resolver_role_id is not null
+        and v_resolver_role_id !~ '^[a-z][a-z0-9_]{0,63}$'
+      )
+      or pg_catalog.jsonb_typeof(v_action -> 'actor_player_id') not in ('number', 'null')
+      or pg_catalog.jsonb_typeof(v_action -> 'actor_role_id') not in ('string', 'null')
+      or (
+        v_actor_role_id is not null
+        and v_actor_role_id !~ '^[a-z][a-z0-9_]{0,63}$'
+      )
+      or pg_catalog.jsonb_typeof(v_action -> 'actor_state_requirement') <> 'string'
+      or v_actor_state_requirement not in ('alive', 'assigned')
+      or pg_catalog.jsonb_typeof(v_action -> 'eligible_target_player_ids') <> 'array'
       or pg_catalog.jsonb_typeof(v_action -> 'target_kind') <> 'string'
-      or v_target_kind is null
       or v_target_kind not in ('none', 'single_player')
       or pg_catalog.jsonb_typeof(v_action -> 'target_state_requirement') <> 'string'
       or v_target_state_requirement not in ('alive', 'assigned')
-      or pg_catalog.jsonb_typeof(v_action -> 'eligible_target_player_ids') <> 'array'
-      or pg_catalog.jsonb_typeof(v_action -> 'actor_player_id') not in ('number', 'null')
-      or pg_catalog.jsonb_typeof(v_action -> 'actor_role_id') not in ('string', 'null')
-      or pg_catalog.jsonb_typeof(v_action -> 'actor_state_requirement') <> 'string'
-      or v_actor_state_requirement not in ('alive', 'assigned')
+      or v_action_key = any(v_action_keys)
     then
-      raise exception using errcode = 'P0001', message = 'invalid_actions';
-    end if;
-
-    if v_action_key = any(v_action_keys) then
       raise exception using errcode = 'P0001', message = 'invalid_actions';
     end if;
 
@@ -133,40 +129,13 @@ begin
 
     if pg_catalog.jsonb_typeof(v_action -> 'actor_player_id') = 'null' then
       v_actor_player_id := null;
-    elsif not private.jsonb_integer_between(
+    elsif private.jsonb_integer_between(
       v_action -> 'actor_player_id',
       1,
       9223372036854775807
     ) then
-      raise exception using errcode = 'P0001', message = 'invalid_actions';
-    else
       v_actor_player_id := (v_action ->> 'actor_player_id')::bigint;
-    end if;
-
-    if v_actor_role_id is not null
-      and v_actor_role_id !~ '^[a-z][a-z0-9_]{0,63}$'
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_actions';
-    end if;
-
-    if v_resolver_role_id is not null
-      and v_resolver_role_id !~ '^[a-z][a-z0-9_]{0,63}$'
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_actions';
-    end if;
-
-    if v_resolver_role_id is not null
-      and not exists (
-        select 1
-        from public.role_assignments as resolver_assignments
-        join public.game_rule_sets as rule_sets
-          on rule_sets.room_id = resolver_assignments.room_id
-        where resolver_assignments.room_id = p_room_id
-          and resolver_assignments.role_id = v_resolver_role_id
-          and rule_sets.resolved_role_setup -> 'activeRoleIds'
-            ? v_resolver_role_id
-      )
-    then
+    else
       raise exception using errcode = 'P0001', message = 'invalid_actions';
     end if;
 
@@ -174,41 +143,49 @@ begin
       raise exception using errcode = 'P0001', message = 'invalid_actions';
     end if;
 
+    if v_resolver_role_id is not null
+      and not exists (
+        select 1
+        from public.game_players as game_players
+        join public.game_rule_sets as rule_sets
+          on rule_sets.game_id = game_players.game_id
+        where game_players.game_id = p_game_id
+          and game_players.role_id = v_resolver_role_id
+          and rule_sets.resolved_role_setup -> 'activeRoleIds' ? v_resolver_role_id
+      )
+    then
+      raise exception using errcode = 'P0001', message = 'invalid_actions';
+    end if;
+
     if v_actor_player_id is not null
       and not exists (
         select 1
-        from public.role_assignments as assignments
-        join public.game_player_states as player_states
-          on player_states.room_id = assignments.room_id
-         and player_states.player_id = assignments.player_id
-        where assignments.room_id = p_room_id
-          and assignments.player_id = v_actor_player_id
+        from public.game_players as game_players
+        where game_players.game_id = p_game_id
+          and game_players.player_id = v_actor_player_id
           and (
             v_actor_role_id is null
-            or assignments.role_id = v_actor_role_id
+            or game_players.role_id = v_actor_role_id
           )
           and (
             v_actor_state_requirement = 'assigned'
-            or player_states.alive
+            or game_players.alive
           )
       )
     then
       raise exception using errcode = 'P0001', message = 'invalid_actions';
     end if;
 
-    if v_actor_role_id is not null
-      and v_actor_player_id is null
+    if v_actor_player_id is null
+      and v_actor_role_id is not null
       and not exists (
         select 1
-        from public.role_assignments as assignments
-        join public.game_player_states as player_states
-          on player_states.room_id = assignments.room_id
-         and player_states.player_id = assignments.player_id
-        where assignments.room_id = p_room_id
-          and assignments.role_id = v_actor_role_id
+        from public.game_players as game_players
+        where game_players.game_id = p_game_id
+          and game_players.role_id = v_actor_role_id
           and (
             v_actor_state_requirement = 'assigned'
-            or player_states.alive
+            or game_players.alive
           )
       )
     then
@@ -240,33 +217,30 @@ begin
 
     v_target_count := pg_catalog.cardinality(v_eligible_player_ids);
 
-    select count(distinct target_id)
+    select pg_catalog.count(distinct target_id)
     into v_distinct_target_count
     from pg_catalog.unnest(v_eligible_player_ids) as target_ids(target_id);
 
+    select pg_catalog.count(*)
+    into v_valid_target_count
+    from public.game_players as game_players
+    where game_players.game_id = p_game_id
+      and game_players.player_id = any(v_eligible_player_ids)
+      and (
+        v_target_state_requirement = 'assigned'
+        or game_players.alive
+      );
+
     if v_distinct_target_count <> v_target_count
+      or v_valid_target_count <> v_target_count
       or (v_target_kind = 'none' and v_target_count <> 0)
       or (v_target_kind = 'single_player' and v_target_count = 0)
     then
       raise exception using errcode = 'P0001', message = 'invalid_actions';
     end if;
 
-    select count(*)
-    into v_valid_target_count
-    from public.game_player_states as player_states
-    where player_states.room_id = p_room_id
-      and player_states.player_id = any(v_eligible_player_ids)
-      and (
-        v_target_state_requirement = 'assigned'
-        or player_states.alive
-      );
-
-    if v_valid_target_count <> v_target_count then
-      raise exception using errcode = 'P0001', message = 'invalid_actions';
-    end if;
-
     insert into public.current_actions (
-      room_id,
+      game_id,
       phase_instance_id,
       action_key,
       action_kind,
@@ -280,7 +254,7 @@ begin
       created_at
     )
     values (
-      p_room_id,
+      p_game_id,
       p_phase_instance_id,
       v_action_key,
       v_action_kind,
@@ -296,18 +270,18 @@ begin
     returning current_actions.id into v_action_id;
 
     insert into public.current_action_eligible_players (
-      room_id,
+      game_id,
       current_action_id,
       player_id
     )
-    select p_room_id, v_action_id, targets.player_id
+    select p_game_id, v_action_id, targets.player_id
     from pg_catalog.unnest(v_eligible_player_ids) as targets(player_id);
   end loop;
 end;
 $$;
 
 create function private.insert_game_events(
-  p_room_id bigint,
+  p_game_id uuid,
   p_phase_instance_id uuid,
   p_created_at timestamptz,
   p_events jsonb
@@ -318,33 +292,28 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_distinct_player_count integer;
-  v_distinct_role_count integer;
   v_event jsonb;
   v_event_id bigint;
   v_event_kind text;
   v_key_count integer;
   v_payload jsonb;
-  v_player_count integer;
   v_player_ids bigint[];
-  v_role_count integer;
   v_role_ids text[];
-  v_valid_player_count integer;
-  v_valid_role_count integer;
   v_visibility text;
 begin
-  if p_phase_instance_id is null
+  if p_game_id is null
+    or p_phase_instance_id is null
     or p_created_at is null
     or p_created_at > pg_catalog.clock_timestamp()
     or p_events is null
     or pg_catalog.jsonb_typeof(p_events) <> 'array'
     or not exists (
       select 1
-      from public.game_states as states
-      where states.room_id = p_room_id
-        and states.phase_instance_id = p_phase_instance_id
-        and states.status = 'playing'
-        and p_created_at >= states.phase_started_at
+      from public.games as games
+      where games.id = p_game_id
+        and games.phase_instance_id = p_phase_instance_id
+        and games.ended_at is null
+        and p_created_at >= games.phase_started_at
     )
   then
     raise exception using errcode = 'P0001', message = 'invalid_events';
@@ -358,7 +327,7 @@ begin
       raise exception using errcode = 'P0001', message = 'invalid_events';
     end if;
 
-    select count(*)
+    select pg_catalog.count(*)
     into v_key_count
     from pg_catalog.jsonb_object_keys(v_event);
 
@@ -370,6 +339,24 @@ begin
         and v_event ? 'visible_to_player_ids'
         and v_event ? 'visible_to_role_ids'
       )
+      or pg_catalog.jsonb_typeof(v_event -> 'event_kind') <> 'string'
+      or v_event ->> 'event_kind' !~ '^[a-z][a-z0-9_]{0,63}$'
+      or pg_catalog.jsonb_typeof(v_event -> 'payload') <> 'object'
+      or pg_catalog.jsonb_typeof(v_event -> 'visibility') <> 'string'
+      or v_event ->> 'visibility' not in ('public', 'private', 'internal')
+      or pg_catalog.jsonb_typeof(v_event -> 'visible_to_player_ids') <> 'array'
+      or pg_catalog.jsonb_typeof(v_event -> 'visible_to_role_ids') <> 'array'
+      or exists (
+        select 1
+        from pg_catalog.jsonb_array_elements(v_event -> 'visible_to_player_ids') as ids(value)
+        where not private.jsonb_integer_between(ids.value, 1, 9223372036854775807)
+      )
+      or exists (
+        select 1
+        from pg_catalog.jsonb_array_elements(v_event -> 'visible_to_role_ids') as ids(value)
+        where pg_catalog.jsonb_typeof(ids.value) <> 'string'
+          or ids.value #>> '{}' !~ '^[a-z][a-z0-9_]{0,63}$'
+      )
     then
       raise exception using errcode = 'P0001', message = 'invalid_events';
     end if;
@@ -378,103 +365,77 @@ begin
     v_payload := v_event -> 'payload';
     v_visibility := v_event ->> 'visibility';
 
-    if pg_catalog.jsonb_typeof(v_event -> 'event_kind') <> 'string'
-      or v_event_kind is null
-      or v_event_kind !~ '^[a-z][a-z0-9_]{0,63}$'
-      or pg_catalog.jsonb_typeof(v_payload) <> 'object'
-      or pg_catalog.jsonb_typeof(v_event -> 'visibility') <> 'string'
-      or v_visibility is null
-      or v_visibility not in ('public', 'private', 'internal')
-      or pg_catalog.jsonb_typeof(v_event -> 'visible_to_player_ids') <> 'array'
-      or pg_catalog.jsonb_typeof(v_event -> 'visible_to_role_ids') <> 'array'
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_events';
-    end if;
-
-    if exists (
-      select 1
-      from pg_catalog.jsonb_array_elements(
-        v_event -> 'visible_to_player_ids'
-      ) as players(value)
-      where not private.jsonb_integer_between(
-        players.value,
-        1,
-        9223372036854775807
-      )
-    ) or exists (
-      select 1
-      from pg_catalog.jsonb_array_elements(
-        v_event -> 'visible_to_role_ids'
-      ) as roles(value)
-      where pg_catalog.jsonb_typeof(roles.value) <> 'string'
-        or roles.value #>> '{}' !~ '^[a-z][a-z0-9_]{0,63}$'
-    ) then
-      raise exception using errcode = 'P0001', message = 'invalid_events';
-    end if;
-
     select coalesce(
-      pg_catalog.array_agg(players.value::bigint),
+      pg_catalog.array_agg(ids.value::bigint),
       array[]::bigint[]
     )
     into v_player_ids
     from pg_catalog.jsonb_array_elements_text(
       v_event -> 'visible_to_player_ids'
-    ) as players(value);
+    ) as ids(value);
 
     select coalesce(
-      pg_catalog.array_agg(roles.value),
+      pg_catalog.array_agg(ids.value),
       array[]::text[]
     )
     into v_role_ids
     from pg_catalog.jsonb_array_elements_text(
       v_event -> 'visible_to_role_ids'
-    ) as roles(value);
+    ) as ids(value);
 
-    v_player_count := pg_catalog.cardinality(v_player_ids);
-    v_role_count := pg_catalog.cardinality(v_role_ids);
-
-    select count(distinct player_id)
-    into v_distinct_player_count
-    from pg_catalog.unnest(v_player_ids) as players(player_id);
-
-    select count(distinct role_id)
-    into v_distinct_role_count
-    from pg_catalog.unnest(v_role_ids) as roles(role_id);
-
-    if v_distinct_player_count <> v_player_count
-      or v_distinct_role_count <> v_role_count
+    if pg_catalog.cardinality(v_player_ids) <> (
+      select pg_catalog.count(distinct id)
+      from pg_catalog.unnest(v_player_ids) as player_ids(id)
+    )
+      or pg_catalog.cardinality(v_role_ids) <> (
+        select pg_catalog.count(distinct id)
+        from pg_catalog.unnest(v_role_ids) as role_ids(id)
+      )
+      or exists (
+        select 1
+        from pg_catalog.unnest(v_player_ids) as player_ids(id)
+        where not exists (
+          select 1
+          from public.game_players as game_players
+          where game_players.game_id = p_game_id
+            and game_players.player_id = player_ids.id
+        )
+      )
+      or exists (
+        select 1
+        from pg_catalog.unnest(v_role_ids) as role_ids(id)
+        where not exists (
+          select 1
+          from public.game_players as game_players
+          where game_players.game_id = p_game_id
+            and game_players.role_id = role_ids.id
+        )
+      )
+      or (
+        v_visibility = 'public'
+        and (
+          pg_catalog.cardinality(v_player_ids) <> 0
+          or pg_catalog.cardinality(v_role_ids) <> 0
+        )
+      )
       or (
         v_visibility = 'private'
-        and v_player_count + v_role_count = 0
+        and pg_catalog.cardinality(v_player_ids) = 0
+        and pg_catalog.cardinality(v_role_ids) = 0
       )
       or (
-        v_visibility in ('public', 'internal')
-        and v_player_count + v_role_count <> 0
+        v_visibility = 'internal'
+        and (
+          pg_catalog.cardinality(v_player_ids) <> 0
+          or pg_catalog.cardinality(v_role_ids) <> 0
+        )
       )
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_events';
-    end if;
-
-    select count(*)
-    into v_valid_player_count
-    from public.game_player_states as player_states
-    where player_states.room_id = p_room_id
-      and player_states.player_id = any(v_player_ids);
-
-    select count(distinct assignments.role_id)
-    into v_valid_role_count
-    from public.role_assignments as assignments
-    where assignments.room_id = p_room_id
-      and assignments.role_id = any(v_role_ids);
-
-    if v_valid_player_count <> v_player_count
-      or v_valid_role_count <> v_role_count
     then
       raise exception using errcode = 'P0001', message = 'invalid_events';
     end if;
 
     insert into public.game_events (
-      room_id,
+      game_id,
       phase_instance_id,
       event_kind,
       visibility,
@@ -482,7 +443,7 @@ begin
       created_at
     )
     values (
-      p_room_id,
+      p_game_id,
       p_phase_instance_id,
       v_event_kind,
       v_visibility,
@@ -492,26 +453,26 @@ begin
     returning game_events.id into v_event_id;
 
     insert into public.game_event_visible_players (
-      room_id,
+      game_id,
       game_event_id,
       player_id
     )
-    select p_room_id, v_event_id, players.player_id
-    from pg_catalog.unnest(v_player_ids) as players(player_id);
+    select p_game_id, v_event_id, ids.id
+    from pg_catalog.unnest(v_player_ids) as ids(id);
 
     insert into public.game_event_visible_roles (
-      room_id,
+      game_id,
       game_event_id,
       role_id
     )
-    select p_room_id, v_event_id, roles.role_id
-    from pg_catalog.unnest(v_role_ids) as roles(role_id);
+    select p_game_id, v_event_id, ids.id
+    from pg_catalog.unnest(v_role_ids) as ids(id);
   end loop;
 end;
 $$;
 
 create function private.insert_day_speech_slots(
-  p_room_id bigint,
+  p_game_id uuid,
   p_phase_instance_id uuid,
   p_slots jsonb
 )
@@ -521,36 +482,16 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_distinct_slot_count integer;
-  v_key_count integer;
-  v_max_slot_index integer;
+  v_expected_index integer := 0;
   v_slot jsonb;
-  v_slot_count integer;
   v_slot_index integer;
-  v_slot_indices integer[] := array[]::integer[];
   v_speaker_player_id bigint;
 begin
-  if p_phase_instance_id is null
+  if p_game_id is null
+    or p_phase_instance_id is null
     or p_slots is null
     or pg_catalog.jsonb_typeof(p_slots) <> 'array'
   then
-    raise exception using errcode = 'P0001', message = 'invalid_day_speech_slots';
-  end if;
-
-  v_slot_count := pg_catalog.jsonb_array_length(p_slots);
-
-  if v_slot_count = 0 then
-    return;
-  end if;
-
-  if not exists (
-    select 1
-    from public.game_states as states
-    where states.room_id = p_room_id
-      and states.phase_instance_id = p_phase_instance_id
-      and states.phase = 'day'
-      and states.status = 'playing'
-  ) then
     raise exception using errcode = 'P0001', message = 'invalid_day_speech_slots';
   end if;
 
@@ -558,19 +499,12 @@ begin
     select items.value
     from pg_catalog.jsonb_array_elements(p_slots) as items(value)
   loop
-    if pg_catalog.jsonb_typeof(v_slot) <> 'object' then
-      raise exception using errcode = 'P0001', message = 'invalid_day_speech_slots';
-    end if;
-
-    select count(*)
-    into v_key_count
-    from pg_catalog.jsonb_object_keys(v_slot);
-
-    if v_key_count <> 2
-      or not (
-        v_slot ? 'slot_index'
-        and v_slot ? 'speaker_player_id'
-      )
+    if pg_catalog.jsonb_typeof(v_slot) <> 'object'
+      or (
+        select pg_catalog.count(*)
+        from pg_catalog.jsonb_object_keys(v_slot)
+      ) <> 2
+      or not (v_slot ? 'slot_index' and v_slot ? 'speaker_player_id')
       or not private.jsonb_integer_between(v_slot -> 'slot_index', 0, 2147483647)
       or not private.jsonb_integer_between(
         v_slot -> 'speaker_player_id',
@@ -584,49 +518,40 @@ begin
     v_slot_index := (v_slot ->> 'slot_index')::integer;
     v_speaker_player_id := (v_slot ->> 'speaker_player_id')::bigint;
 
-    if v_slot_index = any(v_slot_indices)
+    if v_slot_index <> v_expected_index
       or not exists (
         select 1
-        from public.game_player_states as player_states
-        where player_states.room_id = p_room_id
-          and player_states.player_id = v_speaker_player_id
+        from public.game_players as game_players
+        where game_players.game_id = p_game_id
+          and game_players.player_id = v_speaker_player_id
+          and game_players.alive
       )
     then
       raise exception using errcode = 'P0001', message = 'invalid_day_speech_slots';
     end if;
 
-    v_slot_indices := pg_catalog.array_append(v_slot_indices, v_slot_index);
-
     insert into public.day_speech_slots (
-      room_id,
+      game_id,
       phase_instance_id,
       slot_index,
       speaker_player_id
     )
     values (
-      p_room_id,
+      p_game_id,
       p_phase_instance_id,
       v_slot_index,
       v_speaker_player_id
     );
+
+    v_expected_index := v_expected_index + 1;
   end loop;
-
-  select count(distinct slot_index), max(slot_index)
-  into v_distinct_slot_count, v_max_slot_index
-  from pg_catalog.unnest(v_slot_indices) as slots(slot_index);
-
-  if v_distinct_slot_count <> v_slot_count
-    or v_max_slot_index <> v_slot_count - 1
-    or not (0 = any(v_slot_indices))
-  then
-    raise exception using errcode = 'P0001', message = 'invalid_day_speech_slots';
-  end if;
 end;
 $$;
 
-create function public.app_start_room(
+create function public.app_start_game(
   p_account_id bigint,
   p_room_code text,
+  p_expected_roster_revision bigint,
   p_expected_player_ids bigint[],
   p_phase_instance_id uuid,
   p_phase_duration_seconds integer,
@@ -649,31 +574,32 @@ security definer
 set search_path = ''
 as $$
 declare
+  v_active_player_ids bigint[];
   v_active_role_ids text[];
   v_assignment jsonb;
   v_assignment_player_ids bigint[] := array[]::bigint[];
   v_assignment_role_id text;
   v_assignment_player_id bigint;
-  v_contribution jsonb;
+  v_connected_player_ids bigint[];
+  v_current_game public.games%rowtype;
   v_distinct_expected_player_count integer;
   v_expected_player_ids bigint[];
+  v_game_id uuid := pg_catalog.gen_random_uuid();
   v_group jsonb;
   v_group_ids text[] := array[]::text[];
-  v_group_role_count integer;
   v_group_role_ids text[];
-  v_group_role_ids_seen text[] := array[]::text[];
   v_host_player public.players%rowtype;
-  v_judgement jsonb;
-  v_judgement_keys text[] := array[]::text[];
-  v_joined_player_ids bigint[];
   v_key_count integer;
   v_now timestamptz;
   v_phase_ends_at timestamptz;
   v_positive_role_ids text[];
   v_role_count_total numeric;
   v_room public.rooms%rowtype;
+  v_sequence_number bigint;
 begin
   if p_account_id is null
+    or p_expected_roster_revision is null
+    or p_expected_roster_revision < 0
     or p_phase_instance_id is null
     or p_phase_duration_seconds is null
     or p_phase_duration_seconds not between 1 and 3000
@@ -707,11 +633,14 @@ begin
     raise exception using errcode = 'P0001', message = 'invalid_role_counts';
   end if;
 
-  select coalesce(sum((roles.role_count #>> '{}')::numeric), 0)
+  select coalesce(
+    pg_catalog.sum((roles.role_count #>> '{}')::numeric),
+    0
+  )
   into v_role_count_total
   from pg_catalog.jsonb_each(p_role_counts) as roles(role_id, role_count);
 
-  select count(*)
+  select pg_catalog.count(*)
   into v_key_count
   from pg_catalog.jsonb_object_keys(p_options);
 
@@ -750,12 +679,9 @@ begin
     or not private.jsonb_integer_between(p_options -> 'nightSeconds', 1, 600)
     or not private.jsonb_integer_between(p_options -> 'normalDaySpeechRounds', 1, 5)
     or not private.jsonb_integer_between(p_options -> 'votingSeconds', 1, 300)
+    or p_phase_duration_seconds <> (p_options ->> 'firstNightSeconds')::integer
   then
     raise exception using errcode = 'P0001', message = 'invalid_options';
-  end if;
-
-  if p_phase_duration_seconds <> (p_options ->> 'firstNightSeconds')::integer then
-    raise exception using errcode = 'P0001', message = 'invalid_game_start';
   end if;
 
   if exists (
@@ -774,7 +700,7 @@ begin
     raise exception using errcode = 'P0001', message = 'invalid_options';
   end if;
 
-  select count(*)
+  select pg_catalog.count(*)
   into v_key_count
   from pg_catalog.jsonb_object_keys(p_resolved_role_setup);
 
@@ -784,27 +710,20 @@ begin
       and p_resolved_role_setup ? 'contributions'
       and p_resolved_role_setup ? 'nightConversationGroups'
     )
-    or pg_catalog.jsonb_typeof(
-      p_resolved_role_setup -> 'activeRoleIds'
-    ) <> 'array'
-    or pg_catalog.jsonb_typeof(
-      p_resolved_role_setup -> 'contributions'
-    ) <> 'array'
+    or pg_catalog.jsonb_typeof(p_resolved_role_setup -> 'activeRoleIds') <> 'array'
+    or pg_catalog.jsonb_typeof(p_resolved_role_setup -> 'contributions') <> 'array'
     or pg_catalog.jsonb_typeof(
       p_resolved_role_setup -> 'nightConversationGroups'
     ) <> 'array'
+    or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(
+        p_resolved_role_setup -> 'activeRoleIds'
+      ) as roles(value)
+      where pg_catalog.jsonb_typeof(roles.value) <> 'string'
+        or roles.value #>> '{}' !~ '^[a-z][a-z0-9_]{0,63}$'
+    )
   then
-    raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-  end if;
-
-  if exists (
-    select 1
-    from pg_catalog.jsonb_array_elements(
-      p_resolved_role_setup -> 'activeRoleIds'
-    ) as roles(value)
-    where pg_catalog.jsonb_typeof(roles.value) <> 'string'
-      or roles.value #>> '{}' !~ '^[a-z][a-z0-9_]{0,63}$'
-  ) then
     raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
   end if;
 
@@ -817,13 +736,6 @@ begin
     p_resolved_role_setup -> 'activeRoleIds'
   ) as roles(value);
 
-  if pg_catalog.cardinality(v_active_role_ids) <> (
-    select count(distinct role_id)
-    from pg_catalog.unnest(v_active_role_ids) as roles(role_id)
-  ) then
-    raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-  end if;
-
   select coalesce(
     pg_catalog.array_agg(roles.role_id order by roles.role_id),
     array[]::text[]
@@ -832,66 +744,12 @@ begin
   from pg_catalog.jsonb_each(p_role_counts) as roles(role_id, role_count)
   where (roles.role_count #>> '{}')::integer > 0;
 
-  if v_active_role_ids <> v_positive_role_ids then
-    raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-  end if;
-
-  for v_contribution in
-    select contributions.value
-    from pg_catalog.jsonb_array_elements(
-      p_resolved_role_setup -> 'contributions'
-    ) as contributions(value)
-  loop
-    if pg_catalog.jsonb_typeof(v_contribution) <> 'object'
-      or (select count(*) from pg_catalog.jsonb_object_keys(v_contribution)) <> 2
-      or not (v_contribution ? 'kind' and v_contribution ? 'judgement')
-      or pg_catalog.jsonb_typeof(v_contribution -> 'kind') <> 'string'
-      or v_contribution ->> 'kind' <> 'winner_judgement'
-      or pg_catalog.jsonb_typeof(v_contribution -> 'judgement') <> 'object'
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-    end if;
-
-    v_judgement := v_contribution -> 'judgement';
-
-    if (select count(*) from pg_catalog.jsonb_object_keys(v_judgement)) <> 4
-      or not (
-        v_judgement ? 'id'
-        and v_judgement ? 'priority'
-        and v_judgement ? 'sourceRoleId'
-        and v_judgement ? 'winnerTeam'
-      )
-      or pg_catalog.jsonb_typeof(v_judgement -> 'id') <> 'string'
-      or v_judgement ->> 'id' !~ '^[a-z0-9][a-z0-9:_-]{0,127}$'
-      or not private.jsonb_integer_between(
-        v_judgement -> 'priority',
-        -2147483648,
-        2147483647
-      )
-      or pg_catalog.jsonb_typeof(v_judgement -> 'sourceRoleId') <> 'string'
-      or not (v_judgement ->> 'sourceRoleId' = any(v_active_role_ids))
-      or pg_catalog.jsonb_typeof(v_judgement -> 'winnerTeam') <> 'string'
-      or v_judgement ->> 'winnerTeam' !~ '^[a-z][a-z0-9_]{0,63}$'
-      or pg_catalog.concat(
-        v_judgement ->> 'sourceRoleId',
-        '/',
-        v_judgement ->> 'id'
-      ) = any(v_judgement_keys)
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-    end if;
-
-    v_judgement_keys := pg_catalog.array_append(
-      v_judgement_keys,
-      pg_catalog.concat(
-        v_judgement ->> 'sourceRoleId',
-        '/',
-        v_judgement ->> 'id'
-      )
-    );
-  end loop;
-
-  if pg_catalog.cardinality(v_judgement_keys) = 0 then
+  if v_active_role_ids <> v_positive_role_ids
+    or pg_catalog.cardinality(v_active_role_ids) <> (
+      select pg_catalog.count(distinct role_id)
+      from pg_catalog.unnest(v_active_role_ids) as roles(role_id)
+    )
+  then
     raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
   end if;
 
@@ -901,15 +759,11 @@ begin
       p_resolved_role_setup -> 'nightConversationGroups'
     ) as groups(value)
   loop
-    if pg_catalog.jsonb_typeof(v_group) <> 'object' then
-      raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-    end if;
-
-    select count(*)
-    into v_key_count
-    from pg_catalog.jsonb_object_keys(v_group);
-
-    if v_key_count <> 3
+    if pg_catalog.jsonb_typeof(v_group) <> 'object'
+      or (
+        select pg_catalog.count(*)
+        from pg_catalog.jsonb_object_keys(v_group)
+      ) <> 3
       or not (
         v_group ? 'groupId'
         and v_group ? 'label'
@@ -918,22 +772,13 @@ begin
       or pg_catalog.jsonb_typeof(v_group -> 'groupId') <> 'string'
       or v_group ->> 'groupId' !~ '^[a-z][a-z0-9_:-]{0,63}$'
       or pg_catalog.jsonb_typeof(v_group -> 'label') <> 'object'
-      or (select count(*) from pg_catalog.jsonb_object_keys(v_group -> 'label')) <> 2
-      or pg_catalog.jsonb_typeof(v_group -> 'label' -> 'en') <> 'string'
-      or pg_catalog.char_length(v_group -> 'label' ->> 'en') not between 1 and 128
-      or pg_catalog.jsonb_typeof(v_group -> 'label' -> 'ja') <> 'string'
-      or pg_catalog.char_length(v_group -> 'label' ->> 'ja') not between 1 and 128
       or pg_catalog.jsonb_typeof(v_group -> 'roleIds') <> 'array'
-    then
-      raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
-    end if;
-
-    if v_group ->> 'groupId' = any(v_group_ids)
+      or v_group ->> 'groupId' = any(v_group_ids)
       or exists (
         select 1
         from pg_catalog.jsonb_array_elements(v_group -> 'roleIds') as roles(value)
         where pg_catalog.jsonb_typeof(roles.value) <> 'string'
-          or roles.value #>> '{}' !~ '^[a-z][a-z0-9_]{0,63}$'
+          or not (roles.value #>> '{}' = any(v_active_role_ids))
       )
     then
       raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
@@ -944,39 +789,18 @@ begin
       array[]::text[]
     )
     into v_group_role_ids
-    from pg_catalog.jsonb_array_elements_text(
-      v_group -> 'roleIds'
-    ) as roles(value);
-
-    select count(distinct role_id)
-    into v_group_role_count
-    from pg_catalog.unnest(v_group_role_ids) as roles(role_id);
+    from pg_catalog.jsonb_array_elements_text(v_group -> 'roleIds') as roles(value);
 
     if pg_catalog.cardinality(v_group_role_ids) = 0
-      or v_group_role_count <> pg_catalog.cardinality(v_group_role_ids)
-      or exists (
-        select 1
+      or pg_catalog.cardinality(v_group_role_ids) <> (
+        select pg_catalog.count(distinct role_id)
         from pg_catalog.unnest(v_group_role_ids) as roles(role_id)
-        where not (roles.role_id = any(v_active_role_ids))
-      )
-      or exists (
-        select 1
-        from pg_catalog.unnest(v_group_role_ids) as roles(role_id)
-        where roles.role_id = any(v_group_role_ids_seen)
       )
     then
       raise exception using errcode = 'P0001', message = 'invalid_resolved_role_setup';
     end if;
 
-    v_group_role_ids_seen := pg_catalog.array_cat(
-      v_group_role_ids_seen,
-      v_group_role_ids
-    );
-
-    v_group_ids := pg_catalog.array_append(
-      v_group_ids,
-      v_group ->> 'groupId'
-    );
+    v_group_ids := pg_catalog.array_append(v_group_ids, v_group ->> 'groupId');
   end loop;
 
   perform private.lock_account(p_account_id);
@@ -991,7 +815,7 @@ begin
     and rooms.public_room_code = pg_catalog.btrim(p_room_code)
   for update of rooms;
 
-  if not found then
+  if not found or v_room.closed_at is not null then
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
@@ -1007,51 +831,72 @@ begin
     raise exception using errcode = 'P0001', message = 'host_required';
   end if;
 
+  if v_room.current_game_id is not null then
+    select games.*
+    into v_current_game
+    from public.games as games
+    where games.id = v_room.current_game_id
+    for update;
+  end if;
+
   v_now := pg_catalog.clock_timestamp();
   v_phase_ends_at := v_now + pg_catalog.make_interval(secs => p_phase_duration_seconds);
 
-  if v_room.status = 'waiting' and v_room.waiting_expires_at <= v_now then
-    perform private.end_waiting_room(
-      v_room.id,
-      'waiting_room_expired',
-      v_host_player.id
-    );
-
-    return query
-    select v_room.id, v_host_player.id, 'waiting_room_ended'::text;
+  if v_room.lobby_expires_at <= v_now
+    and (v_current_game.id is null or v_current_game.ended_at is not null)
+  then
+    perform private.expire_open_room(v_room.id, v_now);
+    return query select v_room.id, v_host_player.id, 'room_closed'::text;
     return;
   end if;
 
-  if v_room.status <> 'waiting' then
-    raise exception using errcode = 'P0001', message = 'room_not_joinable';
+  if v_current_game.id is not null and v_current_game.ended_at is null then
+    raise exception using errcode = 'P0001', message = 'room_in_progress';
   end if;
 
   if exists (
     select 1
-    from public.game_states as states
-    where states.room_id = v_room.id
+    from public.games as games
+    where games.room_id = v_room.id
+      and games.ended_at is null
   ) then
-    raise exception using errcode = 'P0001', message = 'game_already_started';
+    raise exception using errcode = 'P0001', message = 'room_in_progress';
   end if;
+
+  if v_room.roster_revision <> p_expected_roster_revision then
+    raise exception using errcode = 'P0001', message = 'stale_roster_revision';
+  end if;
+
+  perform players.id
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.left_at is null
+  order by players.id
+  for update;
 
   select coalesce(
     pg_catalog.array_agg(players.id order by players.id),
     array[]::bigint[]
   )
-  into v_joined_player_ids
+  into v_active_player_ids
+  from public.players as players
+  where players.room_id = v_room.id
+    and players.left_at is null;
+
+  select coalesce(
+    pg_catalog.array_agg(players.id order by players.id),
+    array[]::bigint[]
+  )
+  into v_connected_player_ids
   from public.players as players
   where players.room_id = v_room.id
     and players.status = 'joined';
 
-  if pg_catalog.cardinality(v_joined_player_ids) <> v_room.target_player_count
-    or pg_catalog.cardinality(p_expected_player_ids) <> v_room.target_player_count
-    or v_role_count_total <> v_room.target_player_count
-    or exists (
-      select 1
-      from pg_catalog.unnest(p_expected_player_ids) as expected(player_id)
-      where expected.player_id is null or expected.player_id < 1
-    )
-  then
+  if exists (
+    select 1
+    from pg_catalog.unnest(p_expected_player_ids) as expected(player_id)
+    where expected.player_id is null or expected.player_id < 1
+  ) then
     raise exception using errcode = 'P0001', message = 'room_players_changed';
   end if;
 
@@ -1060,34 +905,44 @@ begin
       pg_catalog.array_agg(expected.player_id order by expected.player_id),
       array[]::bigint[]
     ),
-    count(distinct expected.player_id)
+    pg_catalog.count(distinct expected.player_id)
   into v_expected_player_ids, v_distinct_expected_player_count
   from pg_catalog.unnest(p_expected_player_ids) as expected(player_id);
 
-  if v_distinct_expected_player_count <> v_room.target_player_count
-    or v_expected_player_ids <> v_joined_player_ids
-    or pg_catalog.jsonb_array_length(p_assignments) <> v_room.target_player_count
+  if pg_catalog.cardinality(v_active_player_ids) <> v_room.target_player_count
+    or v_active_player_ids <> v_connected_player_ids
+    or v_expected_player_ids <> v_active_player_ids
+    or v_distinct_expected_player_count <> v_room.target_player_count
   then
     raise exception using errcode = 'P0001', message = 'room_players_changed';
+  end if;
+
+  if exists (
+    select 1
+    from public.players as players
+    where players.room_id = v_room.id
+      and players.left_at is null
+      and players.ready_roster_revision is distinct from p_expected_roster_revision
+  ) then
+    raise exception using errcode = 'P0001', message = 'room_roster_not_ready';
+  end if;
+
+  if v_role_count_total <> v_room.target_player_count
+    or pg_catalog.jsonb_array_length(p_assignments) <> v_room.target_player_count
+  then
+    raise exception using errcode = 'P0001', message = 'invalid_assignments';
   end if;
 
   for v_assignment in
     select assignments.value
     from pg_catalog.jsonb_array_elements(p_assignments) as assignments(value)
   loop
-    if pg_catalog.jsonb_typeof(v_assignment) <> 'object' then
-      raise exception using errcode = 'P0001', message = 'invalid_assignments';
-    end if;
-
-    select count(*)
-    into v_key_count
-    from pg_catalog.jsonb_object_keys(v_assignment);
-
-    if v_key_count <> 2
-      or not (
-        v_assignment ? 'player_id'
-        and v_assignment ? 'role_id'
-      )
+    if pg_catalog.jsonb_typeof(v_assignment) <> 'object'
+      or (
+        select pg_catalog.count(*)
+        from pg_catalog.jsonb_object_keys(v_assignment)
+      ) <> 2
+      or not (v_assignment ? 'player_id' and v_assignment ? 'role_id')
       or not private.jsonb_integer_between(
         v_assignment -> 'player_id',
         1,
@@ -1103,7 +958,7 @@ begin
     v_assignment_role_id := v_assignment ->> 'role_id';
 
     if v_assignment_player_id = any(v_assignment_player_ids)
-      or not (v_assignment_player_id = any(v_joined_player_ids))
+      or not (v_assignment_player_id = any(v_active_player_ids))
       or not (p_role_counts ? v_assignment_role_id)
       or (p_role_counts ->> v_assignment_role_id)::integer < 1
     then
@@ -1120,7 +975,7 @@ begin
     select 1
     from pg_catalog.jsonb_each(p_role_counts) as roles(role_id, role_count)
     where (roles.role_count #>> '{}')::integer <> (
-      select count(*)
+      select pg_catalog.count(*)
       from pg_catalog.jsonb_array_elements(p_assignments) as assignments(value)
       where assignments.value ->> 'role_id' = roles.role_id
     )
@@ -1128,66 +983,15 @@ begin
     raise exception using errcode = 'P0001', message = 'invalid_assignments';
   end if;
 
-  select coalesce(
-    pg_catalog.array_agg(player_id order by player_id),
-    array[]::bigint[]
-  )
-  into v_assignment_player_ids
-  from pg_catalog.unnest(v_assignment_player_ids) as assignments(player_id);
+  select coalesce(pg_catalog.max(games.sequence_number), 0) + 1
+  into v_sequence_number
+  from public.games as games
+  where games.room_id = v_room.id;
 
-  if v_assignment_player_ids <> v_joined_player_ids then
-    raise exception using errcode = 'P0001', message = 'invalid_assignments';
-  end if;
-
-  update public.rooms as rooms
-  set started_at = v_now,
-      snapshot_revision = rooms.snapshot_revision + 1,
-      updated_at = v_now
-  where rooms.id = v_room.id
-    and rooms.status = 'waiting';
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_joinable';
-  end if;
-
-  insert into public.game_rule_sets (
-    room_id,
-    role_counts,
-    options,
-    resolved_role_setup,
-    role_registry_version,
-    engine_version
-  )
-  values (
-    v_room.id,
-    p_role_counts,
-    p_options,
-    p_resolved_role_setup,
-    p_role_registry_version,
-    p_engine_version
-  );
-
-  insert into public.game_phase_instances (
-    room_id,
+  insert into public.games (
     id,
-    phase,
-    day_number,
-    night_number,
-    started_at,
-    ends_at
-  )
-  values (
-    v_room.id,
-    p_phase_instance_id,
-    'night',
-    0,
-    1,
-    v_now,
-    v_phase_ends_at
-  );
-
-  insert into public.game_states (
     room_id,
+    sequence_number,
     phase,
     phase_instance_id,
     phase_started_at,
@@ -1196,11 +1000,13 @@ begin
     night_number,
     revision,
     action_revision,
-    created_at,
+    started_at,
     updated_at
   )
   values (
+    v_game_id,
     v_room.id,
+    v_sequence_number,
     'night',
     p_phase_instance_id,
     v_now,
@@ -1213,32 +1019,68 @@ begin
     v_now
   );
 
-  insert into public.role_assignments (room_id, player_id, role_id)
+  insert into public.game_phase_instances (
+    game_id,
+    id,
+    phase,
+    day_number,
+    night_number,
+    started_at,
+    ends_at
+  )
+  values (
+    v_game_id,
+    p_phase_instance_id,
+    'night',
+    0,
+    1,
+    v_now,
+    v_phase_ends_at
+  );
+
+  insert into public.game_rule_sets (
+    game_id,
+    role_counts,
+    options,
+    resolved_role_setup,
+    role_registry_version,
+    engine_version,
+    created_at
+  )
+  values (
+    v_game_id,
+    p_role_counts,
+    p_options,
+    p_resolved_role_setup,
+    p_role_registry_version,
+    p_engine_version,
+    v_now
+  );
+
+  insert into public.game_players (
+    game_id,
+    room_id,
+    player_id,
+    role_id,
+    alive,
+    created_at,
+    updated_at
+  )
   select
+    v_game_id,
     v_room.id,
     (assignments.value ->> 'player_id')::bigint,
-    assignments.value ->> 'role_id'
+    assignments.value ->> 'role_id',
+    true,
+    v_now,
+    v_now
   from pg_catalog.jsonb_array_elements(p_assignments) as assignments(value);
-
-  insert into public.game_player_states (room_id, player_id, alive)
-  select v_room.id, players.id, true
-  from pg_catalog.unnest(v_joined_player_ids) as players(id);
-
-  delete from public.realtime_topics as topics
-  where topics.room_id = v_room.id
-    and topics.scope = 'player_private'
-    and not (topics.player_id = any(v_joined_player_ids));
-
-  update public.realtime_grants as grants
-  set revoked_at = v_now
-  where grants.room_id = v_room.id
-    and not (grants.player_id = any(v_joined_player_ids))
-    and grants.revoked_at is null;
 
   insert into public.realtime_topics (
     topic,
     room_id,
     scope,
+    game_id,
     role_id,
     created_at
   )
@@ -1246,49 +1088,67 @@ begin
     private.random_identifier('role:', 24),
     v_room.id,
     'role_private',
+    v_game_id,
     assigned_roles.role_id,
     v_now
   from (
-    select distinct assignments.role_id
-    from public.role_assignments as assignments
-    where assignments.room_id = v_room.id
+    select distinct game_players.role_id
+    from public.game_players as game_players
+    where game_players.game_id = v_game_id
   ) as assigned_roles;
 
   perform private.insert_current_actions(
-    v_room.id,
+    v_game_id,
     p_phase_instance_id,
     v_phase_ends_at,
     p_actions
   );
 
   perform private.insert_game_events(
-    v_room.id,
+    v_game_id,
     p_phase_instance_id,
     v_now,
     p_events
   );
 
+  update public.rooms as rooms
+  set current_game_id = v_game_id,
+      snapshot_revision = rooms.snapshot_revision + 1,
+      updated_at = v_now
+  where rooms.id = v_room.id
+    and rooms.closed_at is null
+    and rooms.roster_revision = p_expected_roster_revision
+    and rooms.current_game_id is not distinct from v_room.current_game_id;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'stale_roster_revision';
+  end if;
+
   insert into public.room_events (
     room_id,
     event_kind,
     actor_player_id,
-    payload
+    game_id,
+    payload,
+    created_at
   )
   values (
     v_room.id,
     'game_started',
     v_host_player.id,
-    '{}'::jsonb
+    v_game_id,
+    pg_catalog.jsonb_build_object('sequenceNumber', v_sequence_number),
+    v_now
   );
 
-  return query
-  select v_room.id, v_host_player.id, 'game_started'::text;
+  return query select v_room.id, v_host_player.id, 'game_started'::text;
 end;
 $$;
 
 create function public.app_submit_action(
   p_account_id bigint,
   p_room_code text,
+  p_game_id uuid,
   p_action_key text,
   p_phase_instance_id uuid,
   p_expected_revision bigint,
@@ -1306,18 +1166,17 @@ as $$
 declare
   v_accepted_action_id bigint;
   v_action public.current_actions%rowtype;
-  v_now timestamptz;
-  v_notification_reason text;
+  v_game public.games%rowtype;
+  v_now timestamptz := pg_catalog.clock_timestamp();
   v_player public.players%rowtype;
   v_room public.rooms%rowtype;
-  v_state public.game_states%rowtype;
-  v_state_update_count integer;
   v_submitter_alive boolean;
   v_submitter_role_id text;
   v_target_player_id bigint;
-  v_topic_update_count integer;
+  v_updated_count integer;
 begin
   if p_account_id is null
+    or p_game_id is null
     or p_action_key is null
     or p_action_key !~ '^[a-z0-9][a-z0-9:_-]{0,127}$'
     or p_phase_instance_id is null
@@ -1343,6 +1202,21 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
+  if v_room.current_game_id is distinct from p_game_id then
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
+  end if;
+
+  select games.*
+  into v_game
+  from public.games as games
+  where games.id = p_game_id
+    and games.room_id = v_room.id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
+  end if;
+
   select players.*
   into v_player
   from public.players as players
@@ -1355,29 +1229,18 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
-  select states.*
-  into v_state
-  from public.game_states as states
-  where states.room_id = v_room.id
-  for update;
-
-  if not found
-    or v_room.status <> 'playing'
-    or v_state.status <> 'playing'
-    or v_state.phase_instance_id is distinct from p_phase_instance_id
-    or v_state.revision <> p_expected_revision
+  if v_game.ended_at is not null
+    or v_game.phase_instance_id is distinct from p_phase_instance_id
+    or v_game.revision <> p_expected_revision
   then
     raise exception using errcode = 'P0001', message = 'stale_phase';
   end if;
 
-  select assignments.role_id, player_states.alive
+  select game_players.role_id, game_players.alive
   into v_submitter_role_id, v_submitter_alive
-  from public.role_assignments as assignments
-  join public.game_player_states as player_states
-    on player_states.room_id = assignments.room_id
-   and player_states.player_id = assignments.player_id
-  where assignments.room_id = v_room.id
-    and assignments.player_id = v_player.id;
+  from public.game_players as game_players
+  where game_players.game_id = p_game_id
+    and game_players.player_id = v_player.id;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'action_not_allowed';
@@ -1387,6 +1250,9 @@ begin
     select players.id
     into v_target_player_id
     from public.players as players
+    join public.game_players as game_players
+      on game_players.game_id = p_game_id
+     and game_players.player_id = players.id
     where players.room_id = v_room.id
       and players.public_player_id = p_target_public_player_id;
 
@@ -1398,7 +1264,7 @@ begin
   select actions.*
   into v_action
   from public.current_actions as actions
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id
     and actions.action_key = p_action_key
   for update;
@@ -1407,21 +1273,20 @@ begin
     raise exception using errcode = 'P0001', message = 'action_not_available';
   end if;
 
-  v_now := pg_catalog.clock_timestamp();
-
   if v_action.closes_at is not null and v_action.closes_at <= v_now then
     raise exception using errcode = 'P0001', message = 'action_window_closed';
   end if;
 
-  if (v_action.actor_player_id is not null
-      and v_action.actor_player_id <> v_player.id)
-    or (v_action.actor_role_id is not null
-      and v_action.actor_role_id <> v_submitter_role_id)
+  if (v_action.actor_player_id is not null and v_action.actor_player_id <> v_player.id)
+    or (
+      v_action.actor_role_id is not null
+      and v_action.actor_role_id <> v_submitter_role_id
+    )
+    or (
+      v_action.actor_state_requirement = 'alive'
+      and not v_submitter_alive
+    )
   then
-    raise exception using errcode = 'P0001', message = 'action_not_allowed';
-  end if;
-
-  if v_action.actor_state_requirement = 'alive' and not v_submitter_alive then
     raise exception using errcode = 'P0001', message = 'action_not_allowed';
   end if;
 
@@ -1433,24 +1298,22 @@ begin
         or not exists (
           select 1
           from public.current_action_eligible_players as eligible
-          where eligible.room_id = v_room.id
+          where eligible.game_id = p_game_id
             and eligible.current_action_id = v_action.id
             and eligible.player_id = v_target_player_id
         )
       )
     )
-  then
-    raise exception using errcode = 'P0001', message = 'invalid_action_target';
-  end if;
-
-  if v_target_player_id is not null
-    and v_action.target_state_requirement = 'alive'
-    and not exists (
-      select 1
-      from public.game_player_states as player_states
-      where player_states.room_id = v_room.id
-        and player_states.player_id = v_target_player_id
-        and player_states.alive
+    or (
+      v_target_player_id is not null
+      and v_action.target_state_requirement = 'alive'
+      and not exists (
+        select 1
+        from public.game_players as game_players
+        where game_players.game_id = p_game_id
+          and game_players.player_id = v_target_player_id
+          and game_players.alive
+      )
     )
   then
     raise exception using errcode = 'P0001', message = 'invalid_action_target';
@@ -1458,14 +1321,14 @@ begin
 
   insert into public.pending_actions (
     current_action_id,
-    room_id,
+    game_id,
     submitter_player_id,
     target_player_id,
     submitted_at
   )
   values (
     v_action.id,
-    v_room.id,
+    p_game_id,
     v_player.id,
     v_target_player_id,
     v_now
@@ -1474,13 +1337,12 @@ begin
   returning pending_actions.current_action_id into v_accepted_action_id;
 
   if v_accepted_action_id is null then
-    return query
-    select v_room.id, v_player.id, null::text;
+    return query select v_room.id, v_player.id, null::text;
     return;
   end if;
 
   perform private.insert_game_events(
-    v_room.id,
+    p_game_id,
     p_phase_instance_id,
     v_now,
     pg_catalog.jsonb_build_array(
@@ -1497,66 +1359,56 @@ begin
     )
   );
 
-  update public.game_states as states
-  set action_revision = states.action_revision + 1,
+  update public.games as games
+  set action_revision = games.action_revision + 1,
       updated_at = v_now
-  where states.room_id = v_room.id
-    and states.phase_instance_id = p_phase_instance_id
-    and states.revision = p_expected_revision;
+  where games.id = p_game_id
+    and games.phase_instance_id = p_phase_instance_id
+    and games.revision = p_expected_revision
+    and games.ended_at is null;
 
-  get diagnostics v_state_update_count = row_count;
+  get diagnostics v_updated_count = row_count;
 
-  if v_state_update_count <> 1 then
+  if v_updated_count <> 1 then
     raise exception using errcode = 'P0001', message = 'stale_phase';
   end if;
 
-  if v_state.phase = 'night' and v_state.night_number > 1 then
-    update public.realtime_topics as topics
-    set snapshot_revision = topics.snapshot_revision + 1
-    where topics.room_id = v_room.id
-      and topics.scope = 'player_private'
-      and topics.player_id = v_player.id;
+  if v_game.phase = 'night' and v_game.night_number > 1 then
+    update public.players as players
+    set private_snapshot_revision = players.private_snapshot_revision + 1
+    where players.room_id = v_room.id
+      and players.left_at is null
+      and (
+        players.id = v_player.id
+        or (
+          v_action.actor_player_id is null
+          and v_action.actor_role_id is not null
+          and exists (
+            select 1
+            from public.game_players as recipients
+            where recipients.game_id = p_game_id
+              and recipients.player_id = players.id
+              and recipients.role_id = v_action.actor_role_id
+          )
+        )
+      );
 
-    get diagnostics v_topic_update_count = row_count;
-
-    if v_topic_update_count <> 1 then
-      raise exception using errcode = 'P0001', message = 'realtime_topic_missing';
-    end if;
-
-    if v_action.actor_player_id is null
-      and v_action.actor_role_id is not null
-    then
-      update public.realtime_topics as topics
-      set snapshot_revision = topics.snapshot_revision + 1
-      where topics.room_id = v_room.id
-        and topics.scope = 'role_private'
-        and topics.role_id = v_action.actor_role_id;
-
-      get diagnostics v_topic_update_count = row_count;
-
-      if v_topic_update_count <> 1 then
-        raise exception using errcode = 'P0001', message = 'realtime_topic_missing';
-      end if;
-    end if;
-
-    v_notification_reason := 'private_view_changed';
+    return query select v_room.id, v_player.id, 'private_view_changed'::text;
   else
     update public.rooms as rooms
     set snapshot_revision = rooms.snapshot_revision + 1,
         updated_at = v_now
     where rooms.id = v_room.id;
 
-    v_notification_reason := 'action_window_changed';
+    return query select v_room.id, v_player.id, 'action_window_changed'::text;
   end if;
-
-  return query
-  select v_room.id, v_player.id, v_notification_reason;
 end;
 $$;
 
 create function public.app_send_night_conversation_message(
   p_account_id bigint,
   p_room_code text,
+  p_game_id uuid,
   p_phase_instance_id uuid,
   p_night_number integer,
   p_conversation_group_id text,
@@ -1573,17 +1425,16 @@ set search_path = ''
 as $$
 declare
   v_body text := pg_catalog.btrim(coalesce(p_body, ''));
-  v_expected_topic_count integer;
+  v_game public.games%rowtype;
   v_group jsonb;
-  v_now timestamptz;
+  v_now timestamptz := pg_catalog.clock_timestamp();
   v_player public.players%rowtype;
   v_room public.rooms%rowtype;
-  v_state public.game_states%rowtype;
   v_submitter_alive boolean;
   v_submitter_role_id text;
-  v_topic_update_count integer;
 begin
   if p_account_id is null
+    or p_game_id is null
     or p_phase_instance_id is null
     or p_night_number is null
     or p_night_number < 1
@@ -1610,6 +1461,21 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
+  if v_room.current_game_id is distinct from p_game_id then
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
+  end if;
+
+  select games.*
+  into v_game
+  from public.games as games
+  where games.id = p_game_id
+    and games.room_id = v_room.id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
+  end if;
+
   select players.*
   into v_player
   from public.players as players
@@ -1622,30 +1488,19 @@ begin
     raise exception using errcode = 'P0001', message = 'current_room_changed';
   end if;
 
-  select states.*
-  into v_state
-  from public.game_states as states
-  where states.room_id = v_room.id
-  for update;
-
-  if not found
-    or v_room.status <> 'playing'
-    or v_state.status <> 'playing'
-    or v_state.phase <> 'night'
-    or v_state.phase_instance_id is distinct from p_phase_instance_id
-    or v_state.night_number <> p_night_number
+  if v_game.ended_at is not null
+    or v_game.phase <> 'night'
+    or v_game.phase_instance_id is distinct from p_phase_instance_id
+    or v_game.night_number <> p_night_number
   then
     raise exception using errcode = 'P0001', message = 'stale_phase';
   end if;
 
-  select assignments.role_id, player_states.alive
+  select game_players.role_id, game_players.alive
   into v_submitter_role_id, v_submitter_alive
-  from public.role_assignments as assignments
-  join public.game_player_states as player_states
-    on player_states.room_id = assignments.room_id
-   and player_states.player_id = assignments.player_id
-  where assignments.room_id = v_room.id
-    and assignments.player_id = v_player.id;
+  from public.game_players as game_players
+  where game_players.game_id = p_game_id
+    and game_players.player_id = v_player.id;
 
   if not found or not v_submitter_alive then
     raise exception using errcode = 'P0001', message = 'night_message_not_allowed';
@@ -1657,26 +1512,34 @@ begin
   cross join lateral pg_catalog.jsonb_array_elements(
     rule_sets.resolved_role_setup -> 'nightConversationGroups'
   ) as groups(value)
-  where rule_sets.room_id = v_room.id
+  where rule_sets.game_id = p_game_id
     and groups.value ->> 'groupId' = p_conversation_group_id
   limit 1;
 
   if not found
     or pg_catalog.jsonb_typeof(v_group) <> 'object'
     or pg_catalog.jsonb_typeof(v_group -> 'roleIds') <> 'array'
-    or not exists (
+    or not (
+      v_group -> 'roleIds' ? v_submitter_role_id
+    )
+    or exists (
       select 1
       from pg_catalog.jsonb_array_elements_text(v_group -> 'roleIds') as roles(role_id)
-      where roles.role_id = v_submitter_role_id
+      where not exists (
+        select 1
+        from public.realtime_topics as topics
+        where topics.room_id = v_room.id
+          and topics.game_id = p_game_id
+          and topics.scope = 'role_private'
+          and topics.role_id = roles.role_id
+      )
     )
   then
     raise exception using errcode = 'P0001', message = 'night_message_not_allowed';
   end if;
 
-  v_now := pg_catalog.clock_timestamp();
-
   insert into public.night_conversation_messages (
-    room_id,
+    game_id,
     night_number,
     conversation_group_id,
     sender_player_id,
@@ -1684,7 +1547,7 @@ begin
     created_at
   )
   values (
-    v_room.id,
+    p_game_id,
     p_night_number,
     p_conversation_group_id,
     v_player.id,
@@ -1692,36 +1555,24 @@ begin
     v_now
   );
 
-  select count(*)
-  into v_expected_topic_count
-  from pg_catalog.jsonb_array_elements_text(
-    v_group -> 'roleIds'
-  ) as roles(role_id);
-
-  update public.realtime_topics as topics
-  set snapshot_revision = topics.snapshot_revision + 1
-  where topics.room_id = v_room.id
-    and topics.scope = 'role_private'
-    and topics.role_id in (
-      select roles.role_id
-      from pg_catalog.jsonb_array_elements_text(
-        v_group -> 'roleIds'
-      ) as roles(role_id)
+  update public.players as players
+  set private_snapshot_revision = players.private_snapshot_revision + 1
+  where players.room_id = v_room.id
+    and players.left_at is null
+    and exists (
+      select 1
+      from public.game_players as recipients
+      where recipients.game_id = p_game_id
+        and recipients.player_id = players.id
+        and v_group -> 'roleIds' ? recipients.role_id
     );
 
-  get diagnostics v_topic_update_count = row_count;
-
-  if v_topic_update_count <> v_expected_topic_count then
-    raise exception using errcode = 'P0001', message = 'realtime_topic_missing';
-  end if;
-
-  return query
-  select v_room.id, v_player.id, 'private_view_changed'::text;
+  return query select v_room.id, v_player.id, 'private_view_changed'::text;
 end;
 $$;
 
 create function public.app_resolve_phase(
-  p_room_id bigint,
+  p_game_id uuid,
   p_phase_instance_id uuid,
   p_expected_revision bigint,
   p_expected_action_revision bigint,
@@ -1754,6 +1605,7 @@ declare
   v_death_player_ids bigint[] := array[]::bigint[];
   v_deleted_action_count integer;
   v_final_winner_team text;
+  v_game public.games%rowtype;
   v_key_count integer;
   v_next_phase_ends_at timestamptz;
   v_now timestamptz;
@@ -1764,13 +1616,10 @@ declare
   v_result_player_id bigint;
   v_result_player_ids bigint[] := array[]::bigint[];
   v_result_player_ids_sorted bigint[];
-  v_result_value text;
   v_room public.rooms%rowtype;
-  v_state public.game_states%rowtype;
   v_updated_count integer;
 begin
-  if p_room_id is null
-    or p_room_id < 1
+  if p_game_id is null
     or p_phase_instance_id is null
     or p_expected_revision is null
     or p_expected_revision < 0
@@ -1798,55 +1647,53 @@ begin
     raise exception using errcode = 'P0001', message = 'invalid_phase_resolution';
   end if;
 
+  select games.*
+  into v_game
+  from public.games as games
+  where games.id = p_game_id;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
+  end if;
+
   select rooms.*
   into v_room
   from public.rooms as rooms
-  where rooms.id = p_room_id
+  where rooms.id = v_game.room_id
   for update;
 
-  if not found then
-    raise exception using errcode = 'P0001', message = 'room_not_found';
+  if v_room.current_game_id is distinct from p_game_id then
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
   end if;
 
-  if v_room.status <> 'playing' then
-    return query
-    select v_room.id, null::bigint, null::text;
-    return;
-  end if;
-
-  select states.*
-  into v_state
-  from public.game_states as states
-  where states.room_id = v_room.id
+  select games.*
+  into v_game
+  from public.games as games
+  where games.id = p_game_id
   for update;
 
-  if not found then
-    raise exception using errcode = 'P0001', message = 'game_state_not_found';
-  end if;
-
-  if v_state.status <> 'playing'
-    or v_state.phase_instance_id is distinct from p_phase_instance_id
-    or v_state.revision <> p_expected_revision
-    or v_state.action_revision <> p_expected_action_revision
+  if v_game.ended_at is not null
+    or v_game.phase_instance_id is distinct from p_phase_instance_id
+    or v_game.revision <> p_expected_revision
+    or v_game.action_revision <> p_expected_action_revision
   then
-    return query
-    select v_room.id, null::bigint, null::text;
+    return query select v_room.id, null::bigint, null::text;
     return;
   end if;
 
-  perform 1
+  perform actions.id
   from public.current_actions as actions
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id
   order by actions.id
   for update;
 
-  perform 1
+  perform pending.current_action_id
   from public.pending_actions as pending
   join public.current_actions as actions
-    on actions.room_id = pending.room_id
+    on actions.game_id = pending.game_id
    and actions.id = pending.current_action_id
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id
   order by pending.current_action_id
   for update of pending;
@@ -1857,35 +1704,34 @@ begin
     else v_now + pg_catalog.make_interval(secs => p_next_phase_duration_seconds)
   end;
 
-  select count(*)
+  select pg_catalog.count(*)
   into v_action_count
   from public.current_actions as actions
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id;
 
-  select count(*)
+  select pg_catalog.count(*)
   into v_pending_action_count
   from public.pending_actions as pending
   join public.current_actions as actions
-    on actions.room_id = pending.room_id
+    on actions.game_id = pending.game_id
    and actions.id = pending.current_action_id
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id;
 
-  v_all_actions_submitted := v_action_count > 0
-    and v_pending_action_count = v_action_count;
-  v_phase_timed_out := v_state.phase_ends_at is not null
-    and v_state.phase_ends_at <= v_now;
+  v_all_actions_submitted :=
+    v_action_count > 0 and v_pending_action_count = v_action_count;
+  v_phase_timed_out :=
+    v_game.phase_ends_at is not null and v_game.phase_ends_at <= v_now;
 
   if not (
     v_phase_timed_out
     or (
-      (v_state.phase <> 'night' or v_state.night_number = 1)
+      (v_game.phase <> 'night' or v_game.night_number = 1)
       and v_all_actions_submitted
     )
   ) then
-    return query
-    select v_room.id, null::bigint, null::text;
+    return query select v_room.id, null::bigint, null::text;
     return;
   end if;
 
@@ -1893,15 +1739,11 @@ begin
     select deaths.value
     from pg_catalog.jsonb_array_elements(p_deaths) as deaths(value)
   loop
-    if pg_catalog.jsonb_typeof(v_death) <> 'object' then
-      raise exception using errcode = 'P0001', message = 'invalid_deaths';
-    end if;
-
-    select count(*)
-    into v_key_count
-    from pg_catalog.jsonb_object_keys(v_death);
-
-    if v_key_count <> 2
+    if pg_catalog.jsonb_typeof(v_death) <> 'object'
+      or (
+        select pg_catalog.count(*)
+        from pg_catalog.jsonb_object_keys(v_death)
+      ) <> 2
       or not (v_death ? 'player_id' and v_death ? 'reason')
       or not private.jsonb_integer_between(
         v_death -> 'player_id',
@@ -1925,11 +1767,12 @@ begin
       v_death_player_id
     );
 
-    update public.game_player_states as player_states
-    set alive = false
-    where player_states.room_id = v_room.id
-      and player_states.player_id = v_death_player_id
-      and player_states.alive;
+    update public.game_players as game_players
+    set alive = false,
+        updated_at = v_now
+    where game_players.game_id = p_game_id
+      and game_players.player_id = v_death_player_id
+      and game_players.alive;
 
     get diagnostics v_updated_count = row_count;
 
@@ -1939,7 +1782,7 @@ begin
   end loop;
 
   insert into public.resolved_actions (
-    room_id,
+    game_id,
     phase_instance_id,
     phase,
     action_key,
@@ -1952,9 +1795,9 @@ begin
     resolved_at
   )
   select
-    actions.room_id,
+    actions.game_id,
     actions.phase_instance_id,
-    v_state.phase,
+    v_game.phase,
     actions.action_key,
     actions.action_kind,
     actions.resolver_role_id,
@@ -1968,21 +1811,21 @@ begin
     v_now
   from public.current_actions as actions
   left join public.pending_actions as pending
-    on pending.room_id = actions.room_id
+    on pending.game_id = actions.game_id
    and pending.current_action_id = actions.id
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id
   order by actions.id;
 
   perform private.insert_game_events(
-    v_room.id,
+    p_game_id,
     p_phase_instance_id,
     v_now,
     p_events
   );
 
   if p_final_outcome is not null then
-    select count(*)
+    select pg_catalog.count(*)
     into v_key_count
     from pg_catalog.jsonb_object_keys(p_final_outcome);
 
@@ -1998,7 +1841,7 @@ begin
         cross join lateral pg_catalog.jsonb_array_elements(
           rule_sets.resolved_role_setup -> 'contributions'
         ) as contributions(value)
-        where rule_sets.room_id = v_room.id
+        where rule_sets.game_id = p_game_id
           and contributions.value ->> 'kind' = 'winner_judgement'
           and contributions.value -> 'judgement' ->> 'winnerTeam'
             = v_final_winner_team
@@ -2006,8 +1849,8 @@ begin
       or p_next_phase is not null
       or p_next_phase_instance_id is not null
       or p_next_phase_duration_seconds is not null
-      or p_next_day_number is distinct from v_state.day_number
-      or p_next_night_number is distinct from v_state.night_number
+      or p_next_day_number is distinct from v_game.day_number
+      or p_next_night_number is distinct from v_game.night_number
       or pg_catalog.jsonb_array_length(p_actions) <> 0
       or pg_catalog.jsonb_array_length(p_day_speech_slots) <> 0
     then
@@ -2018,15 +1861,11 @@ begin
       select results.value
       from pg_catalog.jsonb_array_elements(p_player_results) as results(value)
     loop
-      if pg_catalog.jsonb_typeof(v_result) <> 'object' then
-        raise exception using errcode = 'P0001', message = 'invalid_player_results';
-      end if;
-
-      select count(*)
-      into v_key_count
-      from pg_catalog.jsonb_object_keys(v_result);
-
-      if v_key_count <> 2
+      if pg_catalog.jsonb_typeof(v_result) <> 'object'
+        or (
+          select pg_catalog.count(*)
+          from pg_catalog.jsonb_object_keys(v_result)
+        ) <> 2
         or not (v_result ? 'player_id' and v_result ? 'result')
         or not private.jsonb_integer_between(
           v_result -> 'player_id',
@@ -2040,8 +1879,6 @@ begin
       end if;
 
       v_result_player_id := (v_result ->> 'player_id')::bigint;
-      v_result_value := v_result ->> 'result';
-
       if v_result_player_id = any(v_result_player_ids) then
         raise exception using errcode = 'P0001', message = 'invalid_player_results';
       end if;
@@ -2053,12 +1890,12 @@ begin
     end loop;
 
     select coalesce(
-      pg_catalog.array_agg(player_states.player_id order by player_states.player_id),
+      pg_catalog.array_agg(game_players.player_id order by game_players.player_id),
       array[]::bigint[]
     )
     into v_player_ids
-    from public.game_player_states as player_states
-    where player_states.room_id = v_room.id;
+    from public.game_players as game_players
+    where game_players.game_id = p_game_id;
 
     select coalesce(
       pg_catalog.array_agg(results.player_id order by results.player_id),
@@ -2082,38 +1919,38 @@ begin
       or p_next_night_number is null
       or p_next_night_number < 1
       or (
-        p_next_phase = v_state.phase
+        p_next_phase = v_game.phase
         and pg_catalog.jsonb_array_length(p_actions) = 0
       )
       or not (
         (
-          p_next_phase = v_state.phase
-          and p_next_day_number = v_state.day_number
-          and p_next_night_number = v_state.night_number
+          p_next_phase = v_game.phase
+          and p_next_day_number = v_game.day_number
+          and p_next_night_number = v_game.night_number
         )
         or (
-          v_state.phase = 'night'
+          v_game.phase = 'night'
           and p_next_phase = 'day'
-          and p_next_day_number = v_state.day_number + 1
-          and p_next_night_number = v_state.night_number
+          and p_next_day_number = v_game.day_number + 1
+          and p_next_night_number = v_game.night_number
         )
         or (
-          v_state.phase = 'day'
+          v_game.phase = 'day'
           and p_next_phase = 'voting'
-          and p_next_day_number = v_state.day_number
-          and p_next_night_number = v_state.night_number
+          and p_next_day_number = v_game.day_number
+          and p_next_night_number = v_game.night_number
         )
         or (
-          v_state.phase = 'voting'
+          v_game.phase = 'voting'
           and p_next_phase = 'execution'
-          and p_next_day_number = v_state.day_number
-          and p_next_night_number = v_state.night_number
+          and p_next_day_number = v_game.day_number
+          and p_next_night_number = v_game.night_number
         )
         or (
-          v_state.phase in ('voting', 'execution')
+          v_game.phase in ('voting', 'execution')
           and p_next_phase = 'night'
-          and p_next_day_number = v_state.day_number
-          and p_next_night_number = v_state.night_number + 1
+          and p_next_day_number = v_game.day_number
+          and p_next_night_number = v_game.night_number + 1
         )
       )
     then
@@ -2122,11 +1959,11 @@ begin
   end if;
 
   delete from public.day_speech_slots as slots
-  where slots.room_id = v_room.id
+  where slots.game_id = p_game_id
     and slots.phase_instance_id = p_phase_instance_id;
 
   delete from public.current_actions as actions
-  where actions.room_id = v_room.id
+  where actions.game_id = p_game_id
     and actions.phase_instance_id = p_phase_instance_id;
 
   get diagnostics v_deleted_action_count = row_count;
@@ -2135,108 +1972,9 @@ begin
     raise exception using errcode = 'P0001', message = 'action_window_changed';
   end if;
 
-  if p_final_outcome is not null then
-    update public.game_phase_instances as phase_instances
-    set ended_at = v_now
-    where phase_instances.room_id = v_room.id
-      and phase_instances.id = p_phase_instance_id
-      and phase_instances.ended_at is null;
-
-    get diagnostics v_updated_count = row_count;
-
-    if v_updated_count <> 1 then
-      raise exception using errcode = 'P0001', message = 'phase_changed';
-    end if;
-
-    insert into public.final_outcomes (
-      room_id,
-      winner_team,
-      created_at
-    )
-    values (
-      v_room.id,
-      v_final_winner_team,
-      v_now
-    );
-
-    for v_result in
-      select results.value
-      from pg_catalog.jsonb_array_elements(p_player_results) as results(value)
-    loop
-      v_result_player_id := (v_result ->> 'player_id')::bigint;
-      v_result_value := v_result ->> 'result';
-
-      insert into public.player_results (
-        room_id,
-        player_id,
-        result,
-        created_at
-      )
-      values (
-        v_room.id,
-        v_result_player_id,
-        v_result_value,
-        v_now
-      );
-    end loop;
-
-    update public.game_states as states
-    set phase = null,
-        phase_instance_id = null,
-        phase_started_at = null,
-        phase_ends_at = null,
-        revision = states.revision + 1,
-        action_revision = 0,
-        updated_at = v_now,
-        ended_at = v_now
-    where states.room_id = v_room.id
-      and states.phase_instance_id = p_phase_instance_id
-      and states.revision = p_expected_revision
-      and states.action_revision = p_expected_action_revision
-      and states.status = 'playing';
-
-    get diagnostics v_updated_count = row_count;
-
-    if v_updated_count <> 1 then
-      raise exception using errcode = 'P0001', message = 'phase_changed';
-    end if;
-
-    update public.rooms as rooms
-    set ended_at = v_now,
-        snapshot_revision = rooms.snapshot_revision + 1,
-        updated_at = v_now
-    where rooms.id = v_room.id
-      and rooms.status = 'playing';
-
-    get diagnostics v_updated_count = row_count;
-
-    if v_updated_count <> 1 then
-      raise exception using errcode = 'P0001', message = 'room_state_changed';
-    end if;
-
-    insert into public.room_events (
-      room_id,
-      event_kind,
-      actor_player_id,
-      payload,
-      created_at
-    )
-    values (
-      v_room.id,
-      'room_ended',
-      null,
-      '{"reason":"game_finished"}'::jsonb,
-      v_now
-    );
-
-    return query
-    select v_room.id, null::bigint, 'game_ended'::text;
-    return;
-  end if;
-
   update public.game_phase_instances as phase_instances
   set ended_at = v_now
-  where phase_instances.room_id = v_room.id
+  where phase_instances.game_id = p_game_id
     and phase_instances.id = p_phase_instance_id
     and phase_instances.ended_at is null;
 
@@ -2246,8 +1984,76 @@ begin
     raise exception using errcode = 'P0001', message = 'phase_changed';
   end if;
 
+  if p_final_outcome is not null then
+    for v_result in
+      select results.value
+      from pg_catalog.jsonb_array_elements(p_player_results) as results(value)
+    loop
+      update public.game_players as game_players
+      set result = v_result ->> 'result',
+          updated_at = v_now
+      where game_players.game_id = p_game_id
+        and game_players.player_id = (v_result ->> 'player_id')::bigint;
+    end loop;
+
+    update public.games as games
+    set phase = null,
+        phase_instance_id = null,
+        phase_started_at = null,
+        phase_ends_at = null,
+        revision = games.revision + 1,
+        action_revision = 0,
+        winner_team = v_final_winner_team,
+        updated_at = v_now,
+        ended_at = v_now
+    where games.id = p_game_id
+      and games.phase_instance_id = p_phase_instance_id
+      and games.revision = p_expected_revision
+      and games.action_revision = p_expected_action_revision
+      and games.ended_at is null;
+
+    get diagnostics v_updated_count = row_count;
+
+    if v_updated_count <> 1 then
+      raise exception using errcode = 'P0001', message = 'phase_changed';
+    end if;
+
+    update public.rooms as rooms
+    set roster_revision = rooms.roster_revision + 1,
+        snapshot_revision = rooms.snapshot_revision + 1,
+        lobby_expires_at = v_now + interval '30 minutes',
+        updated_at = v_now
+    where rooms.id = v_room.id
+      and rooms.closed_at is null
+      and rooms.current_game_id = p_game_id;
+
+    get diagnostics v_updated_count = row_count;
+
+    if v_updated_count <> 1 then
+      raise exception using errcode = 'P0001', message = 'stale_game_id';
+    end if;
+
+    insert into public.room_events (
+      room_id,
+      event_kind,
+      game_id,
+      payload,
+      created_at
+    )
+    values (
+      v_room.id,
+      'game_ended',
+      p_game_id,
+      pg_catalog.jsonb_build_object('winnerTeam', v_final_winner_team),
+      v_now
+    );
+
+    return query select v_room.id, null::bigint, 'game_ended'::text;
+    return;
+  end if;
+
   insert into public.game_phase_instances (
-    room_id,
+    game_id,
     id,
     phase,
     day_number,
@@ -2256,7 +2062,7 @@ begin
     ends_at
   )
   values (
-    v_room.id,
+    p_game_id,
     p_next_phase_instance_id,
     p_next_phase,
     p_next_day_number,
@@ -2265,21 +2071,21 @@ begin
     v_next_phase_ends_at
   );
 
-  update public.game_states as states
+  update public.games as games
   set phase = p_next_phase,
       phase_instance_id = p_next_phase_instance_id,
       phase_started_at = v_now,
       phase_ends_at = v_next_phase_ends_at,
       day_number = p_next_day_number,
       night_number = p_next_night_number,
-      revision = states.revision + 1,
+      revision = games.revision + 1,
       action_revision = 0,
       updated_at = v_now
-  where states.room_id = v_room.id
-    and states.phase_instance_id = p_phase_instance_id
-    and states.revision = p_expected_revision
-    and states.action_revision = p_expected_action_revision
-    and states.status = 'playing';
+  where games.id = p_game_id
+    and games.phase_instance_id = p_phase_instance_id
+    and games.revision = p_expected_revision
+    and games.action_revision = p_expected_action_revision
+    and games.ended_at is null;
 
   get diagnostics v_updated_count = row_count;
 
@@ -2288,14 +2094,14 @@ begin
   end if;
 
   perform private.insert_current_actions(
-    v_room.id,
+    p_game_id,
     p_next_phase_instance_id,
     v_next_phase_ends_at,
     p_actions
   );
 
   perform private.insert_day_speech_slots(
-    v_room.id,
+    p_game_id,
     p_next_phase_instance_id,
     p_day_speech_slots
   );
@@ -2304,12 +2110,13 @@ begin
   set snapshot_revision = rooms.snapshot_revision + 1,
       updated_at = v_now
   where rooms.id = v_room.id
-    and rooms.status = 'playing';
+    and rooms.closed_at is null
+    and rooms.current_game_id = p_game_id;
 
   get diagnostics v_updated_count = row_count;
 
   if v_updated_count <> 1 then
-    raise exception using errcode = 'P0001', message = 'room_state_changed';
+    raise exception using errcode = 'P0001', message = 'stale_game_id';
   end if;
 
   return query
@@ -2317,15 +2124,16 @@ begin
     v_room.id,
     null::bigint,
     case
-      when p_next_phase is distinct from v_state.phase then 'phase_changed'::text
+      when p_next_phase is distinct from v_game.phase then 'phase_changed'::text
       else 'action_window_changed'::text
     end;
 end;
 $$;
 
-revoke all on function public.app_start_room(
+revoke all on function public.app_start_game(
   bigint,
   text,
+  bigint,
   bigint[],
   uuid,
   integer,
@@ -2341,6 +2149,7 @@ revoke all on function public.app_start_room(
 revoke all on function public.app_submit_action(
   bigint,
   text,
+  uuid,
   text,
   uuid,
   bigint,
@@ -2350,12 +2159,13 @@ revoke all on function public.app_send_night_conversation_message(
   bigint,
   text,
   uuid,
+  uuid,
   integer,
   text,
   text
 ) from public, anon, authenticated;
 revoke all on function public.app_resolve_phase(
-  bigint,
+  uuid,
   uuid,
   bigint,
   bigint,
@@ -2372,9 +2182,10 @@ revoke all on function public.app_resolve_phase(
   jsonb
 ) from public, anon, authenticated;
 
-grant execute on function public.app_start_room(
+grant execute on function public.app_start_game(
   bigint,
   text,
+  bigint,
   bigint[],
   uuid,
   integer,
@@ -2390,6 +2201,7 @@ grant execute on function public.app_start_room(
 grant execute on function public.app_submit_action(
   bigint,
   text,
+  uuid,
   text,
   uuid,
   bigint,
@@ -2399,12 +2211,13 @@ grant execute on function public.app_send_night_conversation_message(
   bigint,
   text,
   uuid,
+  uuid,
   integer,
   text,
   text
 ) to service_role;
 grant execute on function public.app_resolve_phase(
-  bigint,
+  uuid,
   uuid,
   bigint,
   bigint,
@@ -2420,6 +2233,3 @@ grant execute on function public.app_resolve_phase(
   jsonb,
   jsonb
 ) to service_role;
-
-revoke all on all functions in schema private
-  from public, anon, authenticated, service_role;

@@ -1,27 +1,36 @@
-import type { RealtimeScope, RealtimeSubscription } from "@/lib/shared/game";
+import {
+  isRoleId,
+  type RealtimeScope,
+  type RealtimeSubscription,
+  type RoleId,
+} from "@/lib/shared/game";
 
 type ActiveRealtimeGrant = {
   actorPlayerId: number;
   expiresAt: string;
+  gameId: string | null;
   grantId: string;
   kind: "active";
   roomId: number;
   subscriptions: RealtimeSubscription[];
 };
 
-type ExpiredWaitingRoomGrant = {
+type ClosedRoomGrant = {
   actorPlayerId: number;
-  kind: "waiting_room_ended";
+  kind: "room_closed";
   roomId: number;
 };
 
-export type RealtimeGrantRpcResult = ActiveRealtimeGrant | ExpiredWaitingRoomGrant;
+export type RealtimeGrantRpcResult = ActiveRealtimeGrant | ClosedRoomGrant;
 
 type ActiveRecord = {
   actorPlayerId: number;
   expiresAt: string;
+  gameId: string | null;
   grantId: string;
   roomId: number;
+  playerId: number | null;
+  roleId: RoleId | null;
   scope: RealtimeScope;
   topic: string;
 };
@@ -29,8 +38,12 @@ type ActiveRecord = {
 type RealtimeGrantRecord = {
   actor_player_id?: unknown;
   expires_at?: unknown;
+  game_id?: unknown;
   grant_id?: unknown;
   notification_reason?: unknown;
+  player_id?: unknown;
+  result_kind?: unknown;
+  role_id?: unknown;
   room_id?: unknown;
   scope?: unknown;
   topic?: unknown;
@@ -45,22 +58,26 @@ export function parseRealtimeGrantRpcResult(value: unknown): RealtimeGrantRpcRes
 
   const firstRecord = value[0];
 
-  if (isRecord(firstRecord) && firstRecord.notification_reason === "waiting_room_ended") {
+  if (isRecord(firstRecord) && firstRecord.notification_reason === "room_closed") {
     if (
       value.length !== 1 ||
+      firstRecord.result_kind !== "room_closed" ||
       !isPositiveSafeInteger(firstRecord.room_id) ||
       !isPositiveSafeInteger(firstRecord.actor_player_id) ||
       firstRecord.topic !== null ||
       firstRecord.scope !== null ||
       firstRecord.grant_id !== null ||
-      firstRecord.expires_at !== null
+      firstRecord.expires_at !== null ||
+      firstRecord.game_id !== null ||
+      firstRecord.role_id !== null ||
+      firstRecord.player_id !== null
     ) {
-      throw new Error("Realtime grant returned an invalid room-expiration result.");
+      throw new Error("Realtime grant returned an invalid Room closure result.");
     }
 
     return {
       actorPlayerId: firstRecord.actor_player_id,
-      kind: "waiting_room_ended",
+      kind: "room_closed",
       roomId: firstRecord.room_id,
     };
   }
@@ -74,6 +91,7 @@ export function parseRealtimeGrantRpcResult(value: unknown): RealtimeGrantRpcRes
       (record) =>
         record.actorPlayerId !== firstActiveRecord.actorPlayerId ||
         record.expiresAt !== firstActiveRecord.expiresAt ||
+        record.gameId !== firstActiveRecord.gameId ||
         record.grantId !== firstActiveRecord.grantId ||
         record.roomId !== firstActiveRecord.roomId,
     )
@@ -90,7 +108,8 @@ export function parseRealtimeGrantRpcResult(value: unknown): RealtimeGrantRpcRes
     scopes.size !== records.length ||
     topics.size !== records.length ||
     !scopes.has("room") ||
-    !scopes.has("player_private")
+    !scopes.has("player_private") ||
+    (firstActiveRecord.gameId === null ? scopes.has("role_private") : !scopes.has("role_private"))
   ) {
     throw new Error("Realtime grant returned an invalid subscription set.");
   }
@@ -98,6 +117,7 @@ export function parseRealtimeGrantRpcResult(value: unknown): RealtimeGrantRpcRes
   return {
     actorPlayerId: firstActiveRecord.actorPlayerId,
     expiresAt: firstActiveRecord.expiresAt,
+    gameId: firstActiveRecord.gameId,
     grantId: firstActiveRecord.grantId,
     kind: "active",
     roomId: firstActiveRecord.roomId,
@@ -117,10 +137,13 @@ function parseActiveRecord(value: unknown): ActiveRecord {
     typeof value.grant_id !== "string" ||
     !UUID_PATTERN.test(value.grant_id) ||
     value.notification_reason !== null ||
+    value.result_kind !== "active" ||
     !isPositiveSafeInteger(value.room_id) ||
     !isRealtimeScope(value.scope) ||
     typeof value.topic !== "string" ||
-    value.topic.length === 0
+    value.topic.length === 0 ||
+    !isNullableUuid(value.game_id) ||
+    !hasValidTopicOwnership(value)
   ) {
     throw new Error("Realtime grant returned an invalid subscription record.");
   }
@@ -128,11 +151,31 @@ function parseActiveRecord(value: unknown): ActiveRecord {
   return {
     actorPlayerId: value.actor_player_id,
     expiresAt: value.expires_at,
+    gameId: value.game_id,
     grantId: value.grant_id,
     roomId: value.room_id,
+    playerId: isPositiveSafeInteger(value.player_id) ? value.player_id : null,
+    roleId: isRoleId(value.role_id) ? value.role_id : null,
     scope: value.scope,
     topic: value.topic,
   };
+}
+
+function hasValidTopicOwnership(value: RealtimeGrantRecord): boolean {
+  switch (value.scope) {
+    case "player_private":
+      return value.player_id === value.actor_player_id && value.role_id === null;
+    case "role_private":
+      return value.game_id !== null && value.player_id === null && isRoleId(value.role_id);
+    case "room":
+      return value.player_id === null && value.role_id === null;
+    default:
+      return false;
+  }
+}
+
+function isNullableUuid(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && UUID_PATTERN.test(value));
 }
 
 function isRealtimeScope(value: unknown): value is RealtimeScope {

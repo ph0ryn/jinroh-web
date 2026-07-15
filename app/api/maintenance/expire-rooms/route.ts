@@ -1,8 +1,8 @@
-import { cleanupExpiredWaitingRooms } from "@/lib/server/gameRepository";
+import { cleanupExpiredRooms } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
 import { isAuthorizedMaintenanceRequest } from "@/lib/server/maintenanceAuth";
 
-type CleanupExpiredWaitingRoomsBody = {
+type CleanupExpiredRoomsBody = {
   limit?: unknown;
 };
 
@@ -13,7 +13,7 @@ export async function POST(request: Request): Promise<Response> {
     return authenticationFailure;
   }
 
-  const body = await readJson<CleanupExpiredWaitingRoomsBody>(request);
+  const body = await readJson<CleanupExpiredRoomsBody>(request);
   const parsedLimit = parseLimit(body?.limit);
 
   if ("response" in parsedLimit) {
@@ -21,9 +21,9 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    return jsonOk(await cleanupExpiredWaitingRooms(parsedLimit.limit));
+    return jsonOk(await cleanupExpiredRooms(parsedLimit.limit));
   } catch {
-    return jsonError("server_error", "Expired waiting room cleanup failed.", 500);
+    return jsonError("server_error", "Expired Room cleanup failed.", 500);
   }
 }
 

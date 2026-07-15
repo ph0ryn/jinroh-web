@@ -44,18 +44,18 @@
 - winner judgement は setup contribution としてゲーム開始時に固定する
 - winner judgement は priority の小さい順に評価する
 - PlayerResult は最終 state 固定後に評価する
+- Room membership と Game identity を分離し、同じ Room の各 play は異なる Game ID を持つ
+- browser view と Engine input は `Room.currentGameId` の Game だけを扱う
+- 完了 Game を current pointer から外しても履歴 row は保持する
 - game roster は開始時の Player から一度だけ固定し、Room membership history から
   後で再計算または補完しない
-- Playing / Ended の全 game roster Player は、登録済み Role の assignment と alive
-  state を1件ずつ持つ
-- Ended の全 game roster Player は、固定済み final outcome に対応する PlayerResult
-  を1件ずつ持つ
+- Playing / Ended の全 Game Player は、登録済み Role、alive state、nullable final result を持つ
 - assignment、alive state、PlayerResultの欠損や未知Roleをdefault値で補完しない
 - Account ID をゲームロジックに出さない
 - Player ID をゲーム内の主体として使う
 - phase は `night`、`day`、`voting`、`execution` のユーザー表示用状態に限定する
-- playing 中の Room は open な phase instance を必ず1つだけ持ち、
-  current game state の phase、counter、開始時刻、deadline と複合 FK で一致させる
+- playing Game は open な phase instance を必ず1つだけ持ち、
+  current Game の phase、counter、開始時刻、deadline と複合 FK で一致させる
 - Role assignment と result は phase ではなく game status と final outcome で扱う
 - First night は user-visible phase として `night` を使う
 - First night は `nightNumber === 1` で通常夜と区別する
@@ -121,11 +121,24 @@
   common code は同じ effect を持つ別 Role を例外なしで扱う
 - FoxRole が提供する `"fox"` Team ID は v1 では妖狐1人の独自陣営として扱う
 - 妖狐1人制約は FoxRole の `maxCount = 1` で表す
+- Game 開始には current roster revision に対する全 active Player の lobby readiness を要求する
+- effective join、再入室、leave、Game completion は roster revision を増やして古い readiness を無効化する
+- disconnect / reconnect だけでは lobby readiness を無効化しない
+- Game mutation は Game ID、phase instance、revision を current Game と照合する
+- role-private realtime authorization は Game ID と current assignment を照合する
+- viewer snapshot revision は Game 変更で逆行しない
 
 ## Test Scenarios
 
 確認すべきこと。
 
+- 同じ Room で2回開始すると異なる Game ID と分離された roster/history が保存される
+- Game 完了では Room を閉じず、current Game を result view として維持する
+- current completed Game roster にいない Player の join は pointer を外し、clean lobby を返す
+- clean lobby には前 Game の Role、state、action、event、chat、receipt、result が含まれない
+- 全員 ready 前、disconnect 中、stale roster revision では Game を開始できない
+- 過去 Game ID の action、night conversation、phase resolution は current Game を変更できない
+- 過去 Game の role-private grant は current Game topic を受信できない
 - Role constraints が不正な役職組み合わせを拒否する
 - 必須役職がない RuleSet は開始できない
 - 役職数が Player 数を超える RuleSet は開始できない
@@ -156,7 +169,7 @@
 - First night は `nightNumber === 1` で通常夜と区別できる
 - First night は全 Player の開始準備完了、または `firstNightSeconds` 経過で Day に進む
 - Playing 中の phase は night、day、voting、execution のいずれかになる
-- Room ごとに open な phase instance は最大1件で、current game state は
+- Game ごとに open な phase instance は最大1件で、current Game は
   その instance の phase、counter、開始時刻、deadline と一致する
 - application server は phase duration 秒を渡し、DB transaction の時計から開始時刻と
   deadline を一緒に固定する

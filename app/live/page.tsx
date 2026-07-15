@@ -39,6 +39,7 @@ import {
   writeStorage,
 } from "@/app/live/liveClient";
 import { createDefaultDisplayName } from "@/app/live/liveDefaultDisplayName";
+import { getLiveGameSessionKey, hasLiveGameBoundary } from "@/app/live/liveGameSession";
 import { formatRoomStatus, getLiveMood, getLivePageTitle } from "@/app/live/livePresentation";
 import { LiveRoundTable } from "@/app/live/liveRoundTable";
 import {
@@ -196,12 +197,17 @@ export default function LivePage() {
     completeEntry: completeToastEntry,
     completeExit: completeToastExit,
     dismiss: dismissToast,
+    discardScope: discardToastScope,
     request: requestToast,
     state: toastState,
   } = useLiveToastController();
 
   const captureRoomToastScope = useCallback(
-    (): LiveToastScope => createLiveToastRoomSessionScope(roomSessionIdRef.current),
+    (): LiveToastScope =>
+      createLiveToastRoomSessionScope(
+        roomSessionIdRef.current,
+        roomSummaryRef.current?.game?.gameId ?? null,
+      ),
     [],
   );
 
@@ -212,8 +218,13 @@ export default function LivePage() {
       durationMs = TOAST_DEFAULT_DURATION_MS,
       scope: LiveToastScope = LIVE_TOAST_PAGE_SCOPE,
     ) => {
-      if (scope.kind === "roomSession" && scope.sessionId !== roomSessionIdRef.current) {
-        return;
+      if (scope.kind === "roomSession") {
+        if (
+          scope.sessionId !== roomSessionIdRef.current ||
+          scope.gameId !== (roomSummaryRef.current?.game?.gameId ?? null)
+        ) {
+          return;
+        }
       }
 
       requestToast({
@@ -231,9 +242,19 @@ export default function LivePage() {
     setIdentityToken(nextIdentityToken);
   }, []);
 
+  const clearGameBoundUiState = useCallback(() => {
+    setPendingActionKey(null);
+    setIsNightConversationOpen(false);
+    setIsPublicLogOpen(false);
+    setNightConversationDraft("");
+    setIsStartSettingsOpen(false);
+    setIsLeaveConfirmationOpen(false);
+  }, []);
+
   const markBrowserStorageUnavailable = useCallback(() => {
     clearEffects();
     clearToastScope(captureRoomToastScope());
+    clearGameBoundUiState();
     updateIdentityToken(null);
     roomSummaryRef.current = null;
     appliedRoomSnapshotRef.current = null;
@@ -245,9 +266,13 @@ export default function LivePage() {
     setPendingRoomSwitch(null);
     setRealtimeAuthorization(null);
     setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
-    setIsStartSettingsOpen(false);
-    setIsLeaveConfirmationOpen(false);
-  }, [captureRoomToastScope, clearEffects, clearToastScope, updateIdentityToken]);
+  }, [
+    captureRoomToastScope,
+    clearEffects,
+    clearGameBoundUiState,
+    clearToastScope,
+    updateIdentityToken,
+  ]);
 
   const createRoomRequestContext = useCallback(
     (expectedRoomCode: string | null, token: string): RoomRequestContext => ({
@@ -276,8 +301,8 @@ export default function LivePage() {
     ignoredRoomCodeRef.current = null;
     startSettingsRoomSessionIdRef.current = null;
     setStartRuleSetSettings(DEFAULT_START_RULE_SET_SETTINGS);
-    setPendingActionKey(null);
-  }, [captureRoomToastScope, clearEffects, clearToastScope]);
+    clearGameBoundUiState();
+  }, [captureRoomToastScope, clearEffects, clearGameBoundUiState, clearToastScope]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -555,6 +580,14 @@ export default function LivePage() {
         throw error;
       }
 
+      const previousSummary = roomSummaryRef.current;
+      const crossedGameBoundary = hasLiveGameBoundary(previousSummary, nextSummary);
+
+      if (crossedGameBoundary) {
+        discardToastScope(captureRoomToastScope());
+        clearGameBoundUiState();
+      }
+
       appliedRoomSnapshotRef.current = {
         requestId: requestContext.requestId,
         roomCode: nextSummary.code,
@@ -570,6 +603,9 @@ export default function LivePage() {
     },
     [
       acceptEffectSummary,
+      captureRoomToastScope,
+      clearGameBoundUiState,
+      discardToastScope,
       displayName,
       isRoomRequestContextCurrent,
       markBrowserStorageUnavailable,
@@ -710,6 +746,7 @@ export default function LivePage() {
   }, []);
 
   const activeRoomCode = roomSummary?.code ?? null;
+  const activeGameSessionKey = getLiveGameSessionKey(roomSummary);
   const activePhaseEndsAt = roomSummary?.game?.phaseEndsAt ?? null;
   const activePhaseInstanceId = roomSummary?.game?.phaseInstanceId ?? null;
   const activeRealtimeSubscriptionKey = toRealtimeSubscriptionKey(
@@ -786,6 +823,7 @@ export default function LivePage() {
       }
     };
   }, [
+    activeGameSessionKey,
     activeRoomCode,
     identityToken,
     markBrowserStorageUnavailable,
@@ -1292,9 +1330,39 @@ export default function LivePage() {
     void withBusy(async () => {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+      const expectedRosterRevision = roomSummary?.rosterRevision;
+
+      if (expectedRosterRevision === undefined) {
+        throw new Error(t.live.hints.startNeedsRoom);
+      }
+
       const requestContext = createRoomRequestContext(roomCode, token);
       const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/start`, {
-        body: { ruleSet: buildStartRuleSetInput(startRuleSetSettings) },
+        body: {
+          expectedRosterRevision,
+          ruleSet: buildStartRuleSetInput(startRuleSetSettings),
+        },
+        method: "POST",
+        token,
+      });
+
+      rememberRoom(summary, requestContext);
+    });
+  }
+
+  function handleSetLobbyReady(isReady: boolean): void {
+    void withBusy(async () => {
+      const token = await ensureIdentityToken();
+      const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
+      const expectedRosterRevision = roomSummary?.rosterRevision;
+
+      if (expectedRosterRevision === undefined) {
+        throw new Error(t.live.hints.startNeedsRoom);
+      }
+
+      const requestContext = createRoomRequestContext(roomCode, token);
+      const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/readiness`, {
+        body: { expectedRosterRevision, isReady },
         method: "POST",
         token,
       });
@@ -1373,8 +1441,9 @@ export default function LivePage() {
         const token = await ensureIdentityToken();
         const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
         const expectedRevision = roomSummary?.game?.revision;
+        const gameId = roomSummary?.game?.gameId;
 
-        if (expectedRevision === undefined) {
+        if (expectedRevision === undefined || gameId === undefined) {
           throw new Error(t.live.status.actionWindowClosed);
         }
 
@@ -1382,6 +1451,7 @@ export default function LivePage() {
         const summary = await apiFetch<RoomSummary>(`/api/rooms/${roomCode}/action`, {
           body: {
             actionKey: action.key,
+            gameId,
             phaseInstanceId: action.phaseInstanceId,
             revision: expectedRevision,
             targetPlayerId,
@@ -1404,8 +1474,9 @@ export default function LivePage() {
       const token = await ensureIdentityToken();
       const roomCode = requireRoomCode(roomSummary?.code ?? roomCodeInput, t);
       const phaseInstanceId = roomSummary?.game?.phaseInstanceId;
+      const gameId = roomSummary?.game?.gameId;
 
-      if (phaseInstanceId === null || phaseInstanceId === undefined) {
+      if (phaseInstanceId === null || phaseInstanceId === undefined || gameId === undefined) {
         throw new Error(t.live.status.nightChatClosed);
       }
 
@@ -1414,6 +1485,7 @@ export default function LivePage() {
         body: {
           body: nightConversationDraft,
           conversationGroupId: conversation.groupId,
+          gameId,
           nightNumber: conversation.nightNumber,
           phaseInstanceId,
         },
@@ -1486,8 +1558,12 @@ export default function LivePage() {
 
   const isCurrentRoomParticipant = roomSummary !== null && roomSummary.currentPlayerId !== null;
   const selfActions = isCurrentRoomParticipant ? (roomSummary.self?.actions ?? []) : [];
+  const isCurrentGameCinematicObscured =
+    activeCue !== null && activeCue.gameId === roomSummary?.game?.gameId;
   const canConfigureStartSettings =
-    isCurrentRoomParticipant && roomSummary.isHost && roomSummary.status === "waiting";
+    isCurrentRoomParticipant &&
+    roomSummary.isHost &&
+    (roomSummary.status === "waiting" || roomSummary.status === "ended");
   const canLeaveRoom =
     isCurrentRoomParticipant &&
     (roomSummary.status === "waiting" || roomSummary.status === "ended");
@@ -1510,8 +1586,9 @@ export default function LivePage() {
         liveMood,
         roomSummary?.code ?? null,
         roomSummary?.currentPlayerId ?? null,
+        roomSummary?.game?.gameId ?? null,
       ),
-    [liveMood, roomSummary?.code, roomSummary?.currentPlayerId],
+    [liveMood, roomSummary?.code, roomSummary?.currentPlayerId, roomSummary?.game?.gameId],
   );
   const isBrowserStorageUnavailable = browserStorageStatus === "unavailable";
   const isRoomEntryAvailable =
@@ -1565,6 +1642,7 @@ export default function LivePage() {
         onCopyRoomCode={handleCopyRoomCode}
         onOpenSettings={() => setIsStartSettingsOpen(true)}
         onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+        onSetLobbyReady={handleSetLobbyReady}
         onShareRoom={handleShareRoom}
         onStartGame={handleStartGame}
       />
@@ -1576,7 +1654,7 @@ export default function LivePage() {
         isBusy={isBusy}
         isNightConversationOpen={isNightConversationOpen}
         isPublicLogOpen={isPublicLogOpen}
-        isCinematicObscured={activeCue !== null}
+        isCinematicObscured={isCurrentGameCinematicObscured}
         nightConversationDraft={nightConversationDraft}
         pendingActionKey={pendingActionKey}
         selfActions={selfActions}
@@ -1597,15 +1675,23 @@ export default function LivePage() {
   } else if (roomSummary !== null && roomBoundSurfaceStatus === "ended") {
     roomBoundSurface = (
       <LiveEndedSurface
+        copiedRoomCode={copiedInviteRoomCode}
         isBusy={isBusy}
+        isSettingsOpen={isStartSettingsOpen}
         isPublicLogOpen={isPublicLogOpen}
-        isCinematicObscured={activeCue !== null}
+        isCinematicObscured={isCurrentGameCinematicObscured}
         locale={locale}
+        roomUrl={roomInviteUrl}
         summary={roomSummary}
         t={t}
         onClosePublicLog={() => setIsPublicLogOpen(false)}
+        onCopyRoomCode={handleCopyRoomCode}
+        onOpenSettings={() => setIsStartSettingsOpen(true)}
         onOpenPublicLog={() => setIsPublicLogOpen(true)}
         onRequestLeaveRoom={() => setIsLeaveConfirmationOpen(true)}
+        onSetLobbyReady={handleSetLobbyReady}
+        onShareRoom={handleShareRoom}
+        onStartGame={handleStartGame}
       />
     );
   }

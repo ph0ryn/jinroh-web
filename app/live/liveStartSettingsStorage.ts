@@ -16,7 +16,6 @@ export type StartSettingsRoomSession = {
   readonly currentPlayerId: string;
   readonly roomCode: string;
   readonly targetPlayerCount: number;
-  readonly waitingExpiresAt: string;
 };
 
 type StoredStartSettings = {
@@ -26,7 +25,7 @@ type StoredStartSettings = {
 };
 
 export function getStartSettingsRoomSession(summary: RoomSummary): StartSettingsRoomSession | null {
-  if (summary.status !== "waiting" || !summary.isHost || summary.currentPlayerId === null) {
+  if (!summary.isHost || summary.currentPlayerId === null) {
     return null;
   }
 
@@ -34,17 +33,11 @@ export function getStartSettingsRoomSession(summary: RoomSummary): StartSettings
     currentPlayerId: summary.currentPlayerId,
     roomCode: summary.code,
     targetPlayerCount: summary.targetPlayerCount,
-    waitingExpiresAt: summary.waitingExpiresAt,
   };
 }
 
 export function getStartSettingsRoomSessionId(session: StartSettingsRoomSession): string {
-  return JSON.stringify([
-    session.roomCode,
-    session.waitingExpiresAt,
-    session.currentPlayerId,
-    session.targetPlayerCount,
-  ]);
+  return JSON.stringify([session.roomCode, session.currentPlayerId, session.targetPlayerCount]);
 }
 
 export function serializeStartSettings(
@@ -96,8 +89,7 @@ function parseSession(value: unknown): StartSettingsRoomSession | null {
     !isRecord(value) ||
     typeof value["currentPlayerId"] !== "string" ||
     typeof value["roomCode"] !== "string" ||
-    typeof value["targetPlayerCount"] !== "number" ||
-    typeof value["waitingExpiresAt"] !== "string"
+    typeof value["targetPlayerCount"] !== "number"
   ) {
     return null;
   }
@@ -106,7 +98,6 @@ function parseSession(value: unknown): StartSettingsRoomSession | null {
     currentPlayerId: value["currentPlayerId"],
     roomCode: value["roomCode"],
     targetPlayerCount: value["targetPlayerCount"],
-    waitingExpiresAt: value["waitingExpiresAt"],
   };
 }
 

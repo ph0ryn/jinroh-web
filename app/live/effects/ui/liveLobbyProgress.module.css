@@ -13,7 +13,7 @@
   position: relative;
 }
 
-.root[data-live-lobby-progress-state="ready"] {
+.root[data-live-lobby-progress-state="full"] {
   border-color: rgba(119, 189, 117, 0.62);
   box-shadow:
     inset 0 0 0 1px rgba(119, 189, 117, 0.09),
@@ -92,7 +92,7 @@
   font-weight: 820;
 }
 
-.root[data-live-lobby-progress-state="ready"] .count strong {
+.root[data-live-lobby-progress-state="full"] .count strong {
   color: #b7e3a2;
 }
 

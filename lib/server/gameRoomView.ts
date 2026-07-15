@@ -41,18 +41,21 @@ import {
 
 export type JsonObject = Record<string, unknown>;
 
+type RoomRuntimeStatus = RoomStatus | "closed";
+
 export type RoomRecord = {
+  closed_at: string | null;
   created_at: string;
-  ended_at: string | null;
+  current_game_id: string | null;
   host_account_id: number;
   id: number;
   public_room_code: string;
+  roster_revision: number;
   snapshot_revision: number;
-  started_at: string | null;
-  status: RoomStatus;
+  status: RoomRuntimeStatus;
   target_player_count: number;
   updated_at: string;
-  waiting_expires_at: string;
+  lobby_expires_at: string;
 };
 
 export type PlayerRecord = {
@@ -63,32 +66,34 @@ export type PlayerRecord = {
   joined_at: string;
   last_seen_at: string;
   left_at: string | null;
+  private_snapshot_revision: number;
   public_player_id: string;
+  ready_roster_revision: number | null;
   room_id: number;
   status: "joined" | "disconnected" | "left";
 };
 
-export type GameStateRecord = {
+export type GameRecord = {
   action_revision: number;
   day_number: number;
   ended_at: string | null;
+  id: string;
   night_number: number;
   phase: "night" | "day" | "voting" | "execution" | null;
   phase_ends_at: string | null;
   phase_instance_id: string | null;
   phase_started_at: string | null;
   revision: number;
+  started_at: string;
   status: "playing" | "ended";
+  winner_team: string | null;
 };
 
-export type RoleAssignmentRecord = {
-  player_id: number;
-  role_id: string;
-};
-
-export type GamePlayerStateRecord = {
+export type GamePlayerRecord = {
   alive: boolean;
   player_id: number;
+  result: PlayerResult | null;
+  role_id: RoleId;
 };
 
 export type CurrentActionRecord = {
@@ -128,15 +133,6 @@ export type GameEventRecord = {
   visibility: "public" | "private" | "internal";
 };
 
-export type FinalOutcomeRecord = {
-  winner_team: string;
-};
-
-export type PlayerResultRecord = {
-  player_id: number;
-  result: PlayerResult;
-};
-
 export type GameRuleSetRecord = {
   engine_version: string;
   options: Record<string, unknown>;
@@ -155,6 +151,7 @@ export type NightConversationMessageRecord = {
 };
 
 export type RealtimeTopicRecord = {
+  game_id: string | null;
   player_id: number | null;
   role_id: RoleId | null;
   scope: RealtimeScope;
@@ -169,7 +166,7 @@ export type ResolvedActionRecord = {
   day_number: number;
   id: number;
   night_number: number;
-  phase: NonNullable<GameStateRecord["phase"]>;
+  phase: NonNullable<GameRecord["phase"]>;
   phase_instance_id: string;
   resolution_status: "missing" | "submitted";
   resolved_at: string;
@@ -177,24 +174,25 @@ export type ResolvedActionRecord = {
   target_player_id: number | null;
 };
 
-export type RoomSnapshot = {
-  assignments: RoleAssignmentRecord[];
+export type GameRuntimeSnapshot = {
   currentActions: CurrentActionRecord[];
   daySpeechSlots: DaySpeechSlotRecord[];
-  finalOutcome: FinalOutcomeRecord | null;
-  gameState: GameStateRecord | null;
-  resolvedActions: ResolvedActionRecord[];
+  game: GameRecord;
+  gamePlayers: GamePlayerRecord[];
   nightConversationMessages: NightConversationMessageRecord[];
   pendingActions: PendingActionRecord[];
-  playerResults: PlayerResultRecord[];
-  playerStates: GamePlayerStateRecord[];
-  players: PlayerRecord[];
   privateEvents: GameEventRecord[];
   publicEvents: GameEventRecord[];
+  resolvedActions: ResolvedActionRecord[];
+  ruleSet: GameRuleSetRecord;
+};
+
+export type RoomSnapshot = {
+  currentGame: GameRuntimeSnapshot | null;
+  lobbyPlayers: PlayerRecord[];
   realtimeTopics: RealtimeTopicRecord[];
   room: RoomRecord;
-  ruleSet: GameRuleSetRecord | null;
-  version: 1;
+  version: 2;
   viewerPlayerId: number | null;
 };
 
@@ -208,58 +206,54 @@ export const NIGHT_CONVERSATION_MESSAGE_MAX_LENGTH = 100;
 
 export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
   const currentRoom = snapshot.room;
-  const players = snapshot.players;
-  const state = snapshot.gameState;
-  const assignments = snapshot.assignments;
-  const playerStates = snapshot.playerStates;
-  const actions = snapshot.currentActions;
-  const pendingActions = snapshot.pendingActions;
-  const outcome = snapshot.finalOutcome;
-  const results = snapshot.playerResults;
-  const nightConversationMessages = snapshot.nightConversationMessages;
+  const players = snapshot.lobbyPlayers;
 
-  assertPersistedGameState(
-    currentRoom,
-    state,
-    players,
-    assignments,
-    playerStates,
-    outcome,
-    results,
-  );
+  assertPersistedGameState(currentRoom, snapshot.currentGame, players, snapshot.viewerPlayerId);
+
+  if (currentRoom.status === "closed") {
+    throw new Error("A closed Room cannot be projected as a current Room.");
+  }
+
+  const visibleCurrentGame =
+    snapshot.viewerPlayerId === null && snapshot.currentGame?.game.status === "ended"
+      ? null
+      : snapshot.currentGame;
+  const state = visibleCurrentGame?.game ?? null;
+  const gamePlayers = visibleCurrentGame?.gamePlayers ?? [];
+  const actions = visibleCurrentGame?.currentActions ?? [];
+  const pendingActions = visibleCurrentGame?.pendingActions ?? [];
+  const nightConversationMessages = visibleCurrentGame?.nightConversationMessages ?? [];
   const currentPlayer =
     players.find((player) => player.id === snapshot.viewerPlayerId && player.status !== "left") ??
     null;
   const isHost = currentPlayer !== null && currentRoom.host_account_id === currentPlayer.account_id;
-  const assignmentByPlayer = new Map(
-    assignments.map((assignment) => [assignment.player_id, assignment]),
+  const gamePlayerByPlayer = new Map(
+    gamePlayers.map((gamePlayer) => [gamePlayer.player_id, gamePlayer]),
   );
-  const stateByPlayer = new Map(
-    playerStates.map((playerState) => [playerState.player_id, playerState]),
-  );
-  const resultByPlayer = new Map(results.map((result) => [result.player_id, result]));
   const publicPlayers: PublicPlayer[] = players.map((player) => ({
-    alive: stateByPlayer.get(player.id)?.alive ?? null,
+    alive: gamePlayerByPlayer.get(player.id)?.alive ?? null,
     displayName: player.display_name,
     id: player.public_player_id,
     isCurrent: currentPlayer?.id === player.id,
     isHost: player.account_id === currentRoom.host_account_id,
+    isLobbyReady:
+      player.status !== "left" && player.ready_roster_revision === currentRoom.roster_revision,
     revealedRoleId: toRevealedRoleId(
-      currentRoom.status,
       state?.status ?? null,
-      assignmentByPlayer.get(player.id)?.role_id ?? null,
+      gamePlayerByPlayer.get(player.id)?.role_id ?? null,
     ),
     status: player.status,
   }));
-  const currentAssignment =
-    currentPlayer === null ? null : (assignmentByPlayer.get(currentPlayer.id) ?? null);
-  const currentRoleId = currentAssignment?.role_id ?? null;
-  const events = snapshot.publicEvents.flatMap((event) => {
+  const currentGamePlayer =
+    currentPlayer === null ? null : (gamePlayerByPlayer.get(currentPlayer.id) ?? null);
+  const currentRoleId = currentGamePlayer?.role_id ?? null;
+  const events = (visibleCurrentGame?.publicEvents ?? []).flatMap((event) => {
     const publicEvent = toPublicGameEvent(event, players);
 
     return publicEvent === null ? [] : [publicEvent];
   });
-  const visiblePrivateEventRecords = currentPlayer === null ? [] : snapshot.privateEvents;
+  const visiblePrivateEventRecords =
+    currentPlayer === null ? [] : (visibleCurrentGame?.privateEvents ?? []);
   const publicGame: PublicGameView | null =
     state === null
       ? null
@@ -267,6 +261,7 @@ export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
           actionProgress: toPublicActionProgress(state, actions, pendingActions),
           dayNumber: state.day_number,
           events,
+          gameId: state.id,
           nightNumber: state.night_number,
           phase: state.phase,
           phaseEndsAt: state.phase_ends_at,
@@ -274,7 +269,7 @@ export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
           phaseInstanceId: state.phase_instance_id,
           revision: state.revision,
           status: state.status,
-          winnerTeam: outcome?.winner_team ?? null,
+          winnerTeam: state.winner_team,
         };
   const self: SelfPrivateView | null =
     currentPlayer === null
@@ -287,7 +282,7 @@ export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
             players,
             currentPlayer,
             currentRoleId,
-            stateByPlayer.get(currentPlayer.id)?.alive === true,
+            currentGamePlayer?.alive === true,
           ),
           events: visiblePrivateEventRecords
             .filter((event) => event.event_kind !== "action_submitted")
@@ -297,7 +292,7 @@ export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
               return projected === null ? [] : [projected];
             }),
           playerId: currentPlayer.public_player_id,
-          result: resultByPlayer.get(currentPlayer.id)?.result ?? null,
+          result: currentGamePlayer?.result ?? null,
           roleId: currentRoleId,
         };
 
@@ -312,19 +307,20 @@ export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
       players.find((player) => player.account_id === currentRoom.host_account_id)
         ?.public_player_id ?? null,
     isHost,
-    waitingExpiresAt: currentRoom.waiting_expires_at,
+    lobbyExpiresAt: currentRoom.lobby_expires_at,
     players: publicPlayers,
     rolePrivate: toRolePrivateView(
       players,
-      assignments,
+      gamePlayers,
       nightConversationMessages,
       currentPlayer,
       currentRoleId,
-      currentPlayer === null ? false : stateByPlayer.get(currentPlayer.id)?.alive === true,
+      currentGamePlayer?.alive === true,
       state,
-      snapshot.ruleSet,
+      visibleCurrentGame?.ruleSet ?? null,
     ),
     roleCatalog: getSharedRoleCatalog(),
+    rosterRevision: currentRoom.roster_revision,
     self,
     snapshotRevision: currentRoom.snapshot_revision,
     status: currentRoom.status,
@@ -335,143 +331,112 @@ export function buildRoomView(snapshot: RoomSnapshot): RoomSummary {
 
 function assertPersistedGameState(
   room: RoomRecord,
-  state: GameStateRecord | null,
+  currentGame: GameRuntimeSnapshot | null,
   players: readonly PlayerRecord[],
-  assignments: readonly RoleAssignmentRecord[],
-  playerStates: readonly GamePlayerStateRecord[],
-  outcome: FinalOutcomeRecord | null,
-  results: readonly PlayerResultRecord[],
+  viewerPlayerId: number | null,
 ): void {
-  const expectedGameStatus = getExpectedPersistedGameStatus(room.status, room.started_at);
-
-  if (expectedGameStatus === null) {
-    if (
-      state !== null ||
-      assignments.length !== 0 ||
-      playerStates.length !== 0 ||
-      outcome !== null ||
-      results.length !== 0
-    ) {
-      throw new Error("Pre-game room contains persisted game artifacts.");
+  if (currentGame === null) {
+    if (room.status === "waiting" && room.current_game_id === null) {
+      return;
     }
 
-    return;
+    if (
+      viewerPlayerId === null &&
+      (room.status === "playing" || room.status === "ended") &&
+      room.current_game_id !== null
+    ) {
+      return;
+    }
+
+    if (room.status === "closed") {
+      return;
+    }
+
+    throw new Error("Room and current Game pointer are inconsistent.");
   }
 
-  if (state?.status !== expectedGameStatus) {
+  const { game, gamePlayers } = currentGame;
+
+  if (
+    room.current_game_id !== game.id ||
+    (game.status === "playing" && room.status !== "playing") ||
+    (game.status === "ended" && room.status !== "ended" && room.status !== "closed")
+  ) {
     throw new Error("Stored room and game statuses are inconsistent.");
   }
 
   const playerIds = new Set(players.map((player) => player.id));
-  const assignedPlayerIds = new Set(assignments.map((assignment) => assignment.player_id));
-  const statePlayerIds = new Set(playerStates.map((playerState) => playerState.player_id));
+  const gamePlayerIds = new Set(gamePlayers.map((gamePlayer) => gamePlayer.player_id));
   const registeredRoleIds = new Set(getRoleIds());
 
   if (
     players.length === 0 ||
-    assignments.length !== players.length ||
-    playerStates.length !== players.length ||
-    assignedPlayerIds.size !== players.length ||
-    statePlayerIds.size !== players.length ||
-    assignments.some(
-      (assignment) =>
-        !playerIds.has(assignment.player_id) || !registeredRoleIds.has(assignment.role_id),
-    ) ||
-    playerStates.some((playerState) => !playerIds.has(playerState.player_id))
+    gamePlayers.length !== room.target_player_count ||
+    gamePlayerIds.size !== gamePlayers.length ||
+    gamePlayers.some(
+      (gamePlayer) =>
+        !playerIds.has(gamePlayer.player_id) || !registeredRoleIds.has(gamePlayer.role_id),
+    )
   ) {
     throw new Error("Stored player runtime state is incomplete or invalid.");
   }
 
-  if (expectedGameStatus === "playing") {
-    if (outcome !== null || results.length !== 0) {
+  if (game.status === "playing") {
+    if (game.winner_team !== null || gamePlayers.some((gamePlayer) => gamePlayer.result !== null)) {
       throw new Error("An in-progress game contains final result artifacts.");
     }
 
     return;
   }
 
-  const resultPlayerIds = new Set(results.map((result) => result.player_id));
-
-  if (
-    outcome === null ||
-    results.length !== players.length ||
-    resultPlayerIds.size !== players.length ||
-    results.some((result) => !playerIds.has(result.player_id))
-  ) {
+  if (game.winner_team === null || gamePlayers.some((gamePlayer) => gamePlayer.result === null)) {
     throw new Error("Stored final game result is incomplete or invalid.");
   }
 
-  roleRegistry.getTeam(outcome.winner_team);
+  roleRegistry.getTeam(game.winner_team);
 }
 
 export function getRuntimePlayersFromSnapshot(snapshot: RoomSnapshot): PlayerRuntimeState[] {
-  const stateByPlayer = new Map(snapshot.playerStates.map((state) => [state.player_id, state]));
+  const currentGame = requireCurrentGame(snapshot);
   const registeredRoleIds = new Set(getRoleIds());
 
-  if (
-    snapshot.assignments.length === 0 ||
-    snapshot.assignments.length !== snapshot.playerStates.length ||
-    stateByPlayer.size !== snapshot.assignments.length
-  ) {
+  if (currentGame.gamePlayers.length === 0) {
     throw new Error("Stored player runtime state is incomplete.");
   }
 
-  return snapshot.assignments.map((assignment) => {
-    const playerState = stateByPlayer.get(assignment.player_id);
-
-    if (playerState === undefined || !registeredRoleIds.has(assignment.role_id)) {
+  return currentGame.gamePlayers.map((gamePlayer) => {
+    if (!registeredRoleIds.has(gamePlayer.role_id)) {
       throw new Error("Stored player runtime state is invalid.");
     }
 
     return {
-      alive: playerState.alive,
-      playerId: String(assignment.player_id),
-      roleId: assignment.role_id,
+      alive: gamePlayer.alive,
+      playerId: String(gamePlayer.player_id),
+      roleId: gamePlayer.role_id,
     };
   });
 }
 
 export function parseSnapshotRuleSet(snapshot: RoomSnapshot): RuleSet {
-  if (snapshot.ruleSet === null) {
-    throw new Error("Stored rule set is missing.");
-  }
-
-  return parsePersistedRuleSet(snapshot.ruleSet, snapshot.room.target_player_count);
+  return parsePersistedRuleSet(
+    requireCurrentGame(snapshot).ruleSet,
+    snapshot.room.target_player_count,
+  );
 }
 
-export function getExpectedPersistedGameStatus(
-  roomStatus: RoomStatus,
-  startedAt: string | null,
-): "playing" | "ended" | null {
-  if (roomStatus === "waiting") {
-    if (startedAt !== null) {
-      throw new Error("A waiting room cannot have a start time.");
-    }
-
-    return null;
+function requireCurrentGame(snapshot: RoomSnapshot): GameRuntimeSnapshot {
+  if (snapshot.currentGame === null) {
+    throw new Error("Stored current Game is missing.");
   }
 
-  if (roomStatus === "playing") {
-    if (startedAt === null) {
-      throw new Error("A playing room must have a start time.");
-    }
-
-    return "playing";
-  }
-
-  return startedAt === null ? null : "ended";
-}
-
-export function isRoomEndedBeforeStart(roomStatus: RoomStatus, startedAt: string | null): boolean {
-  return roomStatus === "ended" && startedAt === null;
+  return snapshot.currentGame;
 }
 
 export function toRevealedRoleId(
-  roomStatus: RoomStatus,
   gameStatus: PublicGameView["status"] | null,
   roleId: RoleId | null,
 ): RoleId | null {
-  return roomStatus === "ended" && gameStatus === "ended" ? roleId : null;
+  return gameStatus === "ended" ? roleId : null;
 }
 
 function getSharedRoleCatalog(): RoleCatalogItem[] {
@@ -556,7 +521,7 @@ export function getSharedActionRoleRecipients(action: CurrentActionRecord): Role
 }
 
 export function toPublicActionProgress(
-  state: GameStateRecord,
+  state: GameRecord,
   actions: readonly CurrentActionRecord[],
   pendingActions: readonly PendingActionRecord[],
 ): PublicActionProgress | null {
@@ -589,7 +554,7 @@ export function toPublicActionProgress(
 }
 
 function getPublicActionProgressKind(
-  phase: NonNullable<GameStateRecord["phase"]>,
+  phase: NonNullable<GameRecord["phase"]>,
   actions: readonly CurrentActionRecord[],
 ): Extract<PublicActionProgress, { visibility: "public" }>["kind"] {
   if (actions.length > 0 && actions.every((action) => action.resolver_role_id !== null)) {
@@ -616,7 +581,7 @@ function getPublicActionProgressKind(
 }
 
 export function toPublicPhaseFocus(
-  state: GameStateRecord,
+  state: GameRecord,
   actions: readonly CurrentActionRecord[],
   players: readonly PlayerRecord[],
 ): PublicPhaseFocus | null {
@@ -655,12 +620,12 @@ function isCoreCurrentAction(action: CurrentActionRecord, actionKind: string): b
 
 function toRolePrivateView(
   players: readonly PlayerRecord[],
-  assignments: readonly RoleAssignmentRecord[],
+  gamePlayers: readonly GamePlayerRecord[],
   nightConversationMessages: readonly NightConversationMessageRecord[],
   currentPlayer: PlayerRecord | null,
   currentRoleId: RoleId | null,
   currentPlayerAlive: boolean,
-  state: GameStateRecord | null,
+  state: GameRecord | null,
   ruleSet: GameRuleSetRecord | null,
 ): RolePrivateView {
   if (currentPlayer === null || currentRoleId === null || state === null) {
@@ -677,9 +642,9 @@ function toRolePrivateView(
 
   return {
     nightConversation: toNightConversationView({
-      assignments,
       currentPlayer,
       currentPlayerAlive,
+      gamePlayers,
       group,
       messages: nightConversationMessages,
       players,
@@ -689,21 +654,21 @@ function toRolePrivateView(
 }
 
 function toNightConversationView({
-  assignments,
   currentPlayer,
   currentPlayerAlive,
+  gamePlayers,
   group,
   messages,
   players,
   state,
 }: {
-  assignments: readonly RoleAssignmentRecord[];
   currentPlayer: Pick<PlayerRecord, "id" | "status">;
   currentPlayerAlive: boolean;
+  gamePlayers: readonly GamePlayerRecord[];
   group: NightConversationGroupConfig;
   messages: readonly NightConversationMessageRecord[];
   players: readonly PlayerRecord[];
-  state: GameStateRecord;
+  state: GameRecord;
 }): NonNullable<RolePrivateView>["nightConversation"] {
   if (state.phase === null || state.night_number < 1) {
     return null;
@@ -711,7 +676,7 @@ function toNightConversationView({
 
   const playerById = new Map(players.map((player) => [player.id, player]));
   const registeredRoleIds = new Set(getRoleIds());
-  const participantPlayerIds = assignments
+  const participantPlayerIds = gamePlayers
     .filter(
       (assignment) =>
         registeredRoleIds.has(assignment.role_id) && group.roleIds.includes(assignment.role_id),
@@ -751,7 +716,7 @@ function toNightConversationView({
 }
 
 export function canSendNightConversation(
-  state: GameStateRecord,
+  state: GameRecord,
   currentPlayer: Pick<PlayerRecord, "id" | "status">,
   currentPlayerAlive: boolean,
 ): boolean {
@@ -1228,7 +1193,7 @@ function parseStoredRoleOptions(value: unknown): RuleSet["roleOptions"] | null {
 }
 
 export function isRoomSnapshot(value: unknown): value is RoomSnapshot {
-  if (!hasExactKeys(value, ROOM_SNAPSHOT_KEYS) || value["version"] !== 1) {
+  if (!hasExactKeys(value, ROOM_SNAPSHOT_KEYS) || value["version"] !== 2) {
     return false;
   }
 
@@ -1236,30 +1201,20 @@ export function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     !(
       isRoomRecord(value["room"]) &&
       isNullable(value["viewerPlayerId"], isPositiveSafeInteger) &&
-      isArrayOf(value["players"], isPlayerRecord) &&
-      isNullable(value["gameState"], isGameStateRecord) &&
-      isNullable(value["ruleSet"], isGameRuleSetRecord) &&
-      isArrayOf(value["assignments"], isRoleAssignmentRecord) &&
-      isArrayOf(value["playerStates"], isGamePlayerStateRecord) &&
-      isArrayOf(value["currentActions"], isCurrentActionRecord) &&
-      isArrayOf(value["pendingActions"], isPendingActionRecord) &&
-      isArrayOf(value["daySpeechSlots"], isDaySpeechSlotRecord) &&
-      isArrayOf(value["publicEvents"], (event) => isGameEventRecord(event, "public")) &&
-      isArrayOf(value["privateEvents"], (event) => isGameEventRecord(event, "private")) &&
-      isArrayOf(value["nightConversationMessages"], isNightConversationMessageRecord) &&
-      isNullable(value["finalOutcome"], isFinalOutcomeRecord) &&
-      isArrayOf(value["playerResults"], isPlayerResultRecord) &&
-      isArrayOf(value["realtimeTopics"], isRealtimeTopicRecord) &&
-      isArrayOf(value["resolvedActions"], isResolvedActionRecord)
+      isArrayOf(value["lobbyPlayers"], isPlayerRecord) &&
+      isNullable(value["currentGame"], isGameRuntimeSnapshot) &&
+      isArrayOf(value["realtimeTopics"], isRealtimeTopicRecord)
     )
   ) {
     return false;
   }
 
   if (
-    value["ruleSet"] !== null &&
-    Object.values(value["ruleSet"].role_counts).reduce((total, count) => total + count, 0) !==
-      value["room"].target_player_count
+    value["currentGame"] !== null &&
+    Object.values(value["currentGame"].ruleSet.role_counts).reduce(
+      (total, count) => total + count,
+      0,
+    ) !== value["room"].target_player_count
   ) {
     return false;
   }
@@ -1267,59 +1222,71 @@ export function isRoomSnapshot(value: unknown): value is RoomSnapshot {
   return hasConsistentRoomSnapshot(value as RoomSnapshot);
 }
 
+function isGameRuntimeSnapshot(value: unknown): value is GameRuntimeSnapshot {
+  return (
+    hasExactKeys(value, GAME_RUNTIME_SNAPSHOT_KEYS) &&
+    isGameRecord(value["game"]) &&
+    isGameRuleSetRecord(value["ruleSet"]) &&
+    isArrayOf(value["gamePlayers"], isGamePlayerRecord) &&
+    isArrayOf(value["currentActions"], isCurrentActionRecord) &&
+    isArrayOf(value["pendingActions"], isPendingActionRecord) &&
+    isArrayOf(value["resolvedActions"], isResolvedActionRecord) &&
+    isArrayOf(value["daySpeechSlots"], isDaySpeechSlotRecord) &&
+    isArrayOf(value["publicEvents"], (event) => isGameEventRecord(event, "public")) &&
+    isArrayOf(value["privateEvents"], (event) => isGameEventRecord(event, "private")) &&
+    isArrayOf(value["nightConversationMessages"], isNightConversationMessageRecord)
+  );
+}
+
 function hasConsistentRoomSnapshot(snapshot: RoomSnapshot): boolean {
-  const playerIds = new Set(snapshot.players.map((player) => player.id));
-  const playerById = new Map(snapshot.players.map((player) => [player.id, player]));
+  const playerIds = new Set(snapshot.lobbyPlayers.map((player) => player.id));
+  const playerById = new Map(snapshot.lobbyPlayers.map((player) => [player.id, player]));
   const viewer = snapshot.viewerPlayerId === null ? null : playerById.get(snapshot.viewerPlayerId);
 
   if (
-    playerIds.size !== snapshot.players.length ||
-    !hasUniqueValues(snapshot.players.map((player) => player.account_id)) ||
-    !hasUniqueValues(snapshot.players.map((player) => player.public_player_id)) ||
-    snapshot.players.some(
+    playerIds.size !== snapshot.lobbyPlayers.length ||
+    !hasUniqueValues(snapshot.lobbyPlayers.map((player) => player.account_id)) ||
+    !hasUniqueValues(snapshot.lobbyPlayers.map((player) => player.public_player_id)) ||
+    snapshot.lobbyPlayers.some(
       (player) =>
         player.room_id !== snapshot.room.id ||
-        Date.parse(player.joined_at) < Date.parse(snapshot.room.created_at),
+        Date.parse(player.joined_at) < Date.parse(snapshot.room.created_at) ||
+        (player.ready_roster_revision !== null &&
+          player.ready_roster_revision > snapshot.room.roster_revision),
     ) ||
-    !snapshot.players.some((player) => player.account_id === snapshot.room.host_account_id) ||
+    !snapshot.lobbyPlayers.some((player) => player.account_id === snapshot.room.host_account_id) ||
     (snapshot.viewerPlayerId !== null &&
-      (viewer === null || viewer === undefined || viewer.status === "left")) ||
-    snapshot.players.filter((player) => player.status !== "left").length >
+      (viewer === null ||
+        viewer === undefined ||
+        (viewer.status === "left" && snapshot.room.status !== "closed"))) ||
+    snapshot.lobbyPlayers.filter((player) => player.status !== "left").length >
       snapshot.room.target_player_count
   ) {
     return false;
   }
 
-  if (snapshot.room.started_at === null) {
+  if (snapshot.currentGame === null) {
     return (
-      snapshot.gameState === null &&
-      snapshot.ruleSet === null &&
-      snapshot.assignments.length === 0 &&
-      snapshot.playerStates.length === 0 &&
-      snapshot.currentActions.length === 0 &&
-      snapshot.pendingActions.length === 0 &&
-      snapshot.daySpeechSlots.length === 0 &&
-      snapshot.publicEvents.length === 0 &&
-      snapshot.privateEvents.length === 0 &&
-      snapshot.nightConversationMessages.length === 0 &&
-      snapshot.finalOutcome === null &&
-      snapshot.playerResults.length === 0 &&
-      snapshot.resolvedActions.length === 0 &&
-      hasConsistentRealtimeTopics(snapshot.realtimeTopics, playerIds, null)
+      ((snapshot.room.current_game_id === null &&
+        (snapshot.room.status === "waiting" || snapshot.room.status === "closed")) ||
+        (snapshot.room.current_game_id !== null &&
+          snapshot.viewerPlayerId === null &&
+          snapshot.room.status !== "waiting")) &&
+      hasConsistentRealtimeTopics(snapshot.realtimeTopics, playerIds, null, null)
     );
   }
 
-  const state = snapshot.gameState;
-  const ruleSet = snapshot.ruleSet;
+  const currentGame = snapshot.currentGame;
+  const state = currentGame.game;
+  const ruleSet = currentGame.ruleSet;
 
   if (
-    state === null ||
-    ruleSet === null ||
+    snapshot.room.current_game_id !== state.id ||
     snapshot.room.status === "waiting" ||
-    snapshot.players.length !== snapshot.room.target_player_count ||
+    currentGame.gamePlayers.length !== snapshot.room.target_player_count ||
     state.revision < 1 ||
     (state.phase_started_at !== null &&
-      Date.parse(state.phase_started_at) < Date.parse(snapshot.room.started_at)) ||
+      Date.parse(state.phase_started_at) < Date.parse(state.started_at)) ||
     !isResolvedRoleSetupRecord(ruleSet.resolved_role_setup)
   ) {
     return false;
@@ -1328,27 +1295,18 @@ function hasConsistentRoomSnapshot(snapshot: RoomSnapshot): boolean {
   const setup = ruleSet.resolved_role_setup;
   const activeRoleIds = new Set(setup.activeRoleIds);
   const assignmentByPlayer = new Map(
-    snapshot.assignments.map((assignment) => [assignment.player_id, assignment]),
+    currentGame.gamePlayers.map((gamePlayer) => [gamePlayer.player_id, gamePlayer]),
   );
-  const stateByPlayer = new Map(
-    snapshot.playerStates.map((playerState) => [playerState.player_id, playerState]),
-  );
+  const stateByPlayer = assignmentByPlayer;
 
   if (
-    assignmentByPlayer.size !== snapshot.assignments.length ||
-    stateByPlayer.size !== snapshot.playerStates.length ||
-    assignmentByPlayer.size !== playerIds.size ||
-    stateByPlayer.size !== playerIds.size ||
-    snapshot.assignments.some(
-      (assignment) =>
-        !playerIds.has(assignment.player_id) || !activeRoleIds.has(assignment.role_id),
+    assignmentByPlayer.size !== currentGame.gamePlayers.length ||
+    currentGame.gamePlayers.some(
+      (gamePlayer) =>
+        !playerIds.has(gamePlayer.player_id) || !activeRoleIds.has(gamePlayer.role_id),
     ) ||
-    snapshot.playerStates.some((playerState) => !playerIds.has(playerState.player_id)) ||
-    [...playerIds].some(
-      (playerId) => !assignmentByPlayer.has(playerId) || !stateByPlayer.has(playerId),
-    ) ||
-    !hasMatchingRoleCounts(ruleSet.role_counts, snapshot.assignments) ||
-    !hasConsistentRealtimeTopics(snapshot.realtimeTopics, playerIds, activeRoleIds)
+    !hasMatchingRoleCounts(ruleSet.role_counts, currentGame.gamePlayers) ||
+    !hasConsistentRealtimeTopics(snapshot.realtimeTopics, playerIds, activeRoleIds, state.id)
   ) {
     return false;
   }
@@ -1356,19 +1314,18 @@ function hasConsistentRoomSnapshot(snapshot: RoomSnapshot): boolean {
   if (snapshot.room.status === "playing") {
     if (
       state.status !== "playing" ||
-      snapshot.finalOutcome !== null ||
-      snapshot.playerResults.length !== 0
+      state.winner_team !== null ||
+      currentGame.gamePlayers.some((gamePlayer) => gamePlayer.result !== null)
     ) {
       return false;
     }
   } else if (
     state.status !== "ended" ||
-    state.ended_at !== snapshot.room.ended_at ||
-    snapshot.finalOutcome === null ||
-    !hasCompletePlayerResults(snapshot.playerResults, playerIds) ||
-    snapshot.currentActions.length !== 0 ||
-    snapshot.pendingActions.length !== 0 ||
-    snapshot.daySpeechSlots.length !== 0 ||
+    state.winner_team === null ||
+    currentGame.gamePlayers.some((gamePlayer) => gamePlayer.result === null) ||
+    currentGame.currentActions.length !== 0 ||
+    currentGame.pendingActions.length !== 0 ||
+    currentGame.daySpeechSlots.length !== 0 ||
     state.action_revision !== 0
   ) {
     return false;
@@ -1376,18 +1333,22 @@ function hasConsistentRoomSnapshot(snapshot: RoomSnapshot): boolean {
 
   if (
     !hasConsistentCurrentActions(
-      snapshot.currentActions,
-      snapshot.pendingActions,
+      currentGame.currentActions,
+      currentGame.pendingActions,
       state,
       assignmentByPlayer,
       stateByPlayer,
       playerIds,
       activeRoleIds,
     ) ||
-    !hasConsistentDaySpeechSlots(snapshot.daySpeechSlots, state, ruleSet, stateByPlayer) ||
-    !hasConsistentEvents(snapshot.publicEvents, snapshot.privateEvents, snapshot.viewerPlayerId) ||
+    !hasConsistentDaySpeechSlots(currentGame.daySpeechSlots, state, ruleSet, stateByPlayer) ||
+    !hasConsistentEvents(
+      currentGame.publicEvents,
+      currentGame.privateEvents,
+      snapshot.viewerPlayerId,
+    ) ||
     !hasConsistentNightConversationMessages(
-      snapshot.nightConversationMessages,
+      currentGame.nightConversationMessages,
       snapshot.viewerPlayerId,
       state,
       setup,
@@ -1395,8 +1356,8 @@ function hasConsistentRoomSnapshot(snapshot: RoomSnapshot): boolean {
       playerIds,
     ) ||
     !hasConsistentResolvedActions(
-      snapshot.resolvedActions,
-      snapshot.currentActions,
+      currentGame.resolvedActions,
+      currentGame.currentActions,
       state,
       assignmentByPlayer,
       playerIds,
@@ -1411,14 +1372,14 @@ function hasConsistentRoomSnapshot(snapshot: RoomSnapshot): boolean {
 
 function hasMatchingRoleCounts(
   roleCounts: Readonly<Record<RoleId, number>>,
-  assignments: readonly RoleAssignmentRecord[],
+  gamePlayers: readonly GamePlayerRecord[],
 ): boolean {
   const assignmentCountByRole = new Map<RoleId, number>();
 
-  for (const assignment of assignments) {
+  for (const gamePlayer of gamePlayers) {
     assignmentCountByRole.set(
-      assignment.role_id,
-      (assignmentCountByRole.get(assignment.role_id) ?? 0) + 1,
+      gamePlayer.role_id,
+      (assignmentCountByRole.get(gamePlayer.role_id) ?? 0) + 1,
     );
   }
 
@@ -1427,23 +1388,12 @@ function hasMatchingRoleCounts(
   );
 }
 
-function hasCompletePlayerResults(
-  results: readonly PlayerResultRecord[],
-  playerIds: ReadonlySet<number>,
-): boolean {
-  return (
-    results.length === playerIds.size &&
-    hasUniqueValues(results.map((result) => result.player_id)) &&
-    results.every((result) => playerIds.has(result.player_id))
-  );
-}
-
 function hasConsistentCurrentActions(
   actions: readonly CurrentActionRecord[],
   pendingActions: readonly PendingActionRecord[],
-  state: GameStateRecord,
-  assignmentByPlayer: ReadonlyMap<number, RoleAssignmentRecord>,
-  stateByPlayer: ReadonlyMap<number, GamePlayerStateRecord>,
+  state: GameRecord,
+  assignmentByPlayer: ReadonlyMap<number, GamePlayerRecord>,
+  stateByPlayer: ReadonlyMap<number, GamePlayerRecord>,
   playerIds: ReadonlySet<number>,
   activeRoleIds: ReadonlySet<RoleId>,
 ): boolean {
@@ -1515,8 +1465,8 @@ function hasConsistentCurrentActions(
 function hasEligibleActor(
   action: CurrentActionRecord,
   submitterPlayerId: number | null,
-  assignmentByPlayer: ReadonlyMap<number, RoleAssignmentRecord>,
-  stateByPlayer: ReadonlyMap<number, GamePlayerStateRecord>,
+  assignmentByPlayer: ReadonlyMap<number, GamePlayerRecord>,
+  stateByPlayer: ReadonlyMap<number, GamePlayerRecord>,
 ): boolean {
   if (submitterPlayerId !== null) {
     if (action.actor_player_id !== null && action.actor_player_id !== submitterPlayerId) {
@@ -1556,9 +1506,9 @@ function hasEligibleActor(
 
 function hasConsistentDaySpeechSlots(
   slots: readonly DaySpeechSlotRecord[],
-  state: GameStateRecord,
+  state: GameRecord,
   ruleSet: GameRuleSetRecord,
-  stateByPlayer: ReadonlyMap<number, GamePlayerStateRecord>,
+  stateByPlayer: ReadonlyMap<number, GamePlayerRecord>,
 ): boolean {
   if (slots.length === 0) {
     return true;
@@ -1596,9 +1546,9 @@ function hasConsistentEvents(
 function hasConsistentNightConversationMessages(
   messages: readonly NightConversationMessageRecord[],
   viewerPlayerId: number | null,
-  state: GameStateRecord,
+  state: GameRecord,
   setup: ResolvedRoleSetupRecordShape,
-  assignmentByPlayer: ReadonlyMap<number, RoleAssignmentRecord>,
+  assignmentByPlayer: ReadonlyMap<number, GamePlayerRecord>,
   playerIds: ReadonlySet<number>,
 ): boolean {
   if (messages.length === 0) {
@@ -1636,6 +1586,7 @@ function hasConsistentRealtimeTopics(
   topics: readonly RealtimeTopicRecord[],
   playerIds: ReadonlySet<number>,
   activeRoleIds: ReadonlySet<RoleId> | null,
+  gameId: string | null,
 ): boolean {
   const roomTopics = topics.filter((topic) => topic.scope === "room");
   const playerTopics = topics.filter((topic) => topic.scope === "player_private");
@@ -1645,20 +1596,27 @@ function hasConsistentRealtimeTopics(
   return (
     hasUniqueValues(topics.map((topic) => topic.topic)) &&
     roomTopics.length === 1 &&
+    roomTopics.every((topic) => topic.game_id === null) &&
     playerTopics.length === playerIds.size &&
     hasUniqueValues(playerTopics.map((topic) => topic.player_id)) &&
-    playerTopics.every((topic) => topic.player_id !== null && playerIds.has(topic.player_id)) &&
+    playerTopics.every(
+      (topic) =>
+        topic.game_id === null && topic.player_id !== null && playerIds.has(topic.player_id),
+    ) &&
     roleTopics.length === expectedRoleIds.size &&
     hasUniqueValues(roleTopics.map((topic) => topic.role_id)) &&
-    roleTopics.every((topic) => topic.role_id !== null && expectedRoleIds.has(topic.role_id))
+    roleTopics.every(
+      (topic) =>
+        topic.game_id === gameId && topic.role_id !== null && expectedRoleIds.has(topic.role_id),
+    )
   );
 }
 
 function hasConsistentResolvedActions(
   resolvedActions: readonly ResolvedActionRecord[],
   currentActions: readonly CurrentActionRecord[],
-  state: GameStateRecord,
-  assignmentByPlayer: ReadonlyMap<number, RoleAssignmentRecord>,
+  state: GameRecord,
+  assignmentByPlayer: ReadonlyMap<number, GamePlayerRecord>,
   playerIds: ReadonlySet<number>,
   activeRoleIds: ReadonlySet<RoleId>,
 ): boolean {
@@ -1711,38 +1669,40 @@ function hasConsistentResolvedActions(
 }
 
 const ROOM_SNAPSHOT_KEYS = [
-  "assignments",
-  "currentActions",
-  "daySpeechSlots",
-  "finalOutcome",
-  "gameState",
-  "nightConversationMessages",
-  "pendingActions",
-  "playerResults",
-  "playerStates",
-  "players",
-  "privateEvents",
-  "publicEvents",
+  "currentGame",
+  "lobbyPlayers",
   "realtimeTopics",
-  "resolvedActions",
   "room",
-  "ruleSet",
   "version",
   "viewerPlayerId",
 ] as const satisfies readonly (keyof RoomSnapshot)[];
 
+const GAME_RUNTIME_SNAPSHOT_KEYS = [
+  "currentActions",
+  "daySpeechSlots",
+  "game",
+  "gamePlayers",
+  "nightConversationMessages",
+  "pendingActions",
+  "privateEvents",
+  "publicEvents",
+  "resolvedActions",
+  "ruleSet",
+] as const satisfies readonly (keyof GameRuntimeSnapshot)[];
+
 const ROOM_RECORD_KEYS = [
+  "closed_at",
   "created_at",
-  "ended_at",
+  "current_game_id",
   "host_account_id",
   "id",
   "public_room_code",
+  "roster_revision",
   "snapshot_revision",
-  "started_at",
   "status",
   "target_player_count",
   "updated_at",
-  "waiting_expires_at",
+  "lobby_expires_at",
 ] as const satisfies readonly (keyof RoomRecord)[];
 
 const PLAYER_RECORD_KEYS = [
@@ -1753,23 +1713,28 @@ const PLAYER_RECORD_KEYS = [
   "joined_at",
   "last_seen_at",
   "left_at",
+  "private_snapshot_revision",
   "public_player_id",
+  "ready_roster_revision",
   "room_id",
   "status",
 ] as const satisfies readonly (keyof PlayerRecord)[];
 
-const GAME_STATE_RECORD_KEYS = [
+const GAME_RECORD_KEYS = [
   "action_revision",
   "day_number",
   "ended_at",
+  "id",
   "night_number",
   "phase",
   "phase_ends_at",
   "phase_instance_id",
   "phase_started_at",
   "revision",
+  "started_at",
   "status",
-] as const satisfies readonly (keyof GameStateRecord)[];
+  "winner_team",
+] as const satisfies readonly (keyof GameRecord)[];
 
 const CURRENT_ACTION_RECORD_KEYS = [
   "action_key",
@@ -1847,42 +1812,44 @@ function isRoomRecord(value: unknown): value is RoomRecord {
     !isPositiveSafeInteger(value["host_account_id"]) ||
     typeof value["public_room_code"] !== "string" ||
     !/^\d{6}$/u.test(value["public_room_code"]) ||
+    !isNullable(value["current_game_id"], isUuid) ||
+    !isNonNegativeSafeInteger(value["roster_revision"]) ||
     !isNonNegativeSafeInteger(value["snapshot_revision"]) ||
     !isSafeIntegerBetween(value["target_player_count"], MIN_ROOM_PLAYERS, MAX_ROOM_PLAYERS) ||
     !isTimestamp(value["created_at"]) ||
-    !isTimestamp(value["waiting_expires_at"]) ||
-    !isNullable(value["started_at"], isTimestamp) ||
-    !isNullable(value["ended_at"], isTimestamp) ||
+    !isTimestamp(value["lobby_expires_at"]) ||
+    !isNullable(value["closed_at"], isTimestamp) ||
     !isTimestamp(value["updated_at"]) ||
-    (value["status"] !== "waiting" && value["status"] !== "playing" && value["status"] !== "ended")
+    (value["status"] !== "waiting" &&
+      value["status"] !== "playing" &&
+      value["status"] !== "ended" &&
+      value["status"] !== "closed")
   ) {
     return false;
   }
 
   const createdAt = Date.parse(value["created_at"]);
-  const waitingExpiresAt = Date.parse(value["waiting_expires_at"]);
-  const startedAt = value["started_at"] === null ? null : Date.parse(value["started_at"]);
-  const endedAt = value["ended_at"] === null ? null : Date.parse(value["ended_at"]);
+  const lobbyExpiresAt = Date.parse(value["lobby_expires_at"]);
+  const closedAt = value["closed_at"] === null ? null : Date.parse(value["closed_at"]);
   const updatedAt = Date.parse(value["updated_at"]);
 
   if (
-    waitingExpiresAt < createdAt ||
+    lobbyExpiresAt < createdAt ||
     updatedAt < createdAt ||
-    (startedAt !== null && (startedAt < createdAt || startedAt > waitingExpiresAt)) ||
-    (endedAt !== null && (endedAt < createdAt || (startedAt !== null && endedAt < startedAt))) ||
-    (startedAt !== null && updatedAt < startedAt) ||
-    (endedAt !== null && updatedAt < endedAt)
+    (closedAt !== null && (closedAt < createdAt || updatedAt < closedAt))
   ) {
     return false;
   }
 
   switch (value["status"]) {
+    case "closed":
+      return closedAt !== null;
     case "ended":
-      return endedAt !== null;
+      return closedAt === null && value["current_game_id"] !== null;
     case "playing":
-      return startedAt !== null && endedAt === null;
+      return closedAt === null && value["current_game_id"] !== null;
     case "waiting":
-      return startedAt === null && endedAt === null;
+      return closedAt === null && value["current_game_id"] === null;
   }
 }
 
@@ -1897,6 +1864,8 @@ function isPlayerRecord(value: unknown): value is PlayerRecord {
     !isTrimmedString(value["display_name"], 1, 32) ||
     !isTimestamp(value["joined_at"]) ||
     !isTimestamp(value["last_seen_at"]) ||
+    !isNonNegativeSafeInteger(value["private_snapshot_revision"]) ||
+    !isNullable(value["ready_roster_revision"], isNonNegativeSafeInteger) ||
     !isNullable(value["left_at"], isTimestamp) ||
     !isNullable(value["disconnected_at"], isTimestamp) ||
     (value["status"] !== "joined" &&
@@ -1930,9 +1899,10 @@ function isPlayerRecord(value: unknown): value is PlayerRecord {
   }
 }
 
-function isGameStateRecord(value: unknown): value is GameStateRecord {
+function isGameRecord(value: unknown): value is GameRecord {
   if (
-    !hasExactKeys(value, GAME_STATE_RECORD_KEYS) ||
+    !hasExactKeys(value, GAME_RECORD_KEYS) ||
+    !isUuid(value["id"]) ||
     !isNonNegativeSafeInteger(value["action_revision"]) ||
     !isNonNegativeSafeInteger(value["revision"]) ||
     !isNonNegativeSafeInteger(value["day_number"]) ||
@@ -1941,7 +1911,9 @@ function isGameStateRecord(value: unknown): value is GameStateRecord {
     !isNullable(value["phase_instance_id"], isUuid) ||
     !isNullable(value["phase_started_at"], isTimestamp) ||
     !isNullable(value["phase_ends_at"], isTimestamp) ||
+    !isTimestamp(value["started_at"]) ||
     !isNullable(value["ended_at"], isTimestamp) ||
+    !isNullable(value["winner_team"], isRoleId) ||
     (value["status"] !== "playing" && value["status"] !== "ended")
   ) {
     return false;
@@ -1961,6 +1933,15 @@ function isGameStateRecord(value: unknown): value is GameStateRecord {
     return false;
   }
 
+  const startedAt = Date.parse(value["started_at"]);
+
+  if (
+    (value["phase_started_at"] !== null && Date.parse(value["phase_started_at"]) < startedAt) ||
+    (value["ended_at"] !== null && Date.parse(value["ended_at"]) < startedAt)
+  ) {
+    return false;
+  }
+
   if (value["status"] === "playing") {
     return (
       phase !== null &&
@@ -1968,6 +1949,7 @@ function isGameStateRecord(value: unknown): value is GameStateRecord {
       value["phase_started_at"] !== null &&
       value["phase_ends_at"] !== null &&
       value["ended_at"] === null &&
+      value["winner_team"] === null &&
       Date.parse(value["phase_ends_at"]) > Date.parse(value["phase_started_at"])
     );
   }
@@ -1977,23 +1959,18 @@ function isGameStateRecord(value: unknown): value is GameStateRecord {
     value["phase_instance_id"] === null &&
     value["phase_started_at"] === null &&
     value["phase_ends_at"] === null &&
-    value["ended_at"] !== null
+    value["ended_at"] !== null &&
+    value["winner_team"] !== null
   );
 }
 
-function isRoleAssignmentRecord(value: unknown): value is RoleAssignmentRecord {
+function isGamePlayerRecord(value: unknown): value is GamePlayerRecord {
   return (
-    hasExactKeys(value, ["player_id", "role_id"]) &&
-    isPositiveSafeInteger(value["player_id"]) &&
-    isRoleId(value["role_id"])
-  );
-}
-
-function isGamePlayerStateRecord(value: unknown): value is GamePlayerStateRecord {
-  return (
-    hasExactKeys(value, ["alive", "player_id"]) &&
+    hasExactKeys(value, ["alive", "player_id", "result", "role_id"]) &&
     typeof value["alive"] === "boolean" &&
-    isPositiveSafeInteger(value["player_id"])
+    isPositiveSafeInteger(value["player_id"]) &&
+    isRoleId(value["role_id"]) &&
+    isNullable(value["result"], isPlayerResult)
   );
 }
 
@@ -2064,19 +2041,8 @@ function isGameEventRecord(
   );
 }
 
-function isFinalOutcomeRecord(value: unknown): value is FinalOutcomeRecord {
-  return hasExactKeys(value, ["winner_team"]) && isRoleId(value["winner_team"]);
-}
-
-function isPlayerResultRecord(value: unknown): value is PlayerResultRecord {
-  return (
-    hasExactKeys(value, ["player_id", "result"]) &&
-    isPositiveSafeInteger(value["player_id"]) &&
-    (value["result"] === "win" ||
-      value["result"] === "lose" ||
-      value["result"] === "draw" ||
-      value["result"] === "special")
-  );
+function isPlayerResult(value: unknown): value is PlayerResult {
+  return value === "win" || value === "lose" || value === "draw" || value === "special";
 }
 
 function isGameRuleSetRecord(value: unknown): value is GameRuleSetRecord {
@@ -2245,7 +2211,8 @@ function isNightConversationMessageRecord(value: unknown): value is NightConvers
 
 function isRealtimeTopicRecord(value: unknown): value is RealtimeTopicRecord {
   if (
-    !hasExactKeys(value, ["player_id", "role_id", "scope", "topic"]) ||
+    !hasExactKeys(value, ["game_id", "player_id", "role_id", "scope", "topic"]) ||
+    !isNullable(value["game_id"], isUuid) ||
     (value["scope"] !== "room" &&
       value["scope"] !== "player_private" &&
       value["scope"] !== "role_private") ||
@@ -2257,11 +2224,15 @@ function isRealtimeTopicRecord(value: unknown): value is RealtimeTopicRecord {
 
   switch (value["scope"]) {
     case "player_private":
-      return isPositiveSafeInteger(value["player_id"]) && value["role_id"] === null;
+      return (
+        value["game_id"] === null &&
+        isPositiveSafeInteger(value["player_id"]) &&
+        value["role_id"] === null
+      );
     case "role_private":
-      return value["player_id"] === null && isRoleId(value["role_id"]);
+      return value["game_id"] !== null && value["player_id"] === null && isRoleId(value["role_id"]);
     case "room":
-      return value["player_id"] === null && value["role_id"] === null;
+      return value["game_id"] === null && value["player_id"] === null && value["role_id"] === null;
   }
 }
 
@@ -2324,7 +2295,7 @@ function isNullable<T>(
   return value === null || predicate(value);
 }
 
-function isGamePhase(value: unknown): value is NonNullable<GameStateRecord["phase"]> {
+function isGamePhase(value: unknown): value is NonNullable<GameRecord["phase"]> {
   return value === "night" || value === "day" || value === "voting" || value === "execution";
 }
 

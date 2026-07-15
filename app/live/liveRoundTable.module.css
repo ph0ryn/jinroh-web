@@ -287,6 +287,16 @@
   font-weight: 850;
 }
 
+.lobbyReady {
+  color: #b7e3a2 !important;
+  font-weight: 850;
+}
+
+.lobbyNotReady {
+  color: var(--live-muted);
+  font-weight: 780;
+}
+
 .seatState {
   background: rgba(7, 11, 10, 0.94);
   border: 1px solid rgba(var(--live-accent-rgb), 0.34);

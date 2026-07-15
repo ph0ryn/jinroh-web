@@ -106,7 +106,7 @@ describe("live toast model", () => {
   });
 
   it("ignores duplicate tone, message, and scope without consuming an identity", () => {
-    const roomScope = createLiveToastRoomSessionScope(7);
+    const roomScope = createLiveToastRoomSessionScope(7, "game-a");
     const first = requestToast(createLiveToastState(), {
       message: "Connection lost.",
       scope: roomScope,
@@ -115,7 +115,7 @@ describe("live toast model", () => {
     });
     const duplicate = requestToast(first, {
       message: "Connection lost.",
-      scope: createLiveToastRoomSessionScope(7),
+      scope: createLiveToastRoomSessionScope(7, "game-a"),
       timeoutMs: null,
       tone: "warning",
     });
@@ -143,14 +143,14 @@ describe("live toast model", () => {
     const first = completeEntry(
       requestToast(createLiveToastState(), {
         message: "Room changed.",
-        scope: createLiveToastRoomSessionScope(3),
+        scope: createLiveToastRoomSessionScope(3, "game-a"),
         tone: "warning",
       }),
       1,
     );
     const nextSession = requestToast(first, {
       message: "Room changed.",
-      scope: createLiveToastRoomSessionScope(4),
+      scope: createLiveToastRoomSessionScope(4, "game-a"),
       tone: "warning",
     });
 
@@ -183,8 +183,8 @@ describe("live toast model", () => {
   });
 
   it("clears a visible scope through exit while preserving a different pending scope", () => {
-    const firstScope = createLiveToastRoomSessionScope(1);
-    const secondScope = createLiveToastRoomSessionScope(2);
+    const firstScope = createLiveToastRoomSessionScope(1, "game-a");
+    const secondScope = createLiveToastRoomSessionScope(2, "game-a");
     const visible = completeEntry(
       requestToast(createLiveToastState(), {
         message: "First room",
@@ -218,7 +218,7 @@ describe("live toast model", () => {
   });
 
   it("restores an unrelated active toast when its pending replacement scope is cleared", () => {
-    const roomScope = createLiveToastRoomSessionScope(8);
+    const roomScope = createLiveToastRoomSessionScope(8, "game-a");
     const visiblePageToast = completeEntry(
       requestToast(createLiveToastState(), { message: "Page notification" }),
       1,
@@ -239,7 +239,7 @@ describe("live toast model", () => {
   });
 
   it("keeps dismissing an active toast when a later pending scope is cleared", () => {
-    const roomScope = createLiveToastRoomSessionScope(9);
+    const roomScope = createLiveToastRoomSessionScope(9, "game-a");
     const entered = completeEntry(
       requestToast(createLiveToastState(), { message: "Dismiss me" }),
       1,
@@ -265,6 +265,36 @@ describe("live toast model", () => {
     });
   });
 
+  it("discards an old Game scope immediately when the accepted Game detaches", () => {
+    const oldGameScope = createLiveToastRoomSessionScope(9, "game-a");
+    const cleanLobbyScope = createLiveToastRoomSessionScope(9, null);
+    const visibleOldGame = completeEntry(
+      requestToast(createLiveToastState(), {
+        message: "Old game",
+        scope: oldGameScope,
+      }),
+      1,
+    );
+
+    expect(discardScope(visibleOldGame, oldGameScope)).toEqual({
+      active: null,
+      nextId: 2,
+      pending: null,
+      phase: null,
+    });
+
+    const replacing = requestToast(visibleOldGame, {
+      message: "Clean lobby",
+      scope: cleanLobbyScope,
+    });
+
+    expect(discardScope(replacing, oldGameScope)).toMatchObject({
+      active: { message: "Clean lobby", scope: cleanLobbyScope },
+      pending: null,
+      phase: "entering",
+    });
+  });
+
   it("uses null exclusively for sticky timeouts", () => {
     const sticky = requestToast(createLiveToastState(), {
       message: "Requires dismissal.",
@@ -281,13 +311,22 @@ describe("live toast model", () => {
   });
 
   it("validates and compares page and room-session scopes", () => {
-    const roomScope = createLiveToastRoomSessionScope(0);
+    const roomScope = createLiveToastRoomSessionScope(0, "game-a");
 
     expect(isSameLiveToastScope(LIVE_TOAST_PAGE_SCOPE, { kind: "page" })).toBe(true);
     expect(isSameLiveToastScope(LIVE_TOAST_PAGE_SCOPE, roomScope)).toBe(false);
-    expect(isSameLiveToastScope(roomScope, createLiveToastRoomSessionScope(0))).toBe(true);
-    expect(isSameLiveToastScope(roomScope, createLiveToastRoomSessionScope(1))).toBe(false);
-    expect(() => createLiveToastRoomSessionScope(-1)).toThrowError(/non-negative safe integer/);
+    expect(isSameLiveToastScope(roomScope, createLiveToastRoomSessionScope(0, "game-a"))).toBe(
+      true,
+    );
+    expect(isSameLiveToastScope(roomScope, createLiveToastRoomSessionScope(1, "game-a"))).toBe(
+      false,
+    );
+    expect(isSameLiveToastScope(roomScope, createLiveToastRoomSessionScope(0, "game-b"))).toBe(
+      false,
+    );
+    expect(() => createLiveToastRoomSessionScope(-1, null)).toThrowError(
+      /non-negative safe integer/,
+    );
   });
 });
 
@@ -322,4 +361,8 @@ function completeExit(state: LiveToastState, toastId: number): LiveToastState {
 
 function clearScope(state: LiveToastState, scope: LiveToastScope): LiveToastState {
   return reduceLiveToastState(state, { scope, type: "clearScope" });
+}
+
+function discardScope(state: LiveToastState, scope: LiveToastScope): LiveToastState {
+  return reduceLiveToastState(state, { scope, type: "discardScope" });
 }

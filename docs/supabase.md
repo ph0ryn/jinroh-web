@@ -112,9 +112,14 @@ This keeps Vercel builds and self-hosted startup fail-fast while leaving
 
 ### Rooms and membership
 
-`rooms` owns room lifecycle timestamps, the host account, capacity, and the
-public component of `snapshot_revision`. Its `status` is generated from
-`started_at` and `ended_at`.
+`rooms` is the reusable invitation and membership boundary. It owns the host,
+capacity, lobby expiry, permanent `closed_at`, nullable `current_game_id`,
+monotonic `roster_revision`, and the public component of
+`snapshot_revision`. Game completion does not close the Room.
+
+Room status is derived from `closed_at` and the pointed Game: `closed` after
+permanent closure, `playing` for an open Game, `ended` for a completed current
+Game retained as a result lobby, and `waiting` when `current_game_id` is null.
 
 `players` is the only source of truth for membership:
 
@@ -122,22 +127,32 @@ public component of `snapshot_revision`. Its `status` is generated from
 - `disconnected_at is not null` means the active player is temporarily
   disconnected.
 - `left_at is not null` is historical membership.
+- `ready_roster_revision = rooms.roster_revision` means the active Player is
+  lobby-ready for the exact current roster.
+- `private_snapshot_revision` is a Room-lifetime monotonic private-view
+  ordering component that never resets when the Game or Role changes.
 
 A partial unique index on `players(account_id) where left_at is null` guarantees
 that an account has at most one current room. There is no account-level current
 room column and no synchronization trigger.
 
-Room codes are unique while a room is waiting or playing and may be reused after
-the older room ends. Account-bound lookups prefer the caller's active membership
-over a newer room with the same code. An atomic create switch excludes the source
-code, and an atomic join switch rejects the same visible code, so the browser
-always observes a different room session key.
+Room codes are unique while `closed_at is null`. A completed current Game keeps
+the same reserved code for replay. Code reuse begins only after expiry or the
+last active member permanently closes the Room, so active-result lookup no
+longer needs duplicate-code preference logic.
 
 The host foreign key is `(rooms.id, rooms.host_account_id)` to
 `players(room_id, account_id)`. It is deferred so room creation can insert the
 room and its host player in one transaction.
 
 ### Game state
+
+`games` is the first-class root of one playthrough. Its UUID is safe to expose as
+the browser Game session ID. It owns `room_id`, Room-local sequence, current
+phase fields, Day/Night counters, `revision`, `action_revision`, winner Team,
+and start/end timestamps. A partial unique index allows one open Game per Room.
+`rooms.current_game_id` uses a deferred same-Room composite foreign key to
+`games(room_id, id)`.
 
 `game_rule_sets` stores the validated rule options, role counts, resolved role
 setup, and engine compatibility versions used to start the game. The resolved
@@ -154,30 +169,28 @@ cannot shorten a phase or reject a valid minimum duration.
 `game_phase_instances` is the append-only identity and timing history for every
 playing phase. A transition closes the current instance and inserts the next
 one. Phase-owned actions, events, speech slots, and resolved actions use a
-composite foreign key to the owning room and phase instance. A partial unique
-index permits at most one open instance per room, while the composite
-`game_states` foreign key requires the current phase, counters, start time, and
-deadline to match that instance exactly.
+composite foreign key to the owning Game and phase instance. A partial unique
+index permits at most one open instance per Game, while the composite `games`
+foreign key requires the current phase, counters, start time, and deadline to
+match that instance exactly.
 
 An action-window transition may keep the same user-visible phase while still
 closing one phase instance and opening another. This gives every
 compare-and-swap boundary its own identity and deadline without erasing the
 preceding window's history.
 
-`game_states` points to the current phase instance and owns current counters and
-two revisions:
+`games` points to the current phase instance and owns current counters and two
+revisions:
 
 - `revision` changes when the phase or authoritative game state changes.
 - `action_revision` changes when a submission changes within the current phase.
 
-The game roster is fixed atomically at game start. `players` remains room
-membership history, while paired `role_assignments` and `game_player_states`
-rows define exactly which players belong to the started game. Once a game
-exists, the runtime snapshot selects players through that fixed roster instead
-of treating every room-membership row as a game player. Gameplay actors,
-targets, speakers, event recipients, message senders, and result owners
-reference `game_player_states(room_id, player_id)`, so a membership row outside
-the fixed roster cannot enter game state.
+The Game roster is fixed atomically at start. `players` remains Room membership
+history, while `game_players` owns the fixed Player, Role, mutable alive state,
+and nullable final result for one Game. Same-Room composite foreign keys prove
+that a Game Player belongs to the Game's Room. Gameplay actors, targets,
+speakers, event recipients, message senders, and result owners reference this
+fixed roster, so a membership row outside it cannot enter Game state.
 
 `current_actions` contains the currently open action definitions.
 Eligible targets are normalized in `current_action_eligible_players` rather than
@@ -236,9 +249,9 @@ regenerates or shortens the persisted plan; when a future speaker has died, the
 engine skips that slot only when selecting the next current speaker.
 `night_conversation_messages` stores role-group messages.
 
-`final_outcomes` and `player_results` exist only for a completed game. Phase
-resolution validates that a final outcome contains exactly one result for every
-game player. Role-owned end candidates and their opaque reasons are transient
+`games.winner_team` and `game_players.result` are fixed only on completion.
+Phase resolution validates that a final outcome contains exactly one result for
+every Game Player. Role-owned end candidates and their opaque reasons are transient
 winner-evaluation inputs, not a shared SQL enum or duplicated final-outcome
 column. Team IDs are opaque `RoleRegistry` data rather than a database enum. A
 winner judgement may select only a registered team, and the persisted outcome
@@ -248,22 +261,23 @@ local judgement ID without colliding.
 
 ### Realtime
 
-`realtime_topics` is the only topic registry. Each room has one room topic, each
-player has one private topic, and each assigned role has one role-private topic.
-Topics are opaque random identifiers. Player-private and role-private topics
-also own monotonic revision components for state visible only to that audience.
+`realtime_topics` is the only topic registry. Each Room has one room topic, each
+Player has one private topic, and each active Game Role has one Game-scoped
+role-private topic. Topics are opaque random identifiers. Private ordering is
+owned by the monotonic Player counter rather than a Game-local topic counter.
 
-`realtime_grants` stores short-lived authorization leases. Topic eligibility is
-not copied into a grant mapping table. It is derived from current membership,
-assignment, and topic ownership whenever Realtime checks a JWT grant.
+`realtime_grants` stores short-lived authorization leases and the Game that was
+current when the lease was issued. Room/player topics remain usable under active
+membership. Role-topic eligibility additionally requires the grant Game, topic
+Game, Room current Game, and `game_players` Role to match whenever Realtime
+checks a JWT grant.
 
 ## Same-room integrity
 
-Every table that references a player or action carries `room_id` and uses a
-composite foreign key. Room-lifecycle records reference
-`players(room_id, id)`, while gameplay records reference the fixed
-`game_player_states(room_id, player_id)` roster or a phase/action row already
-constrained to it. Parent tables expose matching composite unique keys.
+Room-lifecycle records use `(room_id, player_id)` composite foreign keys. Game
+records use `(game_id, player_id)` against the fixed `game_players` roster, and
+`game_players` itself uses same-Room composite foreign keys to both `games` and
+`players`. Phase/action parents expose matching Game-scoped composite keys.
 
 This prevents a valid player ID from another room from being used as an actor,
 target, speaker, event audience, result owner, message sender, or realtime
@@ -275,30 +289,31 @@ integrity boundary.
 Only the application server's service-role client may execute application RPCs.
 The `anon` and `authenticated` database roles have no execute grant on them.
 
-| RPC                                   | Responsibility                                                     |
-| ------------------------------------- | ------------------------------------------------------------------ |
-| `app_create_identity`                 | Atomically create an account and hashed token                      |
-| `app_authenticate_account`            | Resolve a valid token hash and record bounded usage metadata       |
-| `app_create_room`                     | Settle an expired source membership, then create a waiting room    |
-| `app_join_room`                       | Settle expired source/target rooms, then join or reconnect         |
-| `app_leave_room`                      | Expire the room or leave, transfer host, and end an empty room     |
-| `app_switch_room`                     | Atomically leave one waiting/ended room and create or join another |
-| `app_get_current_room`                | Resolve membership and expire an overdue waiting room              |
-| `app_expire_waiting_room_if_needed`   | Idempotently expire one waiting room                               |
-| `app_cleanup_expired_waiting_rooms`   | Claim and expire a bounded batch with `skip locked`                |
-| `app_heartbeat_room_player`           | Refresh the caller and mark stale peers disconnected               |
-| `app_start_room`                      | Persist the complete validated initial game atomically             |
-| `app_submit_action`                   | Validate and upsert one eligible action submission                 |
-| `app_send_night_conversation_message` | Validate phase, role group, and body before insert                 |
-| `app_resolve_phase`                   | Compare-and-swap one transition by internal room ID                |
-| `app_read_room_runtime_snapshot`      | Return one coherent server-only runtime aggregate                  |
-| `app_issue_realtime_grant`            | Replace a player's short-lived realtime lease                      |
-| `app_cleanup_expired_realtime_grants` | Delete a bounded batch of obsolete grants                          |
+| RPC                                   | Responsibility                                                      |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| `app_create_identity`                 | Atomically create an account and hashed token                       |
+| `app_authenticate_account`            | Resolve a valid token hash and record bounded usage metadata        |
+| `app_create_room`                     | Settle an expired source membership, then create a Room             |
+| `app_join_room`                       | Join/reconnect and detach a completed Game for a non-roster join    |
+| `app_leave_room`                      | Leave, invalidate readiness, transfer host, and close an empty Room |
+| `app_switch_room`                     | Atomically leave one lobby Room and create or join another          |
+| `app_get_current_room`                | Resolve membership and expire an overdue Room lobby                 |
+| `app_expire_room_if_needed`           | Idempotently expire one overdue Room lobby                          |
+| `app_cleanup_expired_rooms`           | Claim and expire a bounded batch with `skip locked`                 |
+| `app_heartbeat_room_player`           | Refresh the caller and mark stale peers disconnected                |
+| `app_set_room_player_ready`           | Set readiness for one accepted roster revision                      |
+| `app_start_game`                      | Create and point to a complete validated Game atomically            |
+| `app_submit_action`                   | Validate Game identity and upsert one eligible submission           |
+| `app_send_night_conversation_message` | Validate Game, phase, role group, and body before insert            |
+| `app_resolve_phase`                   | Compare-and-swap one transition by current Game ID                  |
+| `app_read_room_runtime_snapshot`      | Return one coherent server-only runtime aggregate                   |
+| `app_issue_realtime_grant`            | Replace a player's short-lived realtime lease                       |
+| `app_cleanup_expired_realtime_grants` | Delete a bounded batch of obsolete grants                           |
 
 Private helper functions are in the `private` schema and have no execute grant
 for API roles.
 
-`app_start_room` accepts only the exact core option keys and validates every
+`app_start_game` accepts only the exact core option keys and validates every
 number, enum, role-option identifier/value shape, resolved-setup key, typed
 contribution, active Role relationship, and conversation-group relationship
 before inserting anything. `RoleRegistry` remains the semantic authority for
@@ -312,7 +327,7 @@ Account-scoped room commands lock in this order:
 1. account;
 2. room, or every involved room ordered by room ID;
 3. player;
-4. game state and phase-owned rows when required.
+4. current Game and phase-owned rows when required.
 
 Maintenance commands claim rooms in deterministic order with `for update skip
 locked`. Helpers that mutate a room require their public caller to have locked
@@ -322,38 +337,41 @@ Phase resolution is a system operation, not a host privilege. The application
 computes a proposed transition from a coherent snapshot. `app_resolve_phase`
 accepts it only when all of these still match:
 
-- internal room ID and phase instance;
+- Game ID still referenced by `rooms.current_game_id` and phase instance;
 - game `revision`;
 - `action_revision`.
 
-The public six-digit room code is an API locator and may be reused after an old
-room ends. The application resolves it before entering the engine loop, then
-uses the immutable internal room ID for runtime snapshot reads and
-`app_resolve_phase`. Phase resolution therefore cannot target a different room
-merely because a public code was reused.
+The public six-digit Room code is an API locator reserved until permanent Room
+closure. Game mutations additionally carry the immutable UUID Game ID. A delayed
+request for Game A cannot mutate Game B in the same Room because the transaction
+requires that exact Game to remain the Room's current pointer.
 
-On success, the transaction records submitted and missing core and role actions, closes
+On success, the transaction records submitted and missing core and Role actions, closes
 the old phase instance, deletes its current action rows, applies deaths and
 results, inserts the next phase instance and phase-owned rows, increments
 `revision`, and resets `action_revision`. Concurrent resolvers therefore produce
 at most one committed transition without transporting large expected-ID arrays.
 
+Game completion sets the winner and every `game_players.result`, increments the
+Room roster revision, refreshes the lobby expiry, and retains the ended Game as
+`current_game_id`. It never sets `closed_at`.
+
 ## Snapshot reads
 
 `app_read_room_runtime_snapshot` is the sole base-state read path for the
-application server. Version 1 is an explicit projection: every top-level and
+application server. Version 2 is an explicit projection: every top-level and
 nested field is selected with `jsonb_build_object`, and no base-table row is
-serialized wholesale. The TypeScript boundary requires the exact v1 key set and
+serialized wholesale. The TypeScript boundary requires the exact v2 key set and
 field shapes, so adding a database column cannot silently expand the trusted
 runtime contract.
 
-The default projection contains the room, room players (the fixed game roster
-after start), current game state, rules, all assignments and current action
-state, bounded events, viewer-selected private events and night messages, final
-results, and topics.
-`p_include_engine_history` defaults to false; in that mode the v1
+The top level contains `room`, `viewerPlayerId`, `lobbyPlayers`, nullable
+`currentGame`, and `realtimeTopics`. Every ruleset, Game Player, phase, action,
+event, night message, outcome, and result below `currentGame` is filtered by the
+exact Room pointer. A clean lobby has `currentGame = null` by construction.
+`p_include_engine_history` defaults to false; in that mode the v2
 `resolvedActions` field is an empty array and no history rows are loaded.
-Only the phase resolver opts in, using an internal room ID, because Role hooks
+Only the phase resolver opts in, using the current Game ID, because Role hooks
 and core phase continuations need normalized history. Browser-facing room reads
 keep the default.
 
@@ -368,13 +386,12 @@ or expose the service-role credential to client code.
 The function executes as one PostgreSQL statement, so all fields share one MVCC
 snapshot. This replaces retry loops around many independent PostgREST reads.
 The returned `room.snapshot_revision` is a viewer-scoped monotonic sum of the
-room's public revision, the viewer's player-private topic revision, and the
-viewer's assigned role-private topic revision. Public commands increment the
-room component. Private-only submissions increment the submitter component and,
-for a shared role action, its role component. Night conversation increments only
-the resolved group's role components. A viewer therefore gets response ordering
-for every state they can see without learning the timing of another audience's
-private changes. Revisions are command-owned and are not maintained by triggers.
+Room public revision and the viewer Player's Room-lifetime private revision.
+Public commands increment the Room component. Private-only submissions and
+night conversation increment only the affected Players' private components. A
+Game or Role replacement cannot make the value decrease, and another audience's
+private update timing remains hidden. Revisions are command-owned and are not
+maintained by triggers.
 
 Public and private event arrays are limited to the newest 250 rows, then returned
 in chronological order. Night conversation returns at most 100 messages for the
@@ -393,10 +410,10 @@ broadcast only when `can_receive_realtime_topic` confirms:
 - the grant exists, is unexpired, and is not revoked;
 - the player still has active membership;
 - the topic belongs to the grant room; and
-- the topic is the room topic, that player's private topic, or the topic for the
-  player's current assigned role.
+- the topic is the Room topic, that Player's private topic, or a role topic whose
+  grant Game, topic Game, Room current Game, and Game Player Role all match.
 
-Leaving, ending an unstarted room, or issuing a replacement grant revokes the
+Leaving, closing an unstarted Room, or issuing a replacement grant revokes the
 old lease for new and reauthorized subscriptions. Supabase Realtime may cache an
 existing private-channel authorization until its JWT is refreshed or expires,
 so the 120-second grant lifetime bounds revocation rather than promising an
@@ -404,7 +421,11 @@ instant disconnect. Realtime payloads contain only invalidation metadata and no
 private game state. Clients reload the authorized HTTP room snapshot after a
 notification.
 
-Grant issuance also settles an expired waiting room in the same transaction and
+An old grant may still receive the Room invalidation that announces a Game
+boundary, but it cannot authorize a detached or replacement Game's role-private
+topic. The browser reloads and obtains a replacement grant for the new Game.
+
+Grant issuance also settles an expired Room lobby in the same transaction and
 returns a typed lifecycle result instead of creating a lease for stale
 membership.
 

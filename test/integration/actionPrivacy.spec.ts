@@ -5,7 +5,7 @@ import { requireOpenAction } from "../fixtures/roomScenario";
 import {
   advanceToNormalNight,
   advanceToVoting,
-  createContractStartedRoom,
+  createRoomWithStartedGame,
   findForbiddenKeyPath,
   readRoomEntries,
   withTimeout,
@@ -25,7 +25,7 @@ const SELECTED_TARGET_KEYS = new Set([
 test("an in-progress vote exposes progress but not the submitted target to public or other self views", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Hazel",
     "Indigo",
     "Jade",
@@ -44,6 +44,7 @@ test("an in-progress vote exposes progress but not the submitted target to publi
   await apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/action`, {
     body: {
       actionKey: action.key,
+      gameId: voter.summary.game.gameId,
       phaseInstanceId: action.phaseInstanceId,
       revision: voter.summary.game.revision,
       targetPlayerId,
@@ -80,7 +81,7 @@ test("an in-progress vote exposes progress but not the submitted target to publi
 test("a shared normal-night action accepts one concurrent target without leaking it", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Lupine",
     "Myrtle",
     "Nutmeg",
@@ -110,6 +111,7 @@ test("a shared normal-night action accepts one concurrent target without leaking
       readJsonResponse<RoomSummary | ApiErrorResponse>(request, `/api/rooms/${roomCode}/action`, {
         body: {
           actionKey: shared.action.key,
+          gameId: first.summary.game.gameId,
           phaseInstanceId: shared.action.phaseInstanceId,
           revision: first.summary.game.revision,
           targetPlayerId: firstTarget,
@@ -120,6 +122,7 @@ test("a shared normal-night action accepts one concurrent target without leaking
       readJsonResponse<RoomSummary | ApiErrorResponse>(request, `/api/rooms/${roomCode}/action`, {
         body: {
           actionKey: shared.action.key,
+          gameId: second.summary.game.gameId,
           phaseInstanceId: shared.action.phaseInstanceId,
           revision: second.summary.game.revision,
           targetPlayerId: secondTarget,
@@ -159,7 +162,7 @@ test("a shared normal-night action accepts one concurrent target without leaking
 test("initial inspection is visible only in its owner's private event stream", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Sage",
     "Tansy",
     "Ulex",

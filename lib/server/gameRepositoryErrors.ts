@@ -21,10 +21,10 @@ export class CurrentRoomChangedError extends Error {
   }
 }
 
-export class RoomExpiredError extends Error {
+export class RoomClosedError extends Error {
   constructor() {
-    super("Room expired.");
-    this.name = "RoomExpiredError";
+    super("Room closed.");
+    this.name = "RoomClosedError";
   }
 }
 
@@ -49,7 +49,40 @@ export class RoomSwitchForbiddenError extends Error {
   }
 }
 
+export class StaleRosterRevisionError extends Error {
+  constructor() {
+    super("Room roster changed before the operation completed.");
+    this.name = "StaleRosterRevisionError";
+  }
+}
+
+export class RoomRosterNotReadyError extends Error {
+  constructor() {
+    super("Every active player must be ready before the Game can start.");
+    this.name = "RoomRosterNotReadyError";
+  }
+}
+
+export class StaleGameIdError extends Error {
+  constructor() {
+    super("Current Game changed before the operation completed.");
+    this.name = "StaleGameIdError";
+  }
+}
+
 export function toGameRepositoryError(message: string): Error {
+  if (message.includes("stale_roster_revision")) {
+    return new StaleRosterRevisionError();
+  }
+
+  if (message.includes("room_roster_not_ready") || message.includes("room_players_changed")) {
+    return new RoomRosterNotReadyError();
+  }
+
+  if (message.includes("stale_game_id")) {
+    return new StaleGameIdError();
+  }
+
   if (message.includes("current_room_exists")) {
     return new CurrentRoomExistsError();
   }
@@ -62,8 +95,8 @@ export function toGameRepositoryError(message: string): Error {
     return new RoomSwitchForbiddenError();
   }
 
-  if (message.includes("room_expired")) {
-    return new RoomExpiredError();
+  if (message.includes("room_closed")) {
+    return new RoomClosedError();
   }
 
   if (message.includes("room_full")) {

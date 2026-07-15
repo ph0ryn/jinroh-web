@@ -1842,14 +1842,6 @@ a {
   color: #e9f6dd;
 }
 
-.liveEndedActions {
-  padding: 12px;
-}
-
-.liveEndedActions button {
-  width: 100%;
-}
-
 .livePlayPhaseCard {
   background: var(--live-soft-surface);
   border: 1px solid var(--live-panel-border);
@@ -1967,6 +1959,11 @@ a {
   justify-content: center;
   min-width: 24px;
   padding-inline: 7px;
+}
+
+.liveEndedUtilities {
+  display: grid;
+  gap: 8px;
 }
 
 .livePanel {
@@ -2221,11 +2218,17 @@ a {
 .liveWaitingActions {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
 }
 
 .liveWaitingActions button {
   min-height: 42px;
+}
+
+.liveReadinessButton[data-live-lobby-ready="true"] {
+  background: rgba(119, 189, 117, 0.2);
+  border-color: rgba(119, 189, 117, 0.62);
+  color: #e9f6dd;
 }
 
 .liveModalBackdrop {

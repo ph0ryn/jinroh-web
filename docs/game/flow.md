@@ -15,31 +15,42 @@ Game Engine は game status と phase を分けて持つ。
 - execution
 
 `role assignment` や `result` は phase ではなく、ゲーム前後の status として扱う。
-結果画面は `ended` status と final outcome から表示する。
+結果画面は Room が明示的に指す current Game の `ended` status と final outcome から表示する。
 
 Game state が存在する場合の status。
 
-- assigning_roles
 - playing
 - ended
 
-Room が `waiting` の間は game state を持たない。Game state は game start transaction
-内で初めて作成する。`status` が `assigning_roles`、`ended` の場合、`phase` は `null` でもよい。
+Room が clean `waiting` の間は current Game を持たない。Game は start transaction
+内で新しい Game ID として作成する。`status` が `ended` の場合、`phase` は null になる。
+完了 Game は履歴として残り、Room の current Game pointer がその Game を指す間だけ
+結果画面へ投影する。
 
 基本サイクル。
 
 ```text
 Room waiting / game = null
-  -> assigning_roles
   -> playing / night
   -> day
   -> voting
   -> execution or night
   -> day
+  -> ended / result lobby
+  -> a new Game starts with the same ready roster
+
+ended / result lobby
+  -> a non-roster participant joins
+  -> Room waiting / game = null
 ```
 
-すべての playing phase は一意な `phaseInstanceId` を持つ。永続層は phase ごとに
-`game_phase_instances` を追加し、`game_states` は現在の instance だけを参照する。
+Game completion increments the Room roster revision and starts a new 30-minute
+lobby window. The same roster can set lobby readiness while retaining the result
+view. A participant who is not in that completed Game roster atomically detaches
+the current Game on join, so the accepted Room snapshot becomes a clean lobby.
+
+すべての playing phase は Game 内で一意な `phaseInstanceId` を持つ。永続層は phase ごとに
+`game_phase_instances` を追加し、`games` は現在の instance だけを参照する。
 phase 解決 transaction は古い instance の `endedAt` を固定してから次の instance を作る。
 current action、resolved action、event、speech slot は phase instance に帰属し、
 同じ phase name が再登場しても履歴を混ぜない。

@@ -7,9 +7,12 @@ export type ApiErrorCode =
   | "current_room_changed"
   | "current_room_exists"
   | "forbidden"
+  | "game_changed"
   | "not_found"
+  | "players_not_ready"
   | "rate_limited"
-  | "room_expired"
+  | "roster_changed"
+  | "room_closed"
   | "room_full"
   | "room_not_found"
   | "room_not_joinable"
@@ -46,6 +49,10 @@ export function parseBearerToken(request: Request): string | null {
   const match = /^Bearer (?<token>\S+)$/iu.exec(header.trim());
 
   return match?.groups?.["token"] ?? null;
+}
+
+export function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 export async function readJson<Body>(request: Request): Promise<Body | null> {

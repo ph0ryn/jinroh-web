@@ -1,6 +1,6 @@
 import { readRoomSummary } from "../fixtures/apiClient";
 import {
-  createStartedRoom,
+  createRoomWithStartedGame,
   requireOpenAction,
   requirePlayer,
   sendNightConversationMessage,
@@ -13,7 +13,11 @@ test("cinematic cues serialize role assignment before the phase change", async (
   page,
   request,
 }) => {
-  const { players, roomCode } = await createStartedRoom(request, ["Aster", "Birch", "Cedar"]);
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
+    "Aster",
+    "Birch",
+    "Cedar",
+  ]);
   const host = requirePlayer(players, 0);
 
   await live.open({ identityToken: host.token });
@@ -34,7 +38,7 @@ test("reduced motion settles a representative cue into readable game state", asy
   page,
   request,
 }) => {
-  const { players } = await createStartedRoom(request, ["Dahlia", "Elm", "Fir"]);
+  const { players } = await createRoomWithStartedGame(request, ["Dahlia", "Elm", "Fir"]);
   const host = requirePlayer(players, 0);
 
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -51,7 +55,7 @@ test("reduced motion settles a representative cue into readable game state", asy
 });
 
 test("an accepted action receipt remains scoped to its submitter", async ({ live, request }) => {
-  const { players, roomCode } = await createStartedRoom(request, ["Gale", "Hazel", "Iris"]);
+  const { players, roomCode } = await createRoomWithStartedGame(request, ["Gale", "Hazel", "Iris"]);
   const submitter = requirePlayer(players, 0);
   const observer = requirePlayer(players, 1);
   const beforeSubmitter = await readRoomSummary(request, roomCode, submitter);
@@ -86,7 +90,7 @@ test("role-private night conversation sends and receives accepted messages", asy
   page,
   request,
 }) => {
-  const { players, roomCode } = await createStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Juniper",
     "Kite",
     "Linden",

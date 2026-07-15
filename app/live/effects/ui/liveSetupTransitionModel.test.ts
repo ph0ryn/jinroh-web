@@ -34,6 +34,9 @@ describe("live setup transition model", () => {
       reconcileLiveSetupTransition(snapshot("waiting", "123456"), snapshot("game", "123456"), true),
     ).toBeNull();
     expect(
+      reconcileLiveSetupTransition(snapshot("game", "123456"), snapshot("waiting", "123456"), true),
+    ).toBeNull();
+    expect(
       reconcileLiveSetupTransition(
         snapshot("waiting", "123456"),
         snapshot("waiting", "654321"),

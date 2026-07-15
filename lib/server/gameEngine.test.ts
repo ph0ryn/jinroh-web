@@ -34,11 +34,14 @@ import {
   type PlayerRuntimeState,
 } from "./gameEngine";
 
-type TestPhaseResolutionInput = Omit<PhaseResolutionInput, "resolvedRoleSetup">;
+const TEST_GAME_ID = "550e8400-e29b-41d4-a716-446655440000";
+
+type TestPhaseResolutionInput = Omit<PhaseResolutionInput, "gameId" | "resolvedRoleSetup">;
 
 function resolvePhase(input: TestPhaseResolutionInput) {
   return resolvePhaseWithSetup({
     ...input,
+    gameId: TEST_GAME_ID,
     resolvedRoleSetup: makeResolvedRoleSetupForPlayers(input.ruleSet, input.players),
   });
 }
@@ -279,6 +282,7 @@ describe("game engine", () => {
         ],
         currentPhase: "night",
         dayNumber: 1,
+        gameId: TEST_GAME_ID,
         nightNumber: 2,
         players,
         resolvedRoleSetup,

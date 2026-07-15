@@ -29,7 +29,8 @@ export function useLiveActionFeedback(summary: RoomSummary | null): LiveActionFe
     const sessionChanged =
       previousSnapshot !== null &&
       (previousSnapshot.roomCode !== nextSnapshot.roomCode ||
-        previousSnapshot.viewerPlayerId !== nextSnapshot.viewerPlayerId);
+        previousSnapshot.viewerPlayerId !== nextSnapshot.viewerPlayerId ||
+        previousSnapshot.gameId !== nextSnapshot.gameId);
     const reconciliation = reconcileLiveActionFeedback(
       previousSnapshot,
       nextSnapshot,

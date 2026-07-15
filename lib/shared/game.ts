@@ -6,9 +6,16 @@ export type RoleId = string;
 
 const OPAQUE_IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 const ACTION_KEY_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,127}$/;
+const GAME_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 export function isRoleId(value: unknown): value is RoleId {
   return typeof value === "string" && OPAQUE_IDENTIFIER_PATTERN.test(value);
+}
+
+export type GameId = string;
+
+export function isGameId(value: unknown): value is GameId {
+  return typeof value === "string" && GAME_ID_PATTERN.test(value);
 }
 
 export type Team = string;
@@ -19,7 +26,7 @@ export type RoomStatus = "waiting" | "playing" | "ended";
 
 export type PlayerStatus = "joined" | "disconnected" | "left";
 
-export type GameStatus = "assigning_roles" | "playing" | "ended";
+export type GameStatus = "playing" | "ended";
 
 export type GamePhase = "night" | "day" | "voting" | "execution";
 
@@ -69,9 +76,10 @@ export type GameEventVisibility = "public" | "private" | "internal";
 
 export type RoomSummary = {
   code: string;
+  rosterRevision: number;
   snapshotRevision: number;
   status: RoomStatus;
-  waitingExpiresAt: string;
+  lobbyExpiresAt: string;
   targetPlayerCount: number;
   hostPlayerId: string | null;
   currentPlayerId: string | null;
@@ -110,10 +118,12 @@ export type PublicPlayer = {
   alive: boolean | null;
   isHost: boolean;
   isCurrent: boolean;
+  isLobbyReady: boolean;
   revealedRoleId: RoleId | null;
 };
 
 export type PublicGameView = {
+  gameId: string;
   status: GameStatus;
   phase: GamePhase | null;
   dayNumber: number;

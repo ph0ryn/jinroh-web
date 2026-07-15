@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_START_RULE_SET_SETTINGS } from "./liveStartSettings";
 import {
+  getStartSettingsRoomSession,
   parseStartSettings,
   serializeStartSettings,
   type StartSettingsRoomSession,
 } from "./liveStartSettingsStorage";
 
-import type { RoleCatalogItem } from "@/lib/shared/game";
+import type { RoleCatalogItem, RoomSummary } from "@/lib/shared/game";
 
 const SESSION: StartSettingsRoomSession = {
   currentPlayerId: "pl_host",
   roomCode: "123456",
   targetPlayerCount: 3,
-  waitingExpiresAt: "2099-01-01T00:00:00.000Z",
 };
 
 const ROLE_CATALOG: readonly RoleCatalogItem[] = [
@@ -31,7 +31,7 @@ const ROLE_CATALOG: readonly RoleCatalogItem[] = [
 ];
 
 describe("start settings storage", () => {
-  it("restores settings only for the exact waiting-room session", () => {
+  it("restores settings for the same Room, host, and target count across Games", () => {
     const settings = {
       ...DEFAULT_START_RULE_SET_SETTINGS,
       dayMode: "ordered_speech" as const,
@@ -43,7 +43,7 @@ describe("start settings storage", () => {
     expect(
       parseStartSettings(
         storedValue,
-        { ...SESSION, waitingExpiresAt: "2099-01-02T00:00:00.000Z" },
+        { ...SESSION, currentPlayerId: "pl_next_host" },
         ROLE_CATALOG,
       ),
     ).toBeNull();
@@ -63,4 +63,45 @@ describe("start settings storage", () => {
     storedValue.settings.roleCounts = { removed_role: 3 };
     expect(parseStartSettings(JSON.stringify(storedValue), SESSION, ROLE_CATALOG)).toBeNull();
   });
+
+  it("keeps host settings available from a completed Game result", () => {
+    expect(getStartSettingsRoomSession(makeEndedSummary())).toEqual(SESSION);
+    expect(getStartSettingsRoomSession({ ...makeEndedSummary(), status: "playing" })).toEqual(
+      SESSION,
+    );
+  });
 });
+
+function makeEndedSummary(): RoomSummary {
+  return {
+    code: SESSION.roomCode,
+    currentPlayerId: SESSION.currentPlayerId,
+    defaultRoleCounts: {},
+    game: {
+      actionProgress: null,
+      dayNumber: 1,
+      events: [],
+      gameId: "game-a",
+      nightNumber: 1,
+      phase: null,
+      phaseEndsAt: null,
+      phaseFocus: null,
+      phaseInstanceId: null,
+      revision: 1,
+      status: "ended",
+      winnerTeam: "villagers",
+    },
+    hostPlayerId: SESSION.currentPlayerId,
+    isHost: true,
+    players: [],
+    roleCatalog: [...ROLE_CATALOG],
+    rolePrivate: null,
+    rosterRevision: 2,
+    self: null,
+    snapshotRevision: 2,
+    status: "ended",
+    targetPlayerCount: SESSION.targetPlayerCount,
+    teamCatalog: [],
+    lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
+  };
+}

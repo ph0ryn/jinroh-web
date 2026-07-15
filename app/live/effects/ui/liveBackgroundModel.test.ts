@@ -54,6 +54,21 @@ describe("live background model", () => {
     });
   });
 
+  it("settles a Game replacement or detachment without retaining the result scene", () => {
+    const result = createLiveBackgroundState(snapshot("result", "123456", "viewer-a", "game-a"));
+
+    expect(
+      reconcileLiveBackgroundState(result, snapshot("waiting", "123456", "viewer-a", null), true),
+    ).toEqual({
+      generation: 1,
+      scenes: [{ ...snapshot("waiting", "123456", "viewer-a", null), id: 1 }],
+    });
+    expect(
+      reconcileLiveBackgroundState(result, snapshot("night", "123456", "viewer-a", "game-b"), true)
+        .scenes,
+    ).toEqual([{ ...snapshot("night", "123456", "viewer-a", "game-b"), id: 1 }]);
+  });
+
   it("treats reduced-motion and hidden updates as settled baselines", () => {
     const state = reconcileLiveBackgroundState(
       createLiveBackgroundState(snapshot("night")),
@@ -122,6 +137,7 @@ function snapshot(
   mood: Parameters<typeof getLiveBackgroundSnapshot>[0],
   roomCode: string | null = "123456",
   viewerPlayerId: string | null = "viewer-a",
+  gameId: string | null = "game-a",
 ) {
-  return getLiveBackgroundSnapshot(mood, roomCode, viewerPlayerId);
+  return getLiveBackgroundSnapshot(mood, roomCode, viewerPlayerId, gameId);
 }

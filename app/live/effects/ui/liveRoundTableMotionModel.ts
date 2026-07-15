@@ -14,6 +14,7 @@ export type LiveRoundTableMotionSeat = {
 
 export type LiveRoundTableMotionSnapshot = {
   readonly emptySeatNumbers: readonly number[];
+  readonly gameId: string | null;
   readonly roomCode: string;
   readonly seats: readonly LiveRoundTableMotionSeat[];
   readonly viewerPlayerId: string | null;
@@ -70,6 +71,7 @@ export function createLiveRoundTableMotionSnapshot(
     emptySeatNumbers: roundTableSeats.flatMap(({ player, seatNumber }) =>
       player === null ? [seatNumber] : [],
     ),
+    gameId: summary.game?.gameId ?? null,
     roomCode: summary.code,
     seats,
     viewerPlayerId: summary.currentPlayerId,
@@ -87,7 +89,8 @@ export function getLiveRoundTableMotionChanges(
   if (
     previousSnapshot === null ||
     previousSnapshot.roomCode !== nextSnapshot.roomCode ||
-    previousSnapshot.viewerPlayerId !== nextSnapshot.viewerPlayerId
+    previousSnapshot.viewerPlayerId !== nextSnapshot.viewerPlayerId ||
+    previousSnapshot.gameId !== nextSnapshot.gameId
   ) {
     return EMPTY_CHANGES;
   }

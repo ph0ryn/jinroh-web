@@ -294,12 +294,14 @@ function formatApiError(error: ApiRequestError, t: Localization): string {
       return t.live.room.currentChanged;
     case "current_room_exists":
       return t.live.room.currentExists;
+    case "game_changed":
+      return t.live.room.gameChanged;
     case "not_found":
       return t.api.errors.not_found;
     case "rate_limited":
       return t.api.errors.rate_limited(error.retryAfterSeconds);
-    case "room_expired":
-      return t.live.room.expired;
+    case "room_closed":
+      return t.live.room.closed;
     case "room_full":
       return t.live.room.full;
     case "room_not_found":
@@ -310,6 +312,10 @@ function formatApiError(error: ApiRequestError, t: Localization): string {
       return t.live.room.switchForbiddenGeneric;
     case "server_error":
       return t.api.errors.server_error;
+    case "players_not_ready":
+      return t.live.room.playersNotReady;
+    case "roster_changed":
+      return t.live.room.rosterChanged;
     case "unauthorized":
       return t.api.errors.unauthorized;
     default:

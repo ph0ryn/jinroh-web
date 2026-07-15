@@ -1,6 +1,12 @@
 import { DEFAULT_RULE_SET_OPTIONS } from "@/lib/shared/game";
 
-import { apiFetch, createApiPlayer, joinWaitingRoom, readRoomSummary } from "./apiClient";
+import {
+  apiFetch,
+  createApiPlayer,
+  joinWaitingRoom,
+  readRoomSummary,
+  setRoomPlayersReady,
+} from "./apiClient";
 
 import type { ApiPlayer } from "./apiClient";
 import type { PublicAction, RoomSummary } from "@/lib/shared/game";
@@ -30,13 +36,14 @@ export async function createWaitingRoom(
   return { players, roomCode: room.code };
 }
 
-export async function createStartedRoom(
+export async function createRoomWithStartedGame(
   request: APIRequestContext,
   displayNames: readonly string[],
   options: { readonly voteResultVisibility?: "count_only" | "voter_to_target" } = {},
 ): Promise<{ readonly players: readonly ApiPlayer[]; readonly roomCode: string }> {
   const waitingRoom = await createWaitingRoom(request, displayNames);
   const host = requirePlayer(waitingRoom.players, 0);
+  await setRoomPlayersReady(request, waitingRoom.roomCode, waitingRoom.players);
   const waitingSummary = await readRoomSummary(request, waitingRoom.roomCode, host);
   const ruleSet =
     options.voteResultVisibility === undefined
@@ -48,7 +55,10 @@ export async function createStartedRoom(
         };
 
   await apiFetch(request, `/api/rooms/${waitingRoom.roomCode}/start`, {
-    body: ruleSet === undefined ? {} : { ruleSet },
+    body:
+      ruleSet === undefined
+        ? { expectedRosterRevision: waitingSummary.rosterRevision }
+        : { expectedRosterRevision: waitingSummary.rosterRevision, ruleSet },
     method: "POST",
     token: host.token,
   });
@@ -65,12 +75,14 @@ export async function sendNightConversationMessage(
   const summary = await readRoomSummary(request, roomCode, player);
   const conversation = summary.rolePrivate?.nightConversation;
   const phaseInstanceId = summary.game?.phaseInstanceId;
+  const gameId = summary.game?.gameId;
 
   if (
     conversation === null ||
     conversation === undefined ||
     phaseInstanceId === null ||
-    phaseInstanceId === undefined
+    phaseInstanceId === undefined ||
+    gameId === undefined
   ) {
     throw new Error(`Night conversation is not available for ${player.label}.`);
   }
@@ -79,6 +91,7 @@ export async function sendNightConversationMessage(
     body: {
       body,
       conversationGroupId: conversation.groupId,
+      gameId,
       nightNumber: conversation.nightNumber,
       phaseInstanceId,
     },
@@ -107,14 +120,16 @@ export async function submitOpenAction(
   const summary = await readRoomSummary(request, roomCode, player);
   const action = requireOpenAction(summary);
   const revision = summary.game?.revision;
+  const gameId = summary.game?.gameId;
 
-  if (revision === undefined) {
+  if (revision === undefined || gameId === undefined) {
     throw new Error(`Game revision is not available for ${player.label}.`);
   }
 
   await apiFetch(request, `/api/rooms/${roomCode}/action`, {
     body: {
       actionKey: action.key,
+      gameId,
       phaseInstanceId: action.phaseInstanceId,
       revision,
       targetPlayerId: selectTarget(action),

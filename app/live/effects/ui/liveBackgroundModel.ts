@@ -1,6 +1,7 @@
 import type { LiveMood } from "../../livePresentation";
 
 export type LiveBackgroundSnapshot = {
+  readonly gameId: string | null;
   readonly mood: LiveMood;
   readonly roomCode: string | null;
   readonly viewerPlayerId: string | null;
@@ -43,7 +44,9 @@ export function reconcileLiveBackgroundState(
   }
 
   const sameSession =
-    current.roomCode === snapshot.roomCode && current.viewerPlayerId === snapshot.viewerPlayerId;
+    current.roomCode === snapshot.roomCode &&
+    current.viewerPlayerId === snapshot.viewerPlayerId &&
+    current.gameId === snapshot.gameId;
   const sameMood = current.mood === snapshot.mood;
   const sameSource =
     LIVE_BACKGROUND_SOURCE_BY_MOOD[current.mood] === LIVE_BACKGROUND_SOURCE_BY_MOOD[snapshot.mood];
@@ -79,8 +82,9 @@ export function getLiveBackgroundSnapshot(
   mood: LiveMood,
   roomCode: string | null,
   viewerPlayerId: string | null,
+  gameId: string | null,
 ): LiveBackgroundSnapshot {
-  return { mood, roomCode, viewerPlayerId };
+  return { gameId, mood, roomCode, viewerPlayerId };
 }
 
 export function getUniqueLiveBackgroundSources(): readonly string[] {

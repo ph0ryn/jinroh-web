@@ -128,7 +128,7 @@ function animateLobbyProgress(
       .to(sheen, { autoAlpha: 0, duration: 0.28, ease: "power2.in", xPercent: 320 }, 0.36);
   }
 
-  if (change.kind === "ready") {
+  if (change.kind === "full") {
     if (completion !== null) {
       timeline.fromTo(
         completion,

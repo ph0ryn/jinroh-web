@@ -5,6 +5,7 @@ export type LiveToastPageScope = {
 };
 
 export type LiveToastRoomSessionScope = {
+  readonly gameId: string | null;
   readonly kind: "roomSession";
   readonly sessionId: number;
 };
@@ -66,6 +67,10 @@ export type LiveToastAction =
   | {
       readonly scope: LiveToastScope;
       readonly type: "clearScope";
+    }
+  | {
+      readonly scope: LiveToastScope;
+      readonly type: "discardScope";
     };
 
 export const LIVE_TOAST_PAGE_SCOPE: LiveToastPageScope = { kind: "page" };
@@ -79,10 +84,13 @@ export function createLiveToastState(): LiveToastState {
   };
 }
 
-export function createLiveToastRoomSessionScope(sessionId: number): LiveToastRoomSessionScope {
+export function createLiveToastRoomSessionScope(
+  sessionId: number,
+  gameId: string | null,
+): LiveToastRoomSessionScope {
   assertValidRoomSessionId(sessionId);
 
-  return { kind: "roomSession", sessionId };
+  return { gameId, kind: "roomSession", sessionId };
 }
 
 export function isSameLiveToastScope(first: LiveToastScope, second: LiveToastScope): boolean {
@@ -90,7 +98,7 @@ export function isSameLiveToastScope(first: LiveToastScope, second: LiveToastSco
     return first.kind === second.kind;
   }
 
-  return first.sessionId === second.sessionId;
+  return first.sessionId === second.sessionId && first.gameId === second.gameId;
 }
 
 export function reduceLiveToastState(
@@ -108,6 +116,8 @@ export function reduceLiveToastState(
       return completeLiveToastExit(state, action.toastId);
     case "clearScope":
       return clearLiveToastScope(state, action.scope);
+    case "discardScope":
+      return discardLiveToastScope(state, action.scope);
   }
 }
 
@@ -243,6 +253,51 @@ function clearLiveToastScope(state: LiveToastState, scope: LiveToastScope): Live
     ...state,
     pending: null,
   };
+}
+
+function discardLiveToastScope(state: LiveToastState, scope: LiveToastScope): LiveToastState {
+  if (state.active === null) {
+    return state;
+  }
+
+  const discardsActive = isSameLiveToastScope(state.active.scope, scope);
+  const discardsPending =
+    state.phase === "exiting" &&
+    state.pending !== null &&
+    isSameLiveToastScope(state.pending.scope, scope);
+
+  if (!discardsActive && !discardsPending) {
+    return state;
+  }
+
+  if (discardsActive) {
+    if (state.phase === "exiting" && state.pending !== null && !discardsPending) {
+      return {
+        active: state.pending,
+        nextId: state.nextId,
+        pending: null,
+        phase: "entering",
+      };
+    }
+
+    return {
+      active: null,
+      nextId: state.nextId,
+      pending: null,
+      phase: null,
+    };
+  }
+
+  if (state.phase === "exiting" && state.exitReason === "replacement") {
+    return {
+      active: state.active,
+      nextId: state.nextId,
+      pending: null,
+      phase: "entering",
+    };
+  }
+
+  return state.phase === "exiting" ? { ...state, pending: null } : state;
 }
 
 function isDuplicateLiveToastRequest(toast: LiveToast | null, request: LiveToastRequest): boolean {

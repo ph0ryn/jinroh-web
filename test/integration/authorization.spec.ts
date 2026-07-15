@@ -5,14 +5,15 @@ import {
   createApiPlayer,
   readJsonResponse,
   readRoomSummary,
+  setRoomPlayersReady,
 } from "../fixtures/apiClient";
 import { createWaitingRoom, requireOpenAction, requirePlayer } from "../fixtures/roomScenario";
 import {
-  createContractStartedRoom,
+  createRoomWithStartedGame,
   decodeJwtPayload,
   findForbiddenKeyPath,
   readRoomEntries,
-  startWaitingRoom,
+  startGameInWaitingRoom,
   withTimeout,
   type ApiErrorResponse,
 } from "./support";
@@ -58,7 +59,7 @@ test("authenticated endpoints reject missing and invalid bearer tokens", async (
 });
 
 test("maintenance cleanup rejects missing and invalid credentials", async ({ request }) => {
-  const path = "/api/maintenance/expire-waiting-rooms";
+  const path = "/api/maintenance/expire-rooms";
   const missing = await readJsonResponse<ApiErrorResponse>(request, path, {
     body: { limit: 1 },
     method: "POST",
@@ -89,7 +90,14 @@ test("room mutations enforce membership, host ownership, and the accepted game r
   const nonHostStart = await readJsonResponse<ApiErrorResponse>(
     request,
     `/api/rooms/${waitingRoom.roomCode}/start`,
-    { body: {}, method: "POST", token: nonHost.token },
+    {
+      body: {
+        expectedRosterRevision: (await readRoomSummary(request, waitingRoom.roomCode, nonHost))
+          .rosterRevision,
+      },
+      method: "POST",
+      token: nonHost.token,
+    },
   );
 
   expect(wrongRoom).toMatchObject({
@@ -98,7 +106,7 @@ test("room mutations enforce membership, host ownership, and the accepted game r
   });
   expect(nonHostStart).toMatchObject({ body: { error: { code: "conflict" } }, status: 409 });
 
-  await startWaitingRoom(request, waitingRoom);
+  await startGameInWaitingRoom(request, waitingRoom);
   const summary = await readRoomSummary(request, waitingRoom.roomCode, host);
   const action = requireOpenAction(summary);
   const staleRevision = await readJsonResponse<ApiErrorResponse>(
@@ -107,6 +115,7 @@ test("room mutations enforce membership, host ownership, and the accepted game r
     {
       body: {
         actionKey: action.key,
+        gameId: summary.game?.gameId,
         phaseInstanceId: action.phaseInstanceId,
         revision: (summary.game?.revision ?? 0) + 1,
         targetPlayerId: null,
@@ -124,15 +133,17 @@ test("concurrent and retried room starts persist exactly one role assignment", a
 }) => {
   const waitingRoom = await createWaitingRoom(request, ["Larch", "Maple", "Nettle"]);
   const host = requirePlayer(waitingRoom.players, 0);
+  await setRoomPlayersReady(request, waitingRoom.roomCode, waitingRoom.players);
+  const readySummary = await readRoomSummary(request, waitingRoom.roomCode, host);
   const startPath = `/api/rooms/${waitingRoom.roomCode}/start`;
   const startResponses = await Promise.all([
     readJsonResponse<RoomSummary | ApiErrorResponse>(request, startPath, {
-      body: {},
+      body: { expectedRosterRevision: readySummary.rosterRevision },
       method: "POST",
       token: host.token,
     }),
     readJsonResponse<RoomSummary | ApiErrorResponse>(request, startPath, {
-      body: {},
+      body: { expectedRosterRevision: readySummary.rosterRevision },
       method: "POST",
       token: host.token,
     }),
@@ -150,7 +161,7 @@ test("concurrent and retried room starts persist exactly one role assignment", a
     }),
   );
   const retriedStart = await readJsonResponse<ApiErrorResponse>(request, startPath, {
-    body: {},
+    body: { expectedRosterRevision: readySummary.rosterRevision },
     method: "POST",
     token: host.token,
   });
@@ -170,7 +181,7 @@ test("concurrent and retried room starts persist exactly one role assignment", a
 test("HTTP private views and Realtime grants expose only the viewer's authorized scopes", async ({
   request,
 }) => {
-  const { players, roomCode } = await createContractStartedRoom(request, [
+  const { players, roomCode } = await createRoomWithStartedGame(request, [
     "Grove",
     "Heath",
     "Ivy",

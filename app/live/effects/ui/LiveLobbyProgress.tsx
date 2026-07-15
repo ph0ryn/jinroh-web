@@ -76,7 +76,7 @@ export function LiveLobbyProgress({ summary, t }: LiveLobbyProgressProps) {
         </span>
       </div>
 
-      {progressState === "ready" ? (
+      {progressState === "full" ? (
         <div className={styles["footer"]}>
           <span
             aria-hidden="true"
@@ -84,7 +84,7 @@ export function LiveLobbyProgress({ summary, t }: LiveLobbyProgressProps) {
             data-live-lobby-progress-completion
           >
             <span>✓</span>
-            {t.live.invite.ready}
+            {t.live.invite.full}
           </span>
         </div>
       ) : null}
@@ -101,7 +101,7 @@ function getRequirementMessage(
     return t.live.hints.tooManyPlayers;
   }
 
-  return progressState === "ready"
+  return progressState === "full"
     ? t.live.invite.allSeatsFilled
     : t.live.invite.morePlayersNeeded(requiredPlayerCount);
 }

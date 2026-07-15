@@ -15,7 +15,7 @@ import {
 import {
   getAvailableNightActions,
   makeDefaultRuleSetForPlayers,
-  resolvePhase,
+  resolvePhase as resolvePhaseForGame,
   startGame,
 } from "./gameEngine";
 
@@ -37,7 +37,18 @@ import type {
   Team,
   WinnerJudgementContribution,
 } from "./game/types";
-import type { EngineAction, PhaseCurrentAction, PlayerRuntimeState } from "./gameEngine";
+import type {
+  EngineAction,
+  PhaseCurrentAction,
+  PhaseResolutionInput,
+  PlayerRuntimeState,
+} from "./gameEngine";
+
+const TEST_GAME_ID = "550e8400-e29b-41d4-a716-446655440000";
+
+function resolvePhase(input: Omit<PhaseResolutionInput, "gameId">) {
+  return resolvePhaseForGame({ ...input, gameId: TEST_GAME_ID });
+}
 
 const SYNTHETIC_ACTION_KIND = "execution_skip";
 const FOX_TEAM = roleRegistry.get("fox").team;

@@ -185,6 +185,7 @@ function makePlayer(id: string, overrides: Partial<PublicPlayer> = {}): PublicPl
     id,
     isCurrent: false,
     isHost: false,
+    isLobbyReady: false,
     revealedRoleId: null,
     status: "joined",
     ...overrides,

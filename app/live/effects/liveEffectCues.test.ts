@@ -24,6 +24,7 @@ const ALICE: PublicPlayer = {
   id: "player-alice",
   isCurrent: true,
   isHost: true,
+  isLobbyReady: false,
   revealedRoleId: null,
   status: "joined",
 };
@@ -34,6 +35,7 @@ const BOB: PublicPlayer = {
   id: "player-bob",
   isCurrent: false,
   isHost: false,
+  isLobbyReady: false,
   revealedRoleId: null,
   status: "joined",
 };
@@ -44,6 +46,7 @@ const CAROL: PublicPlayer = {
   id: "player-carol",
   isCurrent: false,
   isHost: false,
+  isLobbyReady: false,
   revealedRoleId: null,
   status: "joined",
 };
@@ -107,6 +110,28 @@ describe("projectLiveEffectCues", () => {
       nightNumber: 1,
       phase: "night",
     });
+  });
+
+  it("projects a fresh role and phase when a completed Game is replaced directly", () => {
+    const ended = createSummary({
+      gameId: "game-a",
+      phase: null,
+      roleId: "villager",
+      status: "ended",
+    });
+    const replay = createSummary({
+      events: createInitialEvents(),
+      gameId: "game-b",
+      phase: "night",
+      roleId: "villager",
+      snapshotRevision: 3,
+      status: "playing",
+    });
+
+    expect(projectLiveEffectCues(ended, replay)).toEqual([
+      expect.objectContaining({ gameId: "game-b", kind: "role", roleId: "villager" }),
+      expect.objectContaining({ gameId: "game-b", kind: "phase", phase: "night" }),
+    ]);
   });
 
   it("ignores a new phase instance when the semantic phase is unchanged", () => {
@@ -223,7 +248,8 @@ describe("projectLiveEffectCues", () => {
     expect(cues[0]).toEqual({
       dayNumber: 1,
       eventIds: ["event-vote"],
-      id: "123456:vote:event-vote",
+      gameId: "game-a",
+      id: "123456:game-a:vote:event-vote",
       kind: "vote",
       outcome: { kind: "candidate", playerId: BOB.id, voteCount: 2 },
       roomCode: "123456",
@@ -325,8 +351,8 @@ describe("projectLiveEffectCues", () => {
     const voteCues = projectLiveEffectCues(previous, next).filter((cue) => cue.kind === "vote");
 
     expect(voteCues.map((cue) => ({ dayNumber: cue.dayNumber, id: cue.id }))).toEqual([
-      { dayNumber: 1, id: "123456:vote:event-vote-one" },
-      { dayNumber: 2, id: "123456:vote:event-vote-two" },
+      { dayNumber: 1, id: "123456:game-a:vote:event-vote-one" },
+      { dayNumber: 2, id: "123456:game-a:vote:event-vote-two" },
     ]);
   });
 
@@ -608,6 +634,16 @@ describe("reconcileLiveEffectQueueForSummary", () => {
     ).toEqual({ activeCue: null, pendingCues: [] });
   });
 
+  it("drops every active and pending cue when the completed Game detaches", () => {
+    const activeVictoryCue = createCue("victory-active", "victory");
+    const pendingDeathCue = createCue("death-pending", "death");
+    const cleanLobby = createSummary({ status: "waiting" });
+
+    expect(
+      reconcileLiveEffectQueueForSummary(activeVictoryCue, [pendingDeathCue], cleanLobby, false),
+    ).toEqual({ activeCue: null, pendingCues: [] });
+  });
+
   it("keeps only a pending phase that exactly matches the current snapshot", () => {
     const deathCue = createCue("death", "death");
     const dayCue = createPhaseCue("phase-day", "day");
@@ -724,6 +760,7 @@ type SummaryOptions = {
   readonly code?: string;
   readonly dayNumber?: number;
   readonly events?: readonly PublicGameEvent[];
+  readonly gameId?: string;
   readonly nightNumber?: number;
   readonly phase?: GamePhase | null;
   readonly phaseInstanceId?: string | null;
@@ -747,6 +784,7 @@ function createSummary(options: SummaryOptions): RoomSummary {
           actionProgress: null,
           dayNumber: options.dayNumber ?? 0,
           events: [...(options.events ?? createInitialEvents())],
+          gameId: options.gameId ?? "game-a",
           nightNumber: options.nightNumber ?? 1,
           phase: options.phase === undefined ? "night" : options.phase,
           phaseEndsAt: null,
@@ -759,9 +797,10 @@ function createSummary(options: SummaryOptions): RoomSummary {
       : null,
     hostPlayerId: ALICE.id,
     isHost: true,
-    waitingExpiresAt: "2099-01-01T00:00:00.000Z",
+    lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
     players: [ALICE, BOB, CAROL],
     roleCatalog: [],
+    rosterRevision: 1,
     teamCatalog: [],
     rolePrivate: null,
     self: {
@@ -800,7 +839,7 @@ function createInitialEvents(): PublicGameEvent[] {
 }
 
 function createCue(id: string, kind: LiveEffectCue["kind"]): LiveEffectCue {
-  const baseCue = { eventIds: [], id, roomCode: "123456" } as const;
+  const baseCue = { eventIds: [], gameId: "game-a", id, roomCode: "123456" } as const;
 
   switch (kind) {
     case "death":
@@ -849,6 +888,7 @@ function createPhaseCue(
   return {
     dayNumber,
     eventIds: [],
+    gameId: "game-a",
     id,
     kind: "phase",
     nightNumber,
@@ -860,6 +900,7 @@ function createPhaseCue(
 function createRoleReplayCue(id: string): LiveEffectCue {
   return {
     eventIds: [],
+    gameId: "game-a",
     id,
     kind: "role",
     playerId: ALICE.id,

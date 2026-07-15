@@ -1,3 +1,5 @@
+import { getLiveGameSessionIdentity } from "../../liveGameSession";
+
 import type { ActionSubmissionReceipt, PublicActionStatus, RoomSummary } from "@/lib/shared/game";
 
 export type LiveActionFeedbackAction = {
@@ -8,6 +10,7 @@ export type LiveActionFeedbackAction = {
 
 export type LiveActionFeedbackSnapshot = {
   readonly actions: readonly LiveActionFeedbackAction[];
+  readonly gameId: string | null;
   readonly latestReceipt: ActionSubmissionReceipt | null;
   readonly roomCode: string | null;
   readonly viewerPlayerId: string | null;
@@ -25,6 +28,8 @@ export type ReconciledLiveActionFeedback = {
 export function createLiveActionFeedbackSnapshot(
   summary: RoomSummary | null,
 ): LiveActionFeedbackSnapshot {
+  const session = getLiveGameSessionIdentity(summary);
+
   return {
     actions:
       summary?.self?.actions.map(({ key, phaseInstanceId, status }) => ({
@@ -32,9 +37,10 @@ export function createLiveActionFeedbackSnapshot(
         phaseInstanceId,
         status,
       })) ?? [],
+    gameId: session.gameId,
     latestReceipt: summary?.self?.actionReceipts.at(-1) ?? null,
-    roomCode: summary?.code ?? null,
-    viewerPlayerId: summary?.currentPlayerId ?? null,
+    roomCode: session.roomCode,
+    viewerPlayerId: session.viewerPlayerId,
   };
 }
 
@@ -52,6 +58,7 @@ export function getLiveActionFeedbackCue(
     previousSnapshot === null ||
     previousSnapshot.roomCode !== nextSnapshot.roomCode ||
     previousSnapshot.viewerPlayerId !== nextSnapshot.viewerPlayerId ||
+    previousSnapshot.gameId !== nextSnapshot.gameId ||
     nextReceipt === null ||
     previousSnapshot.latestReceipt?.id === nextReceipt.id ||
     !hasSubmittedAction(nextSnapshot, nextReceipt)

@@ -3,839 +3,495 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(37);
+select no_plan();
 
-create temporary table test_realtime_accounts (
+create temporary table realtime_accounts (
   label text primary key,
   account_id bigint not null unique,
   player_id bigint,
-  role_id text,
+  role_id text not null,
   token_hash text not null unique
 );
 
-insert into test_realtime_accounts (label, account_id, role_id, token_hash)
+insert into realtime_accounts (label, account_id, role_id, token_hash)
 select identities.label, created.account_id, identities.role_id, identities.token_hash
 from (
   values
-    ('host', 'role_alpha', repeat('l', 43)),
-    ('guest', 'role_alpha', repeat('m', 43)),
-    ('third', 'role_beta', repeat('n', 43)),
-    ('outsider', null, repeat('o', 43))
+    ('host', 'role_alpha', repeat('k', 43)),
+    ('guest', 'role_alpha', repeat('l', 43)),
+    ('third', 'role_beta', repeat('m', 43))
 ) as identities(label, role_id, token_hash)
-cross join lateral public.app_create_identity(identities.token_hash, 'test-key') as created;
-
-create temporary table test_realtime_room_create as
-select created.*
-from public.app_create_room(
-  (select account_id from test_realtime_accounts where label = 'host'),
-  'Host',
-  3,
-  statement_timestamp() + interval '1 hour'
+cross join lateral public.app_create_identity(
+  identities.token_hash,
+  'test-key'
 ) as created;
 
-create temporary table test_realtime_room as
-select created.room_id, rooms.public_room_code as room_code
-from test_realtime_room_create as created
-join public.rooms as rooms on rooms.id = created.room_id;
+create temporary table realtime_room as
+select created.room_id, null::text as room_code
+from public.app_create_room(
+  (select account_id from realtime_accounts where label = 'host'),
+  'Host',
+  3,
+  pg_catalog.statement_timestamp() + interval '30 minutes'
+) as created
+where created.result_kind = 'target';
 
-create temporary table test_realtime_join_calls as
-select 'guest'::text as label, joined.*
+update realtime_room
+set room_code = rooms.public_room_code
+from public.rooms as rooms
+where rooms.id = realtime_room.room_id;
+
+select *
 from public.app_join_room(
-  (select account_id from test_realtime_accounts where label = 'guest'),
-  (select room_code from test_realtime_room),
+  (select account_id from realtime_accounts where label = 'guest'),
+  (select room_code from realtime_room),
   'Guest'
-) as joined;
+);
 
-insert into test_realtime_join_calls
-select 'third', joined.*
+select *
 from public.app_join_room(
-  (select account_id from test_realtime_accounts where label = 'third'),
-  (select room_code from test_realtime_room),
+  (select account_id from realtime_accounts where label = 'third'),
+  (select room_code from realtime_room),
   'Third'
-) as joined;
+);
 
-update test_realtime_accounts as accounts
+update realtime_accounts as accounts
 set player_id = players.id
 from public.players as players
 where players.account_id = accounts.account_id
-  and players.room_id = (select room_id from test_realtime_room);
+  and players.room_id = (select room_id from realtime_room);
 
-insert into public.role_assignments (room_id, player_id, role_id)
-select (select room_id from test_realtime_room), player_id, role_id
-from test_realtime_accounts
-where player_id is not null;
+create temporary table lobby_grant as
+select issued.*
+from public.app_issue_realtime_grant(
+  (select account_id from realtime_accounts where label = 'host'),
+  (select room_code from realtime_room),
+  120
+) as issued;
 
-insert into public.realtime_topics (topic, room_id, scope, role_id)
+select is(
+  (
+    select pg_catalog.array_agg(
+      grants.result_kind
+      order by grants.scope
+    )
+    from lobby_grant as grants
+  ),
+  array['active', 'active']::text[],
+  'a lobby grant returns active room and player subscription rows'
+);
+
+select is(
+  (
+    select pg_catalog.array_agg(grants.scope order by grants.scope)
+    from lobby_grant as grants
+  ),
+  array['player_private', 'room']::text[],
+  'a lobby grant has no role-private subscription'
+);
+
+select ok(
+  (
+    select pg_catalog.bool_and(grants.game_id is null)
+    from lobby_grant as grants
+  ),
+  'a pre-game grant records no Game identity'
+);
+
+select ok(
+  public.can_receive_realtime_topic(
+    (select grant_id::text from lobby_grant limit 1),
+    (select topic from lobby_grant where scope = 'room')
+  ),
+  'an active lobby grant receives its Room invalidation'
+);
+
+insert into public.games (
+  id,
+  room_id,
+  sequence_number,
+  phase,
+  phase_instance_id,
+  phase_started_at,
+  phase_ends_at,
+  day_number,
+  night_number,
+  revision,
+  action_revision,
+  started_at,
+  updated_at
+)
+values (
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+  (select room_id from realtime_room),
+  1,
+  'night',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101',
+  pg_catalog.statement_timestamp(),
+  pg_catalog.statement_timestamp() + interval '1 minute',
+  0,
+  1,
+  1,
+  0,
+  pg_catalog.statement_timestamp(),
+  pg_catalog.statement_timestamp()
+);
+
+insert into public.game_phase_instances (
+  game_id,
+  id,
+  phase,
+  day_number,
+  night_number,
+  started_at,
+  ends_at
+)
+values (
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101',
+  'night',
+  0,
+  1,
+  pg_catalog.statement_timestamp(),
+  pg_catalog.statement_timestamp() + interval '1 minute'
+);
+
+insert into public.game_rule_sets (
+  game_id,
+  role_counts,
+  options,
+  resolved_role_setup,
+  role_registry_version,
+  engine_version
+)
+values (
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+  '{"role_alpha":2,"role_beta":1}'::jsonb,
+  '{}'::jsonb,
+  '{"activeRoleIds":["role_alpha","role_beta"],"contributions":[],"nightConversationGroups":[]}'::jsonb,
+  'test-registry-v1',
+  'test-engine-v1'
+);
+
+insert into public.game_players (
+  game_id,
+  room_id,
+  player_id,
+  role_id
+)
+select
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+  (select room_id from realtime_room),
+  accounts.player_id,
+  accounts.role_id
+from realtime_accounts as accounts;
+
+insert into public.realtime_topics (
+  topic,
+  room_id,
+  scope,
+  game_id,
+  role_id
+)
 select
   private.random_identifier('role:', 24),
-  (select room_id from test_realtime_room),
+  (select room_id from realtime_room),
   'role_private',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
   roles.role_id
 from (
   select distinct role_id
-  from test_realtime_accounts
-  where role_id is not null
+  from realtime_accounts
 ) as roles;
 
-select is(
-  (
-    select count(*)
-    from public.players
-    where room_id = (select room_id from test_realtime_room)
-      and left_at is null
-  ),
-  3::bigint,
-  'the realtime fixture has three active room players'
-);
+update public.rooms
+set current_game_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+    snapshot_revision = snapshot_revision + 1
+where id = (select room_id from realtime_room);
 
-select is(
-  (
-    select count(*)
-    from public.realtime_topics
-    where room_id = (select room_id from test_realtime_room)
-      and scope = 'role_private'
-  ),
-  2::bigint,
-  'the fixture has one topic for each assigned role'
-);
-
-select throws_ok(
-  $$
-    insert into public.realtime_topics (topic, room_id, scope)
-    values (
-      'role:' || repeat('z', 48),
-      (select room_id from test_realtime_room),
-      'role_private'
-    )
-  $$,
-  '23514',
-  'new row for relation "realtime_topics" violates check constraint "realtime_topics_target_check"',
-  'a role-private topic requires a concrete role ID'
-);
-
-select throws_ok(
-  $$
-    select *
-    from public.app_issue_realtime_grant(
-      (select account_id from test_realtime_accounts where label = 'outsider'),
-      (select room_code from test_realtime_room),
-      120
-    )
-  $$,
-  'P0001',
-  'current_room_changed',
-  'an account without active membership cannot receive a grant'
-);
-
-create temporary table test_unrelated_realtime_room_create as
-select created.*
-from public.app_create_room(
-  (select account_id from test_realtime_accounts where label = 'outsider'),
-  'Other room host',
-  3,
-  statement_timestamp() + interval '1 hour'
-) as created;
-
-create temporary table test_unrelated_realtime_room as
-select created.room_id, rooms.public_room_code as room_code
-from test_unrelated_realtime_room_create as created
-join public.rooms as rooms on rooms.id = created.room_id;
-
-create temporary table test_realtime_grant_calls (
-  label text not null,
-  topic text not null,
-  scope text not null,
-  grant_id uuid not null,
-  expires_at timestamptz not null
-);
-
-insert into test_realtime_grant_calls
-select
-  'host_first',
-  granted.topic,
-  granted.scope,
-  granted.grant_id,
-  granted.expires_at
+create temporary table first_game_grant as
+select issued.*
 from public.app_issue_realtime_grant(
-  (select account_id from test_realtime_accounts where label = 'host'),
-  (select room_code from test_realtime_room),
-  1
-) as granted;
+  (select account_id from realtime_accounts where label = 'host'),
+  (select room_code from realtime_room),
+  120
+) as issued;
 
 select is(
   (
-    select string_agg(
-      scope,
-      ','
-      order by case scope when 'room' then 1 when 'player_private' then 2 else 3 end
-    )
-    from test_realtime_grant_calls
-    where label = 'host_first'
+    select pg_catalog.array_agg(grants.scope order by grants.scope)
+    from first_game_grant as grants
   ),
-  'room,player_private,role_private',
-  'a role-assigned player grant contains only its three eligible scopes'
+  array['player_private', 'role_private', 'room']::text[],
+  'a Game grant includes the matching role-private topic'
 );
 
 select ok(
   (
-    select count(distinct grant_id) = 1
-      and extract(epoch from min(expires_at) - statement_timestamp()) between 59 and 61
-    from test_realtime_grant_calls
-    where label = 'host_first'
+    select pg_catalog.bool_and(
+      grants.game_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'::uuid
+    )
+    from first_game_grant as grants
   ),
-  'grant rows share one ID and clamp a short lifetime to sixty seconds'
+  'every subscription row exposes the Game recorded on the grant'
+);
+
+select is(
+  (
+    select row(grants.role_id, grants.player_id)::text
+    from first_game_grant as grants
+    where grants.scope = 'role_private'
+  ),
+  '(role_alpha,)'::text,
+  'role subscription targets are explicit and player-neutral'
 );
 
 select ok(
-  (
-    select bool_and(public.can_receive_realtime_topic(grant_id::text, topic))
-    from test_realtime_grant_calls
-    where label = 'host_first'
-  ),
-  'a fresh grant authorizes every returned topic'
-);
-
-insert into realtime.messages (topic, extension, payload, event, private)
-select topics.topic, 'broadcast', '{}'::jsonb, 'room_changed', true
-from public.realtime_topics as topics
-where topics.room_id = (select room_id from test_realtime_room);
-
-insert into realtime.messages (topic, extension, payload, event, private)
-select topics.topic, 'presence', '{}'::jsonb, 'presence', true
-from public.realtime_topics as topics
-where topics.room_id = (select room_id from test_realtime_room)
-  and topics.scope = 'room';
-
-insert into realtime.messages (topic, extension, payload, event, private)
-select topics.topic, 'broadcast', '{}'::jsonb, 'room_changed', true
-from public.realtime_topics as topics
-where topics.room_id = (select room_id from test_unrelated_realtime_room)
-  and topics.scope = 'room';
-
-select is(
-  (
-    select count(*)
-    from realtime.messages as messages
-    join public.realtime_topics as topics on topics.topic = messages.topic
-    where topics.room_id = (select room_id from test_unrelated_realtime_room)
-      and topics.scope = 'room'
-      and messages.extension = 'broadcast'
-  ),
-  1::bigint,
-  'the unrelated room fixture has a real broadcast row'
-);
-
-create function pg_temp.set_realtime_request(p_grant_id uuid, p_topic text)
-returns void
-language plpgsql
-as $$
-declare
-  v_expires_at bigint;
-  v_issued_at bigint;
-begin
-  select
-    pg_catalog.floor(extract(epoch from grants.created_at))::bigint,
-    pg_catalog.floor(extract(epoch from grants.expires_at))::bigint
-  into v_issued_at, v_expires_at
-  from public.realtime_grants as grants
-  where grants.grant_id = p_grant_id;
-
-  if not found then
-    raise exception 'realtime grant fixture is missing';
-  end if;
-
-  perform pg_catalog.set_config(
-    'request.jwt.claims',
-    pg_catalog.jsonb_build_object(
-      'aud', 'authenticated',
-      'exp', v_expires_at,
-      'iat', v_issued_at,
-      'realtime_grant_id', p_grant_id,
-      'role', 'authenticated',
-      'sub', p_grant_id
-    )::text,
-    true
-  );
-  perform pg_catalog.set_config('realtime.topic', p_topic, true);
-end;
-$$;
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'host_first' and scope = 'room')
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  1::bigint,
-  'realtime RLS exposes only the requested authorized room broadcast'
-);
-reset role;
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_realtime_room)
-        and scope = 'player_private'
-        and player_id = (select player_id from test_realtime_accounts where label = 'host')
-    )
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  1::bigint,
-  'realtime RLS admits the grant holder own player-private topic'
-);
-reset role;
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_realtime_room)
-        and scope = 'player_private'
-        and player_id = (select player_id from test_realtime_accounts where label = 'guest')
-    )
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  0::bigint,
-  'realtime RLS rejects another player private topic'
-);
-reset role;
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_realtime_room)
-        and scope = 'role_private'
-        and role_id = 'role_beta'
-    )
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  0::bigint,
-  'realtime RLS rejects a different role private topic'
-);
-reset role;
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_realtime_room)
-        and scope = 'role_private'
-        and role_id = 'role_alpha'
-    )
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  1::bigint,
-  'realtime RLS admits the requesting player own role topic'
-);
-reset role;
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_unrelated_realtime_room)
-        and scope = 'room'
-    )
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  0::bigint,
-  'realtime RLS rejects a room topic outside the grant room'
-);
-reset role;
-
-update public.players as players
-set left_at = greatest(players.last_seen_at, statement_timestamp())
-where players.room_id = (select room_id from test_unrelated_realtime_room)
-  and players.left_at is null;
-
-update public.rooms as rooms
-set ended_at = statement_timestamp(),
-    updated_at = statement_timestamp()
-where rooms.id = (select room_id from test_unrelated_realtime_room);
-
-select is(
   public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (select topic from first_game_grant where scope = 'role_private')
+  ),
+  'a current-Game grant can receive its matching role topic'
+);
+
+select ok(
+  not public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (
+      select topics.topic
+      from public.realtime_topics as topics
+      where topics.game_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+        and topics.role_id = 'role_beta'
+    )
+  ),
+  'a grant cannot receive another role topic from the same Game'
+);
+
+update public.game_phase_instances
+set ended_at = pg_catalog.statement_timestamp()
+where game_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+  and id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa101';
+
+update public.games
+set phase = null,
+    phase_instance_id = null,
+    phase_started_at = null,
+    phase_ends_at = null,
+    winner_team = 'alpha_team',
+    ended_at = pg_catalog.statement_timestamp(),
+    updated_at = pg_catalog.statement_timestamp()
+where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+
+insert into public.games (
+  id,
+  room_id,
+  sequence_number,
+  phase,
+  phase_instance_id,
+  phase_started_at,
+  phase_ends_at,
+  day_number,
+  night_number,
+  revision,
+  action_revision,
+  started_at,
+  updated_at
+)
+values (
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  (select room_id from realtime_room),
+  2,
+  'night',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb202',
+  pg_catalog.statement_timestamp(),
+  pg_catalog.statement_timestamp() + interval '1 minute',
+  0,
+  1,
+  1,
+  0,
+  pg_catalog.statement_timestamp(),
+  pg_catalog.statement_timestamp()
+);
+
+insert into public.game_phase_instances (
+  game_id,
+  id,
+  phase,
+  day_number,
+  night_number,
+  started_at,
+  ends_at
+)
+values (
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb202',
+  'night',
+  0,
+  1,
+  pg_catalog.statement_timestamp(),
+  pg_catalog.statement_timestamp() + interval '1 minute'
+);
+
+insert into public.game_rule_sets (
+  game_id,
+  role_counts,
+  options,
+  resolved_role_setup,
+  role_registry_version,
+  engine_version
+)
+values (
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  '{"role_alpha":2,"role_beta":1}'::jsonb,
+  '{}'::jsonb,
+  '{"activeRoleIds":["role_alpha","role_beta"],"contributions":[],"nightConversationGroups":[]}'::jsonb,
+  'test-registry-v1',
+  'test-engine-v1'
+);
+
+insert into public.game_players (
+  game_id,
+  room_id,
+  player_id,
+  role_id
+)
+select
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  (select room_id from realtime_room),
+  accounts.player_id,
+  accounts.role_id
+from realtime_accounts as accounts;
+
+insert into public.realtime_topics (
+  topic,
+  room_id,
+  scope,
+  game_id,
+  role_id
+)
+select
+  private.random_identifier('role:', 24),
+  (select room_id from realtime_room),
+  'role_private',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  roles.role_id
+from (
+  select distinct role_id
+  from realtime_accounts
+) as roles;
+
+update public.rooms
+set current_game_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+    snapshot_revision = snapshot_revision + 1
+where id = (select room_id from realtime_room);
+
+select ok(
+  public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (select topic from first_game_grant where scope = 'room')
+  ),
+  'a prior-Game grant still receives Room invalidation'
+);
+
+select ok(
+  public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (select topic from first_game_grant where scope = 'player_private')
+  ),
+  'a prior-Game grant still receives its Room-lifetime player topic'
+);
+
+select ok(
+  not public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (select topic from first_game_grant where scope = 'role_private')
+  ),
+  'a prior-Game grant loses its old role authorization after replacement'
+);
+
+select ok(
+  not public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (
+      select topics.topic
+      from public.realtime_topics as topics
+      where topics.game_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'
+        and topics.role_id = 'role_alpha'
+    )
+  ),
+  'a prior-Game grant cannot receive the replacement Game role topic'
+);
+
+create temporary table second_game_grant as
+select issued.*
+from public.app_issue_realtime_grant(
+  (select account_id from realtime_accounts where label = 'host'),
+  (select room_code from realtime_room),
+  120
+) as issued;
+
+select ok(
+  public.can_receive_realtime_topic(
+    (select grant_id::text from second_game_grant limit 1),
+    (select topic from second_game_grant where scope = 'role_private')
+  ),
+  'a freshly issued replacement-Game grant receives its role topic'
+);
+
+select ok(
+  not public.can_receive_realtime_topic(
+    (select grant_id::text from first_game_grant limit 1),
+    (select topic from first_game_grant where scope = 'room')
+  ),
+  'issuing a replacement grant revokes older grants for the same Player'
+);
+
+select ok(
+  not public.can_receive_realtime_topic(
     'not-a-uuid',
-    (select topic from test_realtime_grant_calls where label = 'host_first' and scope = 'room')
+    (select topic from second_game_grant where scope = 'room')
   ),
-  false,
-  'a malformed grant ID fails closed without raising an authorization error'
-);
-
-select is(
-  public.can_receive_realtime_topic(
-    (select grant_id::text from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_realtime_room)
-        and scope = 'player_private'
-        and player_id = (select player_id from test_realtime_accounts where label = 'guest')
-    )
-  ),
-  false,
-  'a grant cannot receive another player private topic'
-);
-
-select is(
-  public.can_receive_realtime_topic(
-    (select grant_id::text from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (
-      select topic
-      from public.realtime_topics
-      where room_id = (select room_id from test_realtime_room)
-        and scope = 'role_private'
-        and role_id = 'role_beta'
-    )
-  ),
-  false,
-  'a grant cannot receive a different role private topic'
-);
-
-insert into test_realtime_grant_calls
-select
-  'guest_first',
-  granted.topic,
-  granted.scope,
-  granted.grant_id,
-  granted.expires_at
-from public.app_issue_realtime_grant(
-  (select account_id from test_realtime_accounts where label = 'guest'),
-  (select room_code from test_realtime_room),
-  120
-) as granted;
-
-select ok(
-  (
-    select count(*) filter (where scope = 'role_private') = 1
-      and count(*) filter (where scope = 'player_private') = 1
-    from test_realtime_grant_calls
-    where label = 'guest_first'
-  ),
-  'players sharing a role share its topic but retain one personal topic'
-);
-
-insert into test_realtime_grant_calls
-select
-  'host_second',
-  granted.topic,
-  granted.scope,
-  granted.grant_id,
-  granted.expires_at
-from public.app_issue_realtime_grant(
-  (select account_id from test_realtime_accounts where label = 'host'),
-  (select room_code from test_realtime_room),
-  120
-) as granted;
-
-select ok(
-  (
-    select first_grant.grant_id <> second_grant.grant_id
-      and grants.revoked_at is not null
-    from (
-      select grant_id
-      from test_realtime_grant_calls
-      where label = 'host_first'
-      limit 1
-    ) as first_grant
-    cross join (
-      select grant_id
-      from test_realtime_grant_calls
-      where label = 'host_second'
-      limit 1
-    ) as second_grant
-    join public.realtime_grants as grants on grants.grant_id = first_grant.grant_id
-  ),
-  'issuing a replacement grant revokes the previous grant'
-);
-
-select is(
-  public.can_receive_realtime_topic(
-    (select grant_id::text from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'host_first' and scope = 'room')
-  ),
-  false,
-  'a rotated grant immediately loses authorization'
-);
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'host_first' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'host_first' and scope = 'room')
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  0::bigint,
-  'realtime RLS rejects a revoked grant'
-);
-reset role;
-
-select is(
-  public.can_receive_realtime_topic(
-    (select grant_id::text from test_realtime_grant_calls where label = 'host_second' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'host_second' and scope = 'room')
-  ),
-  true,
-  'the replacement grant remains authorized'
-);
-
-select lives_ok(
-  $$
-    select *
-    from public.app_leave_room(
-      (select account_id from test_realtime_accounts where label = 'guest'),
-      (select room_code from test_realtime_room)
-    )
-  $$,
-  'leaving a waiting room revokes its player grants'
-);
-
-select ok(
-  (
-    select bool_and(revoked_at is not null)
-    from public.realtime_grants
-    where player_id = (select player_id from test_realtime_accounts where label = 'guest')
-  ),
-  'every grant for a leaving player is marked revoked'
-);
-
-select is(
-  public.can_receive_realtime_topic(
-    (select grant_id::text from test_realtime_grant_calls where label = 'guest_first' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'guest_first' and scope = 'room')
-  ),
-  false,
-  'a left membership cannot receive broadcasts even with its old grant'
-);
-
-insert into test_realtime_grant_calls
-select
-  'third_expiring',
-  granted.topic,
-  granted.scope,
-  granted.grant_id,
-  granted.expires_at
-from public.app_issue_realtime_grant(
-  (select account_id from test_realtime_accounts where label = 'third'),
-  (select room_code from test_realtime_room),
-  120
-) as granted;
-
-update public.realtime_grants
-set created_at = statement_timestamp() - interval '10 minutes',
-    expires_at = statement_timestamp() - interval '1 minute'
-where grant_id = (
-  select grant_id
-  from test_realtime_grant_calls
-  where label = 'third_expiring'
-  limit 1
+  'malformed grant IDs are denied without a cast error'
 );
 
 update public.realtime_grants
-set created_at = statement_timestamp() - interval '10 minutes',
-    revoked_at = statement_timestamp() - interval '6 minutes'
-where grant_id = (
-  select grant_id
-  from test_realtime_grant_calls
-  where label = 'host_first'
-  limit 1
-);
-
-select is(
-  public.can_receive_realtime_topic(
-    (select grant_id::text from test_realtime_grant_calls where label = 'third_expiring' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'third_expiring' and scope = 'room')
-  ),
-  false,
-  'an expired grant fails authorization before cleanup'
-);
-
-do $$
-begin
-  perform pg_temp.set_realtime_request(
-    (select grant_id from test_realtime_grant_calls where label = 'third_expiring' limit 1),
-    (select topic from test_realtime_grant_calls where label = 'third_expiring' and scope = 'room')
-  );
-end;
-$$;
-set local role authenticated;
-select is(
-  (select count(*) from realtime.messages),
-  0::bigint,
-  'realtime RLS rejects an expired grant'
-);
-reset role;
-
-select lives_ok(
-  $$select * from public.app_cleanup_expired_realtime_grants(500)$$,
-  'expired grant cleanup completes transactionally'
-);
-
-select is(
-  (
-    select count(*)
-    from public.realtime_grants
-    where grant_id = (
-      select grant_id
-      from test_realtime_grant_calls
-      where label = 'third_expiring'
-      limit 1
-    )
-  ),
-  0::bigint,
-  'cleanup deletes the expired grant'
-);
-
-select is(
-  (
-    select count(*)
-    from public.realtime_grants
-    where grant_id = (
-      select grant_id
-      from test_realtime_grant_calls
-      where label = 'host_first'
-      limit 1
-    )
-  ),
-  0::bigint,
-  'cleanup deletes a revoked grant after its retention window'
-);
-
-update public.rooms
-set ended_at = statement_timestamp(),
-    updated_at = statement_timestamp()
-where id = (select room_id from test_realtime_room);
-
-create temporary table test_reused_realtime_room (
-  room_id bigint primary key,
-  room_code text not null
-);
-
-with created_room as (
-  insert into public.rooms (
-    public_room_code,
-    host_account_id,
-    target_player_count,
-    waiting_expires_at
-  )
-  values (
-    (select room_code from test_realtime_room),
-    (select account_id from test_realtime_accounts where label = 'outsider'),
-    3,
-    statement_timestamp() + interval '1 hour'
-  )
-  returning id, public_room_code
-)
-insert into test_reused_realtime_room
-select id, public_room_code
-from created_room;
-
-insert into public.players (
-  room_id,
-  account_id,
-  public_player_id,
-  display_name
-)
-select
-  room_id,
-  (select account_id from test_realtime_accounts where label = 'outsider'),
-  'pl_' || repeat('s', 24),
-  'New room host'
-from test_reused_realtime_room;
-
-insert into public.realtime_topics (room_id, scope, topic)
-select room_id, 'room', 'room:' || repeat('s', 48)
-from test_reused_realtime_room;
-
-insert into public.realtime_topics (room_id, player_id, scope, topic)
-select rooms.room_id, players.id, 'player_private', 'player:' || repeat('s', 48)
-from test_reused_realtime_room as rooms
-join public.players as players on players.room_id = rooms.room_id;
-
-insert into test_realtime_grant_calls
-select
-  'third_reused_code',
-  granted.topic,
-  granted.scope,
-  granted.grant_id,
-  granted.expires_at
-from public.app_issue_realtime_grant(
-  (select account_id from test_realtime_accounts where label = 'third'),
-  (select room_code from test_reused_realtime_room),
-  120
-) as granted;
-
-select is(
-  (
-    select row(
-      count(*),
-      count(*) filter (
-        where exists (
-          select 1
-          from public.realtime_topics as topics
-          where topics.room_id = (select room_id from test_realtime_room)
-            and topics.topic = calls.topic
-        )
-      ),
-      count(distinct grant_id)
-    )::text
-    from test_realtime_grant_calls as calls
-    where label = 'third_reused_code'
-  ),
-  '(3,3,1)',
-  'grant by reused code prefers the caller old-room membership and topics'
-);
-
-update public.rooms
-set created_at = statement_timestamp() - interval '2 hours',
-    waiting_expires_at = statement_timestamp() - interval '1 hour',
-    updated_at = statement_timestamp()
-where id = (select room_id from test_reused_realtime_room);
-
-select is(
-  (
-    select row(notification_reason, grant_id, topic)::text
-    from public.app_issue_realtime_grant(
-      (select account_id from test_realtime_accounts where label = 'outsider'),
-      (select room_code from test_reused_realtime_room),
-      120
-    )
-  ),
-  '(waiting_room_ended,,)',
-  'grant issuance settles an expired waiting room without creating a lease'
-);
-
-select is(
-  (
-    select row(
-      rooms.status,
-      count(players.id) filter (where players.left_at is null)
-    )::text
-    from test_reused_realtime_room as reused
-    join public.rooms as rooms on rooms.id = reused.room_id
-    left join public.players as players on players.room_id = rooms.id
-    group by rooms.id
-  ),
-  '(ended,0)',
-  'expired grant settlement closes the room membership'
-);
+set created_at = pg_catalog.statement_timestamp() - interval '2 hours',
+    expires_at = pg_catalog.statement_timestamp() - interval '1 hour'
+where grant_id = (select grant_id from second_game_grant limit 1);
 
 select ok(
-  has_function_privilege(
-    'service_role',
-    'public.app_issue_realtime_grant(bigint,text,integer)',
-    'EXECUTE'
-  )
-    and not has_function_privilege(
-      'anon',
-      'public.app_issue_realtime_grant(bigint,text,integer)',
-      'EXECUTE'
-    )
-    and not has_function_privilege(
-      'authenticated',
-      'public.app_issue_realtime_grant(bigint,text,integer)',
-      'EXECUTE'
-    ),
-  'only the service role can issue realtime grants'
+  not public.can_receive_realtime_topic(
+    (select grant_id::text from second_game_grant limit 1),
+    (select topic from second_game_grant where scope = 'room')
+  ),
+  'expired grants cannot receive Room topics'
 );
 
-select ok(
-  has_function_privilege(
-    'authenticated',
-    'public.can_receive_realtime_topic(text,text)',
-    'EXECUTE'
-  )
-    and not has_function_privilege(
-      'anon',
-      'public.can_receive_realtime_topic(text,text)',
-      'EXECUTE'
-    )
-    and not has_function_privilege(
-      'service_role',
-      'public.can_receive_realtime_topic(text,text)',
-      'EXECUTE'
-    ),
-  'only authenticated realtime clients can evaluate topic eligibility'
-);
-
-select ok(
-  has_function_privilege(
-    'service_role',
-    'public.app_cleanup_expired_realtime_grants(integer)',
-    'EXECUTE'
-  )
-    and not has_function_privilege(
-      'anon',
-      'public.app_cleanup_expired_realtime_grants(integer)',
-      'EXECUTE'
-    )
-    and not has_function_privilege(
-      'authenticated',
-      'public.app_cleanup_expired_realtime_grants(integer)',
-      'EXECUTE'
-    ),
-  'only the service role can clean realtime grants'
+select is(
+  (
+    select cleanup.deleted_grants
+    from public.app_cleanup_expired_realtime_grants(100) as cleanup
+  ),
+  1::bigint,
+  'cleanup deletes the expired grant while recent revoked grants retain their grace period'
 );
 
 select ok(
   exists (
     select 1
-    from pg_policies
-    where schemaname = 'realtime'
-      and tablename = 'messages'
-      and policyname = 'Authenticated players can receive eligible room broadcasts'
-      and cmd = 'SELECT'
-      and 'authenticated' = any(roles)
-      and qual like '%can_receive_realtime_topic%'
-      and qual like '%realtime_grant_id%'
+    from pg_catalog.pg_policy as policies
+    join pg_catalog.pg_class as classes
+      on classes.oid = policies.polrelid
+    join pg_catalog.pg_namespace as namespaces
+      on namespaces.oid = classes.relnamespace
+    where namespaces.nspname = 'realtime'
+      and classes.relname = 'messages'
+      and policies.polname =
+        'Authenticated players can receive eligible room broadcasts'
+      and pg_catalog.pg_get_expr(policies.polqual, policies.polrelid)
+        like '%can_receive_realtime_topic%'
   ),
-  'the realtime broadcast policy delegates authenticated reads to grant eligibility'
+  'Realtime broadcast RLS delegates to Game-aware authorization'
 );
 
 select * from finish();

@@ -84,6 +84,17 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
           }
 
           const seatPresentation = getLiveSeatPresentation(player, summary, t);
+          const showsLobbyReadiness =
+            (summary.status === "waiting" || summary.status === "ended") &&
+            (player.status === "joined" || player.status === "disconnected");
+          let lobbyReadinessLabel: string | null = null;
+
+          if (showsLobbyReadiness) {
+            lobbyReadinessLabel = player.isLobbyReady
+              ? t.game.seatStatus.ready
+              : t.game.seatStatus.notReady;
+          }
+
           const revealedRole =
             summary.status === "ended" && player.revealedRoleId !== null
               ? getLocalizedRole(
@@ -92,6 +103,22 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
                   summary.roleCatalog.find((role) => role.id === player.revealedRoleId),
                 )
               : null;
+          const seatDetailLabels = [
+            ...(revealedRole === null ? [] : [revealedRole.name]),
+            ...(lobbyReadinessLabel === null ? [] : [lobbyReadinessLabel]),
+            ...(revealedRole !== null || seatPresentation.visibleLabel === null
+              ? []
+              : [seatPresentation.visibleLabel]),
+          ];
+          const seatDetailLabel =
+            seatDetailLabels.length === 0 ? null : seatDetailLabels.join(" · ");
+          let seatDetailClassName: string | undefined = undefined;
+
+          if (revealedRole !== null) {
+            seatDetailClassName = styles["roleReveal"];
+          } else if (lobbyReadinessLabel !== null) {
+            seatDetailClassName = styles[player.isLobbyReady ? "lobbyReady" : "lobbyNotReady"];
+          }
 
           const seatClassName = [
             styles["seat"],
@@ -112,11 +139,15 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
                 aria-label={[
                   player.displayName,
                   ...seatPresentation.ariaLabels,
+                  ...(lobbyReadinessLabel === null ? [] : [lobbyReadinessLabel]),
                   ...(revealedRole === null ? [] : [revealedRole.name]),
                 ].join(", ")}
                 className={`${seatClassName} ${motionStyles["seatVisual"]}`}
                 data-live-player-id={player.id}
                 data-live-current-seat={player.isCurrent ? "" : undefined}
+                data-live-lobby-ready={
+                  lobbyReadinessLabel === null ? undefined : String(player.isLobbyReady)
+                }
                 data-live-role-id={revealedRole === null ? undefined : player.revealedRoleId}
                 data-live-seat-number={seatNumber}
                 data-live-seat-presentation-state={seatPresentation.state}
@@ -133,11 +164,8 @@ export function LiveRoundTable({ locale, summary, t }: LiveRoundTableProps) {
                 </span>
                 <span className={styles["seatLabel"]}>
                   <strong>{player.displayName}</strong>
-                  {revealedRole === null && seatPresentation.visibleLabel !== null ? (
-                    <small>{seatPresentation.visibleLabel}</small>
-                  ) : null}
-                  {revealedRole === null ? null : (
-                    <small className={styles["roleReveal"]}>{revealedRole.name}</small>
+                  {seatDetailLabel === null ? null : (
+                    <small className={seatDetailClassName}>{seatDetailLabel}</small>
                   )}
                 </span>
                 {revealedRole !== null && seatPresentation.visibleLabel !== null ? (

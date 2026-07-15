@@ -163,7 +163,7 @@ Role assignment は、ゲーム開始時に実行する。
 - Room 開始 transaction が失敗した場合は assignment を保存しない。再試行では最新の固定候補
   roster に対して新しく shuffle し、transaction が成功した最初の assignment だけを固定する
 - ゲーム終了前の割り当て結果は各 Player にのみ秘密情報として見せる
-- game status と Room status がともに `ended` になる前は、公開 room state に他人の役職を
+- current Game status が `ended` になる前は、公開 room state に他人の役職を
   含めない
-- game status と Room status がともに `ended` になった後は、固定済み role assignment から
+- current Game status が `ended` になった後は、active Room member に対して固定済み Game roster から
   全 Player の役職を公開 result view に含められる

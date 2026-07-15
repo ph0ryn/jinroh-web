@@ -104,7 +104,8 @@ export function getLiveSeatPresentation(
   }
 
   return {
-    ariaLabels: [t.game.seatStatus.alive, ...identityLabels],
+    ariaLabels:
+      summary.status === "waiting" ? identityLabels : [t.game.seatStatus.alive, ...identityLabels],
     state: "active",
     visibleLabel,
   };

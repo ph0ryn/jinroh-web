@@ -86,6 +86,32 @@ export async function readRoomSummary(
   return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}`, { token: player.token });
 }
 
+export async function setRoomReadiness(
+  request: APIRequestContext,
+  roomCode: string,
+  player: ApiPlayer,
+  isReady = true,
+): Promise<RoomSummary> {
+  const summary = await readRoomSummary(request, roomCode, player);
+
+  return apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/readiness`, {
+    body: {
+      expectedRosterRevision: summary.rosterRevision,
+      isReady,
+    },
+    method: "POST",
+    token: player.token,
+  });
+}
+
+export async function setRoomPlayersReady(
+  request: APIRequestContext,
+  roomCode: string,
+  players: readonly ApiPlayer[],
+): Promise<void> {
+  await Promise.all(players.map((player) => setRoomReadiness(request, roomCode, player)));
+}
+
 export async function readJsonResponse<Body>(
   request: APIRequestContext,
   path: string,

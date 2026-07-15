@@ -1,6 +1,11 @@
 import { DEFAULT_RULE_SET_OPTIONS } from "@/lib/shared/game";
 
-import { apiFetch, readRoomSummary, type ApiPlayer } from "../fixtures/apiClient";
+import {
+  apiFetch,
+  readRoomSummary,
+  setRoomPlayersReady,
+  type ApiPlayer,
+} from "../fixtures/apiClient";
 import { createWaitingRoom, requireOpenAction, requirePlayer } from "../fixtures/roomScenario";
 
 import type {
@@ -23,24 +28,25 @@ export type RoomEntry = {
   readonly summary: RoomSummary;
 };
 
-export async function createContractStartedRoom(
+export async function createRoomWithStartedGame(
   request: APIRequestContext,
   displayNames: readonly string[],
   overrides: Partial<RuleSetInput> = {},
 ): Promise<{ readonly players: readonly ApiPlayer[]; readonly roomCode: string }> {
   const waitingRoom = await createWaitingRoom(request, displayNames);
 
-  await startWaitingRoom(request, waitingRoom, overrides);
+  await startGameInWaitingRoom(request, waitingRoom, overrides);
 
   return waitingRoom;
 }
 
-export async function startWaitingRoom(
+export async function startGameInWaitingRoom(
   request: APIRequestContext,
   room: { readonly players: readonly ApiPlayer[]; readonly roomCode: string },
   overrides: Partial<RuleSetInput> = {},
 ): Promise<RoomSummary> {
   const host = requirePlayer(room.players, 0);
+  await setRoomPlayersReady(request, room.roomCode, room.players);
   const summary = await readRoomSummary(request, room.roomCode, host);
   const roleOptions = Object.fromEntries(
     summary.roleCatalog.flatMap((role) =>
@@ -69,7 +75,7 @@ export async function startWaitingRoom(
   };
 
   return apiFetch<RoomSummary>(request, `/api/rooms/${room.roomCode}/start`, {
-    body: { ruleSet },
+    body: { expectedRosterRevision: summary.rosterRevision, ruleSet },
     method: "POST",
     token: host.token,
   });
@@ -100,14 +106,16 @@ export async function submitPhaseActions(
     const entry = { player, summary };
     const action = requireOpenAction(summary, kind);
     const revision = summary.game?.revision;
+    const gameId = summary.game?.gameId;
 
-    if (revision === undefined) {
+    if (revision === undefined || gameId === undefined) {
       throw new Error(`Game revision is unavailable for player ${index}.`);
     }
 
     await apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/action`, {
       body: {
         actionKey: action.key,
+        gameId,
         phaseInstanceId: action.phaseInstanceId,
         revision,
         targetPlayerId: selectTarget(entry, action, index),
@@ -190,6 +198,7 @@ export async function finishThreePlayerGame(
     await apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/action`, {
       body: {
         actionKey: action.key,
+        gameId: summary.game.gameId,
         phaseInstanceId: action.phaseInstanceId,
         revision: summary.game.revision,
         targetPlayerId: null,

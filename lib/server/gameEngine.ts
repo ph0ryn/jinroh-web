@@ -124,6 +124,7 @@ export type PhaseResolutionInput = {
   currentActions?: readonly PhaseCurrentAction[];
   currentPhase: GamePhase;
   dayNumber: number;
+  gameId: string;
   nightNumber: number;
   orderedSpeechSlots?: readonly OrderedSpeechSlot[];
   players: PlayerRuntimeState[];
@@ -185,12 +186,15 @@ export type PhaseResolution = {
   deaths: EngineDeath[];
   events: EngineEvent[];
   finalOutcome: EngineFinalOutcome | null;
+  gameId: string;
   nextDayNumber: number;
   nextNightNumber: number;
   nextPhase: GamePhase | null;
   nextPhaseDurationSeconds: number | null;
   speechSlotsToCreate: OrderedSpeechSlot[];
 };
+
+type PhaseResolutionDraft = Omit<PhaseResolution, "gameId">;
 
 export type EngineFinalOutcome = {
   playerResultsByPlayerId: Record<string, SharedPlayerResult>;
@@ -281,10 +285,11 @@ export function resolvePhase(input: PhaseResolutionInput): PhaseResolution {
   return {
     ...resolution,
     actionsToOpen,
+    gameId: input.gameId,
   };
 }
 
-function resolvePhaseWithoutActionHistory(input: PhaseResolutionInput): PhaseResolution {
+function resolvePhaseWithoutActionHistory(input: PhaseResolutionInput): PhaseResolutionDraft {
   if (input.currentPhase === "night" && input.nightNumber === 1) {
     return resolveFirstNight(input);
   }
@@ -1104,7 +1109,7 @@ function resolveGameEnd(
   input: PhaseResolutionInput,
   deaths: readonly EngineDeath[],
   events: readonly EngineEvent[],
-): PhaseResolution | null {
+): PhaseResolutionDraft | null {
   const nextPlayers = applyDeaths(input.players, deaths);
   const finalOutcome = evaluateFinalOutcome(
     nextPlayers,
@@ -1212,7 +1217,7 @@ function toSharedPlayerResult(result: RegisteredPlayerResult): SharedPlayerResul
   return result;
 }
 
-function resolveNight(input: PhaseResolutionInput): PhaseResolution {
+function resolveNight(input: PhaseResolutionInput): PhaseResolutionDraft {
   const actionWindow = resolveActionWindowEffects({
     input,
     sourceActionId: "night",
@@ -1237,7 +1242,7 @@ function resolveNight(input: PhaseResolutionInput): PhaseResolution {
   return openDay(input, actionWindow.deaths, events);
 }
 
-function resolveFirstNight(input: PhaseResolutionInput): PhaseResolution {
+function resolveFirstNight(input: PhaseResolutionInput): PhaseResolutionDraft {
   const actionWindow = resolveActionWindowEffects({
     input,
     sourceActionId: "first_night",
@@ -1264,7 +1269,7 @@ function openDay(
   input: PhaseResolutionInput,
   deaths: EngineDeath[],
   events: EngineEvent[] = [],
-): PhaseResolution {
+): PhaseResolutionDraft {
   const nextPlayers = input.players.map((player) => ({
     ...player,
     alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,
@@ -1318,7 +1323,7 @@ function openDay(
   };
 }
 
-function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
+function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolutionDraft {
   const actionWindow = resolveActionWindowEffects({
     input,
     sourceActionId: "ordered_speech",
@@ -1379,7 +1384,7 @@ function resolveOrderedSpeechDay(input: PhaseResolutionInput): PhaseResolution {
   };
 }
 
-function resolveReadyCheckDay(input: PhaseResolutionInput): PhaseResolution {
+function resolveReadyCheckDay(input: PhaseResolutionInput): PhaseResolutionDraft {
   const actionWindow = resolveActionWindowEffects({
     input,
     sourceActionId: "day_ready",
@@ -1479,7 +1484,7 @@ function openVoting(
   input: PhaseResolutionInput,
   deaths: EngineDeath[] = [],
   events: EngineEvent[] = [],
-): PhaseResolution {
+): PhaseResolutionDraft {
   const nextPlayers = applyDeaths(input.players, deaths);
   const alivePlayers = nextPlayers.filter((player) => player.alive);
 
@@ -1518,7 +1523,7 @@ function openVoting(
   };
 }
 
-function resolveVoting(input: PhaseResolutionInput): PhaseResolution {
+function resolveVoting(input: PhaseResolutionInput): PhaseResolutionDraft {
   const actionWindow = resolveActionWindowEffects({
     input,
     sourceActionId: "voting",
@@ -1681,7 +1686,7 @@ function toVoteResolvedPayload(
   return payload;
 }
 
-function resolveExecution(input: PhaseResolutionInput): PhaseResolution {
+function resolveExecution(input: PhaseResolutionInput): PhaseResolutionDraft {
   const event = findElapsedCoreAction(input, CoreActionKind.ExecutionSkip);
   const actionWindow = resolveActionWindowEffects({
     collectCoreEffects:
@@ -1735,7 +1740,7 @@ function continueRoleActionWindow(
   deaths: readonly EngineDeath[],
   events: readonly EngineEvent[],
   speechSlotsToCreate: readonly OrderedSpeechSlot[] = [],
-): PhaseResolution {
+): PhaseResolutionDraft {
   return {
     actionsToOpen: [...actionsToOpen],
     deaths: [...deaths],
@@ -1769,7 +1774,7 @@ function finishExecutionAfterRoleActions(
   input: PhaseResolutionInput,
   events: EngineEvent[],
   deaths: EngineDeath[],
-): PhaseResolution {
+): PhaseResolutionDraft {
   return openNight(input, events, deaths);
 }
 
@@ -2123,7 +2128,7 @@ function openNight(
   input: PhaseResolutionInput,
   events: EngineEvent[],
   deaths: EngineDeath[] = [],
-): PhaseResolution {
+): PhaseResolutionDraft {
   const nextPlayers = input.players.map((player) => ({
     ...player,
     alive: deaths.some((death) => death.playerId === player.playerId) ? false : player.alive,

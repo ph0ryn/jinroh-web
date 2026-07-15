@@ -4,9 +4,9 @@ Jinroh Web is a polished Next.js application for managing shared game state for
 in-person or voice-call werewolf games.
 
 It does not replace table talk, voice chat, or human discussion. Its role is to
-track the state that is tedious or error-prone to manage by hand: anonymous room
-identity, waiting-room membership, role-safe private views, phase timers, night actions,
-voting, execution, and locked final results.
+track the state that is tedious or error-prone to manage by hand: anonymous Room
+identity, reusable lobby membership, role-safe private views, phase timers, night
+actions, voting, execution, and isolated per-Game results.
 
 ![Jinroh Web tabletop hero](public/images/jinroh-og.jpg)
 
@@ -47,6 +47,9 @@ game-system details.
   service-role runtime snapshot contains authoritative secret state and must be
   projected into public, self-private, and role-private views before any
   browser response.
+- A Room is the reusable invitation and membership boundary. Every playthrough
+  is a distinct Game, and only `rooms.current_game_id` may supply the Game state
+  projected into the Room snapshot.
 - Role-owned IDs, action kinds, end reasons, metadata, and behavior stay in the
   owning Role module. Shared code coordinates generic hooks, effects, phases,
   persistence, and projections without role-specific allowlists or switches.
@@ -189,9 +192,14 @@ Basic play flow:
 - Enter a display name and create a room.
 - Copy or share the six-digit room code with other players.
 - Other browsers or profiles join with the code.
-- The host starts the game once 3 to 10 players are joined.
+- Every joined player marks themselves ready. The host can start only after the
+  exact target roster is connected and ready.
 - Players use their visible action controls through first night, day, voting,
   execution, normal night, and result.
+- After the result, players may leave, rejoin, ready, and start another Game in
+  the same Room. If a person outside the completed Game roster joins, the Room
+  returns to a clean pre-game lobby and no prior roles or results remain in the
+  current view.
 - Werewolf players can open night chat; it is writable during night and
   read-only outside night.
 - Open room pages heartbeat in the background. Players with stale heartbeats
@@ -200,14 +208,14 @@ Basic play flow:
 Optional maintenance endpoint for cron or manual cleanup:
 
 ```sh
-curl -X POST http://localhost:3000/api/maintenance/expire-waiting-rooms \
+curl -X POST http://localhost:3000/api/maintenance/expire-rooms \
   -H "authorization: Bearer $MAINTENANCE_SECRET" \
   -H "content-type: application/json" \
   -d '{"limit":50}'
 ```
 
-The endpoint ends only already-expired waiting rooms, prunes obsolete Realtime
-grants, and returns both counts.
+The endpoint closes only Rooms whose waiting or result lobby has expired,
+prunes obsolete Realtime grants, and returns both counts.
 
 ## Deploy
 
@@ -271,10 +279,10 @@ Deployment order:
    repository integration and browser suites write test data, so do not run
    them against production data.
 
-If using scheduled cleanup, call `/api/maintenance/expire-waiting-rooms` from a
+If using scheduled cleanup, call `/api/maintenance/expire-rooms` from a
 trusted cron job with `Authorization: Bearer <MAINTENANCE_SECRET>`. The secret
 must contain at least 32 bytes. The endpoint is idempotent for already-expired
-waiting rooms.
+Room lobbies.
 
 ## Validation
 

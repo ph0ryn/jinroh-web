@@ -34,7 +34,8 @@ export function LiveGameEffects({
   summary,
   t,
 }: LiveGameEffectsProps) {
-  const activeCueId = activeCue?.id ?? null;
+  const currentCue = activeCue?.gameId === summary?.game?.gameId ? activeCue : null;
+  const activeCueId = currentCue?.id ?? null;
   const handleComplete = useCallback(() => {
     if (activeCueId !== null) {
       onComplete(activeCueId);
@@ -52,22 +53,22 @@ export function LiveGameEffects({
   }, [activeCueId, handleComplete, shellRef]);
 
   const announcement =
-    activeCue === null || summary === null
+    currentCue === null || summary === null
       ? ""
-      : getEffectAnnouncement(activeCue, summary, locale, t);
+      : getEffectAnnouncement(currentCue, summary, locale, t);
   let effect: ReactNode = null;
 
-  if (activeCue !== null && summary !== null) {
-    switch (activeCue.kind) {
+  if (currentCue !== null && summary !== null) {
+    switch (currentCue.kind) {
       case "role": {
         effect = (
           <RoleTarotFlipEffect
-            cue={activeCue}
+            cue={currentCue}
             onComplete={handleComplete}
             role={getLocalizedRole(
               t,
               locale,
-              summary.roleCatalog.find((role) => role.id === activeCue.roleId),
+              summary.roleCatalog.find((role) => role.id === currentCue.roleId),
             )}
             t={t}
           />
@@ -75,15 +76,15 @@ export function LiveGameEffects({
         break;
       }
       case "phase": {
-        const phaseName = formatPhaseTitle(activeCue.phase, t);
+        const phaseName = formatPhaseTitle(currentCue.phase, t);
 
         effect = (
           <PhaseChapterEffect
-            code={getPhaseCode(activeCue.phase, activeCue.dayNumber, activeCue.nightNumber, t)}
-            cue={activeCue}
+            code={getPhaseCode(currentCue.phase, currentCue.dayNumber, currentCue.nightNumber, t)}
+            cue={currentCue}
             label={t.live.effects.phase.label(phaseName)}
             onComplete={handleComplete}
-            title={getPhaseEffectTitle(activeCue.phase, t)}
+            title={getPhaseEffectTitle(currentCue.phase, t)}
           />
         );
         break;
@@ -91,9 +92,9 @@ export function LiveGameEffects({
       case "death": {
         effect = (
           <DeathSoulAshEffect
-            cue={activeCue}
+            cue={currentCue}
             kicker={t.live.effects.death.kicker}
-            message={getDeathMessage(activeCue.playerIds, summary, t)}
+            message={getDeathMessage(currentCue.playerIds, summary, t)}
             onComplete={handleComplete}
             shellRef={shellRef}
           />
@@ -103,8 +104,8 @@ export function LiveGameEffects({
       case "vote": {
         effect = (
           <VoteVerdictLedgerEffect
-            cue={activeCue}
-            key={activeCue.id}
+            cue={currentCue}
+            key={currentCue.id}
             onComplete={handleComplete}
             players={summary.players}
             t={t}
@@ -113,14 +114,14 @@ export function LiveGameEffects({
         break;
       }
       case "victory": {
-        const winner = formatWinner(activeCue.winnerTeam, summary.teamCatalog, locale, t);
+        const winner = formatWinner(currentCue.winnerTeam, summary.teamCatalog, locale, t);
 
         effect = (
           <VictoryCrestAscendEffect
-            cue={activeCue}
+            cue={currentCue}
             kicker={t.live.effects.victory.kicker}
             onComplete={handleComplete}
-            result={getPlayerResult(activeCue.playerResult, t)}
+            result={getPlayerResult(currentCue.playerResult, t)}
             subtitle={t.live.effects.victory.subtitle}
             title={t.live.effects.victory.title(winner)}
           />

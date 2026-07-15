@@ -21,10 +21,16 @@ describe("live action feedback model", () => {
       submitted: true,
       viewerPlayerId: "blair",
     });
+    const otherGame = makeSnapshot({
+      gameId: "game-b",
+      latestReceipt: receipt,
+      submitted: true,
+    });
 
     expect(getLiveActionFeedbackCue(null, current)).toBeNull();
     expect(getLiveActionFeedbackCue(current, otherRoom)).toBeNull();
     expect(getLiveActionFeedbackCue(current, otherViewer)).toBeNull();
+    expect(getLiveActionFeedbackCue(current, otherGame)).toBeNull();
   });
 
   it("creates one cue for a new private receipt reflected by the submitted row", () => {
@@ -84,6 +90,25 @@ describe("live action feedback model", () => {
     expect(reconcileLiveActionFeedback(hiddenUpdate.snapshot, submitted, true).cue).toBeNull();
   });
 
+  it("invalidates active feedback when the completed Game detaches to a clean lobby", () => {
+    const receipt = makeReceipt("receipt-1");
+    const submitted = reconcileLiveActionFeedback(
+      makeSnapshot(),
+      makeSnapshot({ latestReceipt: receipt, submitted: true }),
+      true,
+    );
+    const cleanLobby = makeSnapshot({ actions: [], gameId: null, latestReceipt: null });
+
+    expect(submitted.cue).toEqual({ receipt });
+
+    if (submitted.cue === null) {
+      throw new Error("The submitted action did not produce feedback.");
+    }
+
+    expect(hasLiveActionFeedbackTarget(cleanLobby, submitted.cue)).toBe(false);
+    expect(reconcileLiveActionFeedback(submitted.snapshot, cleanLobby, true).cue).toBeNull();
+  });
+
   it("projects only semantic action and receipt state from room summaries", () => {
     const first = makeSummary();
     const second: RoomSummary = {
@@ -109,12 +134,14 @@ describe("live action feedback model", () => {
 
 function makeSnapshot({
   actions,
+  gameId = "game-a",
   latestReceipt = null,
   roomCode = "123456",
   submitted = false,
   viewerPlayerId = "alice",
 }: {
   readonly actions?: LiveActionFeedbackSnapshot["actions"];
+  readonly gameId?: string | null;
   readonly latestReceipt?: ActionSubmissionReceipt | null;
   readonly roomCode?: string | null;
   readonly submitted?: boolean;
@@ -128,6 +155,7 @@ function makeSnapshot({
         status: submitted ? "submitted" : "open",
       },
     ],
+    gameId,
     latestReceipt,
     roomCode,
     viewerPlayerId,
@@ -153,6 +181,7 @@ function makeSummary(): RoomSummary {
       actionProgress: null,
       dayNumber: 0,
       events: [],
+      gameId: "game-a",
       nightNumber: 1,
       phase: "night",
       phaseEndsAt: "2099-01-01T00:00:00.000Z",
@@ -166,6 +195,7 @@ function makeSummary(): RoomSummary {
     isHost: true,
     players: [],
     roleCatalog: [],
+    rosterRevision: 1,
     teamCatalog: [],
     rolePrivate: null,
     self: {
@@ -193,6 +223,6 @@ function makeSummary(): RoomSummary {
     snapshotRevision: 1,
     status: "playing",
     targetPlayerCount: 3,
-    waitingExpiresAt: "2099-01-01T00:00:00.000Z",
+    lobbyExpiresAt: "2099-01-01T00:00:00.000Z",
   };
 }

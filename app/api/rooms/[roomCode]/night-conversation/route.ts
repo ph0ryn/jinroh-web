@@ -1,12 +1,15 @@
 import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { submitNightConversationMessage } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
+import { roomApiErrorResponse } from "@/lib/server/roomApiError";
+import { isGameId } from "@/lib/shared/game";
 
 import type { RoomRouteContext } from "@/lib/server/roomRoute";
 
 type SendNightConversationBody = {
   body?: unknown;
   conversationGroupId?: unknown;
+  gameId?: unknown;
   nightNumber?: unknown;
   phaseInstanceId?: unknown;
 };
@@ -26,6 +29,10 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
 
   if (typeof body.conversationGroupId !== "string" || body.conversationGroupId === "") {
     return jsonError("bad_request", "conversationGroupId is required.", 400);
+  }
+
+  if (!isGameId(body.gameId)) {
+    return jsonError("bad_request", "gameId must be a UUID.", 400);
   }
 
   if (typeof body.phaseInstanceId !== "string" || body.phaseInstanceId === "") {
@@ -49,11 +56,14 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
       await submitNightConversationMessage(auth.account, roomCode, {
         body: body.body,
         conversationGroupId: body.conversationGroupId,
+        gameId: body.gameId,
         nightNumber,
         phaseInstanceId: body.phaseInstanceId,
       }),
     );
-  } catch {
-    return jsonError("conflict", "Night conversation update failed.", 409);
+  } catch (error) {
+    return (
+      roomApiErrorResponse(error) ?? jsonError("conflict", "Night conversation update failed.", 409)
+    );
   }
 }

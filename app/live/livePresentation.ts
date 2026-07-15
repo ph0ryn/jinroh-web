@@ -130,21 +130,39 @@ export function getStartHint(
     return t.live.hints.hostOnlyStart;
   }
 
-  if (summary.status !== "waiting") {
-    return t.live.hints.startInWaiting;
+  if (!isLobbyStatus(summary.status)) {
+    return t.live.hints.startOutsideLobby;
   }
 
-  const joinedPlayerCount = countJoinedPlayers(summary);
+  return getLobbyReadinessHint(summary, t);
+}
 
-  if (joinedPlayerCount < summary.targetPlayerCount) {
-    return t.live.hints.waitingForPlayers(summary.targetPlayerCount - joinedPlayerCount);
+export function getLobbyReadinessHint(summary: RoomSummary, t: Localization): string {
+  const lobbyPlayers = getLobbyPlayers(summary);
+
+  if (lobbyPlayers.length < summary.targetPlayerCount) {
+    return t.live.hints.waitingForPlayers(summary.targetPlayerCount - lobbyPlayers.length);
   }
 
-  if (joinedPlayerCount > summary.targetPlayerCount) {
+  if (lobbyPlayers.length > summary.targetPlayerCount) {
     return t.live.hints.tooManyPlayers;
   }
 
-  return t.live.hints.startWhenSeated;
+  const disconnectedPlayerCount = lobbyPlayers.filter(
+    (player) => player.status === "disconnected",
+  ).length;
+
+  if (disconnectedPlayerCount > 0) {
+    return t.live.hints.waitingForConnections(disconnectedPlayerCount);
+  }
+
+  const unreadyPlayerCount = lobbyPlayers.filter((player) => !player.isLobbyReady).length;
+
+  if (unreadyPlayerCount > 0) {
+    return t.live.hints.waitingForReadiness(unreadyPlayerCount);
+  }
+
+  return summary.isHost ? t.live.hints.readyToStart : t.live.hints.waitingForHostStart;
 }
 
 export function getControlHint(
@@ -156,25 +174,42 @@ export function getControlHint(
     return t.live.hints.controlsNeedRoom;
   }
 
-  if (summary.status === "waiting") {
-    return getStartHint(summary, isBusy, t);
+  if (isLobbyStatus(summary.status)) {
+    return isBusy ? t.live.hints.startAfterSync : getLobbyReadinessHint(summary, t);
   }
 
   return t.live.hints.reviewResult;
 }
 
 export function canStartRoom(summary: RoomSummary | null): boolean {
-  if (summary === null || !summary.isHost || summary.status !== "waiting") {
+  if (summary === null || !summary.isHost || !isLobbyStatus(summary.status)) {
     return false;
   }
 
-  const joinedPlayerCount = countJoinedPlayers(summary);
+  const lobbyPlayers = getLobbyPlayers(summary);
 
-  return joinedPlayerCount === summary.targetPlayerCount;
+  return (
+    lobbyPlayers.length === summary.targetPlayerCount &&
+    lobbyPlayers.every((player) => player.status === "joined" && player.isLobbyReady)
+  );
 }
 
 export function countJoinedPlayers(summary: Pick<RoomSummary, "players">): number {
   return summary.players.filter((player) => player.status === "joined").length;
+}
+
+export function countLobbyReadyPlayers(summary: Pick<RoomSummary, "players">): number {
+  return getLobbyPlayers(summary).filter((player) => player.isLobbyReady).length;
+}
+
+export function getLobbyPlayers(summary: Pick<RoomSummary, "players">): RoomSummary["players"] {
+  return summary.players.filter(
+    (player) => player.status === "joined" || player.status === "disconnected",
+  );
+}
+
+function isLobbyStatus(status: RoomSummary["status"]): boolean {
+  return status === "waiting" || status === "ended";
 }
 
 export function getActionButtonLabel(
