@@ -194,7 +194,7 @@ function isLobbyStatus(status: RoomSummary["status"]): boolean {
 
 export function formatRoomStatus(summary: RoomSummary, t: Localization): string {
   if (summary.game?.status === "ended") {
-    return t.home.panel.ended;
+    return t.live.roomStatus.status.ended;
   }
 
   if (summary.status === "waiting") {
