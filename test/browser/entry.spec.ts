@@ -162,7 +162,6 @@ for (const blockedMethod of ["getItem", "setItem", "removeItem"] as const) {
     browser,
   }) => {
     const context = await browser.newContext({
-      extraHTTPHeaders: { "x-test-client-ip": nextEntryClientIpAddress() },
       viewport: { height: 720, width: 1280 },
     });
     const page = await context.newPage();
@@ -234,7 +233,6 @@ async function createEntryPlayer(
   displayName: string,
 ): Promise<EntryBrowserPlayer> {
   const context = await browser.newContext({
-    extraHTTPHeaders: { "x-test-client-ip": nextEntryClientIpAddress() },
     viewport: { height: 720, width: 1280 },
   });
   const page = await context.newPage();
@@ -244,12 +242,6 @@ async function createEntryPlayer(
   await live.setDisplayName(displayName);
 
   return { context, live, page };
-}
-
-let nextEntryClientAddress = 1;
-
-function nextEntryClientIpAddress(): string {
-  return `203.0.113.${nextEntryClientAddress++}`;
 }
 
 function requireBrowserPlayer(

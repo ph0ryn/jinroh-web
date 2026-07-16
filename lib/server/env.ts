@@ -8,7 +8,6 @@ import {
 
 type ServerEnv = {
   accountTokenHashSecret: Uint8Array;
-  rateLimitTrustedClientIpHeader: string | null;
   supabaseSecretKey: string;
   supabaseUrl: string;
 };

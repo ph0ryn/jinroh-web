@@ -6,7 +6,7 @@ process.env.NODE_ENV = "production";
 nextEnvironment.loadEnvConfig(process.cwd(), false);
 
 try {
-  validateServerEnvironment(process.env, { production: true });
+  validateServerEnvironment(process.env);
 } catch (error) {
   const message = error instanceof Error ? error.message : "Unknown environment validation error.";
 

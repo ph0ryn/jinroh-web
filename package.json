@@ -21,7 +21,7 @@
     "precommit": "pnpm run fix && eslint && pnpm run test:unit",
     "start": "node ./scripts/validateServerEnv.mjs && NODE_ENV=production next start",
     "test": "pnpm run --aggregate-output /^test:/",
-    "test:e2e": "pnpm run db:reset && pnpm run db:test && playwright test",
+    "test:e2e": "pnpm run build && pnpm run db:reset && pnpm run db:test && VERCEL=1 playwright test && pnpm run db:reset && VERCEL= playwright test",
     "test:unit": "vitest run"
   },
   "dependencies": {

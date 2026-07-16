@@ -233,15 +233,13 @@ prunes obsolete Realtime grants, and returns both counts.
 
 ## Deploy
 
-Deploy the Next.js app to Vercel or another server runtime that supports the
-Next.js App Router API routes.
+Deploy the Next.js app to Vercel.
 
 Production environment variables:
 
 ```sh
 ACCOUNT_TOKEN_HASH_SECRET=
 MAINTENANCE_SECRET=
-RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER=
 SUPABASE_URL=
 SUPABASE_SECRET_KEY=
 SUPABASE_JWT_SIGNING_KEY=
@@ -275,22 +273,18 @@ seconds, so wait at least 120 seconds plus an operational margin after retiring
 the old deployment. Only then disable the legacy API keys and revoke the legacy
 JWT signing key. Never commit or log a private JWK.
 
-`RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER` must name a single-value client IP header
-that a trusted ingress removes and rewrites on every request. Vercel deployments
-use the platform-provided `x-vercel-forwarded-for` header automatically when the
-variable is omitted. Other production runtimes fail closed until the variable
-is configured. Reject direct origin access that can bypass the ingress; never
-configure a client-controlled `x-forwarded-for` or `x-real-ip` header without
-that guarantee.
+Production application rate limiting is enabled only on Vercel and reads the
+platform-provided, single-value `x-vercel-forwarded-for` header. A missing,
+multi-value, or malformed header fails closed. Non-Vercel development and
+ordinary test runs skip application rate limiting; the dedicated rate-limit
+integration suite sets `VERCEL=1` to exercise the production path.
 
-`pnpm run build` and `pnpm run start` run the same release-environment preflight
+`pnpm run build` and `pnpm run start` run the release-environment preflight
 before invoking Next.js. Missing or malformed required server variables stop a
-build before an artifact is produced and stop a self-hosted server before it can
-print `Ready` or listen on a port. These commands are treated as release
-operations even when the parent shell did not set `NODE_ENV`. Self-hosted
-deployments must use `pnpm run start` rather than invoke `next start` directly.
-`pnpm run dev` keeps development semantics and may omit the trusted client IP
-header.
+build before an artifact is produced and stop the local production server before
+it starts listening. These commands are treated as release operations even when
+the parent shell did not set `NODE_ENV`. `pnpm run dev` keeps development
+semantics.
 
 Identity creation, room creation, joining, switching, room snapshots, heartbeats,
 readiness updates, night-conversation messages, Realtime grant issuance, and
@@ -352,25 +346,22 @@ Deployment order:
 5. Apply Supabase migrations with `pnpm exec supabase db push`.
 6. Confirm `pnpm exec supabase migration list` shows local and remote at the
    same latest migration.
-7. Configure the production environment variables in the host.
-8. Confirm the trusted ingress overwrites the configured client IP header and
-   the application origin cannot be reached around it.
-9. Build with `pnpm run build`; the release preflight must succeed before Next.js
+7. Configure the production environment variables in Vercel.
+8. Build with `pnpm run build`; the release preflight must succeed before Next.js
    begins compiling.
-10. Deploy the app. Self-hosted deployments must launch it with `pnpm run start`
-    so the same preflight runs before the server process.
-11. Verify a deliberate quota breach returns `429` with a positive
+9. Deploy the app to Vercel.
+10. Verify a deliberate quota breach returns `429` with a positive
     `Retry-After`, and verify the upstream WAF independently blocks abusive
     traffic.
-12. Verify a private Realtime subscription with an ES256 token. After the old
+11. Verify a private Realtime subscription with an ES256 token. After the old
     deployment is retired, wait at least the 120-second grant lifetime plus an
     operational margin, confirm the legacy API keys are no longer used, disable
     them, and then revoke the legacy JWT signing key. If the grant lifetime
     changes, wait for its maximum possible lifetime plus a margin instead.
-13. Confirm `jinroh-web-expire-rooms` is active in Supabase Cron and inspect its
+12. Confirm `jinroh-web-expire-rooms` is active in Supabase Cron and inspect its
     run history. Check recent `net._http_response` rows for an HTTP `200` from the
     maintenance route.
-14. Run focused smoke checks against the local test stack when needed. The
+13. Run focused smoke checks against the local test stack when needed. The
     repository integration and browser suites write test data, so do not run
     them against production data.
 

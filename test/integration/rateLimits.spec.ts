@@ -33,7 +33,9 @@ test("a shared network admits a normal host and nine guests", async ({ request }
 test("parallel identity creation allows exactly the IP burst capacity", async ({ request }) => {
   const responses = await Promise.all(
     Array.from({ length: 16 }, () =>
-      request.post("/api/identity", { headers: { "x-test-client-ip": "192.0.2.20" } }),
+      request.post("/api/identity", {
+        headers: { "x-vercel-forwarded-for": "192.0.2.20" },
+      }),
     ),
   );
   const statuses = responses
@@ -217,7 +219,7 @@ test("unknown room lookup and invalid trusted headers fail closed", async ({ req
 
   const missingHeader = await fetch("http://127.0.0.1:3010/api/identity", { method: "POST" });
   const invalidHeader = await fetch("http://127.0.0.1:3010/api/identity", {
-    headers: { "x-test-client-ip": "192.0.2.1, 198.51.100.2" },
+    headers: { "x-vercel-forwarded-for": "192.0.2.1, 198.51.100.2" },
     method: "POST",
   });
 
@@ -302,7 +304,7 @@ test("Realtime grants and heartbeats consume their account operation buckets", a
 
 async function createIdentity(request: APIRequestContext, clientIp: string): Promise<Identity> {
   const response = await request.post("/api/identity", {
-    headers: { "x-test-client-ip": clientIp },
+    headers: { "x-vercel-forwarded-for": clientIp },
   });
 
   expect(response.status()).toBe(201);
@@ -313,7 +315,7 @@ async function createIdentity(request: APIRequestContext, clientIp: string): Pro
 function authenticatedHeaders(token: string, clientIp: string): Record<string, string> {
   return {
     authorization: `Bearer ${token}`,
-    "x-test-client-ip": clientIp,
+    "x-vercel-forwarded-for": clientIp,
   };
 }
 

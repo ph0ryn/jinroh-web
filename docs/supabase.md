@@ -96,19 +96,19 @@ limiter error fails closed with `503`; an exhausted bucket returns `429` and a
 database-derived `Retry-After`. This database layer is not a WAF: ingress must
 still enforce request-size, bot, volumetric, and direct-origin controls.
 
-Only a trusted ingress-provided, single-value IP header may be configured.
-Vercel uses its system `x-vercel-forwarded-for` value. Other production
-environments must set `RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER`, strip any incoming
-value with that name, overwrite it from the transport peer, and prevent direct
-origin access. Missing or malformed trusted headers fail closed rather than
-collapsing public traffic into a shared fallback bucket.
+Application rate limiting is enabled only when the app runs on Vercel. It reads
+the platform-provided, single-value `x-vercel-forwarded-for` header directly;
+missing, multi-value, or malformed values fail closed rather than collapsing
+public traffic into a shared fallback bucket. Non-Vercel development and
+ordinary test runs skip both rate-limit consumption and outsider room-lookup
+classification. The dedicated rate-limit integration suite sets `VERCEL=1` to
+exercise the production path.
 
-The `build` and `start` package scripts explicitly select release validation;
-they do not rely on an ambient `NODE_ENV` value to decide whether the trusted
-header is mandatory. Both load the standard Next.js production environment
-files and run the shared server-environment validator before starting Next.js.
-This keeps Vercel builds and self-hosted startup fail-fast while leaving
-`pnpm run dev` on development semantics.
+The `build` and `start` package scripts explicitly select release validation and
+do not rely on an ambient `NODE_ENV` value. They load the standard Next.js
+production environment files and run the shared server-environment validator
+before starting Next.js. This keeps Vercel builds and local production-server
+tests fail-fast while leaving `pnpm run dev` on development semantics.
 
 ### Rooms and membership
 

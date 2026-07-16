@@ -8,11 +8,9 @@ import { createTestSupabaseJwtSigningKey } from "./testEnvironment";
 const VALID_ENVIRONMENT = {
   ACCOUNT_TOKEN_HASH_SECRET: Buffer.alloc(32, 7).toString("base64"),
   MAINTENANCE_SECRET: "maintenance-secret-that-is-at-least-32-bytes",
-  RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER: "x-ingress-client-ip",
   SUPABASE_JWT_SIGNING_KEY: createTestSupabaseJwtSigningKey(),
   SUPABASE_SECRET_KEY: "sb_secret_test-key",
   SUPABASE_URL: "https://example.supabase.co",
-  VERCEL: "",
 } as const;
 
 describe("server startup environment preflight", () => {
@@ -21,18 +19,6 @@ describe("server startup environment preflight", () => {
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
-  });
-
-  it("treats pnpm start as a release even when NODE_ENV is not preset", () => {
-    const result = runPreflight({
-      NODE_ENV: "development",
-      RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER: "",
-    });
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      "[startup] RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER is required outside Vercel.",
-    );
   });
 
   it("stops before Next.js can become ready or listen when validation fails", async () => {

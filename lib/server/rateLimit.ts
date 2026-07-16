@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 
 import { getServerEnv } from "./env";
 import { jsonError } from "./http";
-import { consumeRateLimits, type RateLimitRule } from "./rateLimitRepository";
+import { classifyRoomLookup, consumeRateLimits, type RateLimitRule } from "./rateLimitRepository";
 
 type RoomMutationKind = "create" | "join";
 
@@ -22,9 +22,8 @@ type RuleDefinition = {
   readonly subject: string;
 };
 
-const CLIENT_IP_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const RATE_LIMIT_KEY_CONTEXT = "jinroh-web:rate-limit:v1";
-const UNATTRIBUTED_CLIENT = "unattributed-client";
+const VERCEL_CLIENT_IP_HEADER = "x-vercel-forwarded-for";
 
 const IDENTITY_IP_RULES = [
   { capacity: 15, name: "identity-ip-burst", refillSeconds: 30 * 60 },
@@ -136,7 +135,7 @@ export async function enforceIdentityRateLimit(request: Request): Promise<Respon
   );
 }
 
-export function rateLimitUnavailableResponse(): Response {
+function rateLimitUnavailableResponse(): Response {
   const response = jsonError("server_error", "Request protection is temporarily unavailable.", 503);
 
   response.headers.set("cache-control", "no-store");
@@ -210,7 +209,47 @@ export async function enforceRoomMutationAccountRateLimit(
   });
 }
 
-export async function enforceRoomLookupClientRateLimit(request: Request): Promise<Response | null> {
+export async function enforceRoomLookupRateLimit(
+  request: Request,
+  accountId: number,
+  roomCode: string,
+): Promise<Response | null> {
+  if (!isRateLimitEnabled()) {
+    return null;
+  }
+
+  const access = await classifyRoomLookup(accountId, roomCode).catch(() => null);
+
+  if (access === null) {
+    return rateLimitUnavailableResponse();
+  }
+
+  if (access === "member") {
+    const clientResponse = await enforceRoomOperationClientRateLimit(request, "snapshot", roomCode);
+
+    if (clientResponse !== null) {
+      return clientResponse;
+    }
+
+    return enforceRoomOperationAccountRateLimit(accountId, "snapshot");
+  }
+
+  const clientResponse = await enforceRoomLookupClientRateLimit(request);
+
+  if (clientResponse !== null) {
+    return clientResponse;
+  }
+
+  const accountResponse = await enforceRoomLookupAccountRateLimit(accountId);
+
+  if (accountResponse !== null) {
+    return accountResponse;
+  }
+
+  return access === "not_found" ? jsonError("not_found", "Room not found.", 404) : null;
+}
+
+async function enforceRoomLookupClientRateLimit(request: Request): Promise<Response | null> {
   return enforceRateLimit(() => {
     const clientSubject = getClientSubject(request);
 
@@ -223,9 +262,7 @@ export async function enforceRoomLookupClientRateLimit(request: Request): Promis
   });
 }
 
-export async function enforceRoomLookupAccountRateLimit(
-  accountId: number,
-): Promise<Response | null> {
+async function enforceRoomLookupAccountRateLimit(accountId: number): Promise<Response | null> {
   return enforceRateLimit(() =>
     toRules(
       ROOM_LOOKUP_ACCOUNT_RULES.map((definition) => ({
@@ -263,19 +300,8 @@ export async function enforceRoomOperationAccountRateLimit(
   });
 }
 
-export function getTrustedClientAddress(
-  request: Request,
-  headerName: string | null,
-): string | null {
-  if (headerName === null) {
-    return null;
-  }
-
-  if (!CLIENT_IP_HEADER_NAME_PATTERN.test(headerName)) {
-    throw new Error("RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER must be a valid HTTP header name.");
-  }
-
-  const value = request.headers.get(headerName);
+export function getTrustedClientAddress(request: Request): string | null {
+  const value = request.headers.get(VERCEL_CLIENT_IP_HEADER);
 
   if (value === null) {
     return null;
@@ -305,6 +331,10 @@ export function hashRateLimitKey(name: string, subject: string): string {
 async function enforceRateLimit(
   createRules: () => readonly RateLimitRule[],
 ): Promise<Response | null> {
+  if (!isRateLimitEnabled()) {
+    return null;
+  }
+
   try {
     const decision = await consumeRateLimits(createRules());
 
@@ -325,14 +355,17 @@ async function enforceRateLimit(
 }
 
 function getClientSubject(request: Request): string {
-  const { rateLimitTrustedClientIpHeader: headerName } = getServerEnv();
-  const clientAddress = getTrustedClientAddress(request, headerName);
+  const clientAddress = getTrustedClientAddress(request);
 
-  if (headerName !== null && clientAddress === null) {
-    throw new Error("The trusted client IP header is missing or invalid.");
+  if (clientAddress === null) {
+    throw new Error("The Vercel client IP header is missing or invalid.");
   }
 
-  return `client:${clientAddress ?? UNATTRIBUTED_CLIENT}`;
+  return `client:${clientAddress}`;
+}
+
+function isRateLimitEnabled(): boolean {
+  return process.env["VERCEL"] === "1";
 }
 
 function toIpv6Network64(address: string): string {
