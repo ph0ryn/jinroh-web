@@ -182,6 +182,21 @@
   gap: var(--live-controls-gap);
 }
 
+.controls[data-live-controls-surface="playing"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.controls[data-live-controls-surface="playing"] .controlsStatus,
+.controls[data-live-controls-surface="playing"] .controlsPrimary,
+.controls[data-live-controls-surface="playing"] .controlsUtilities {
+  flex: 0 0 auto;
+}
+
+.controls[data-live-controls-surface="playing"] .controlsScroll {
+  flex: 0 1 auto;
+}
+
 .controls :global(.liveWaitingHeadingActions) {
   align-items: center;
   display: inline-flex;

@@ -1,5 +1,9 @@
 import { readDocumentOverflow, readLayoutMode } from "../fixtures/livePage";
-import { createWaitingRoom, requirePlayer } from "../fixtures/roomScenario";
+import {
+  createRoomWithStartedGame,
+  createWaitingRoom,
+  requirePlayer,
+} from "../fixtures/roomScenario";
 import { expect, test } from "../fixtures/test";
 
 import type { Page } from "playwright/test";
@@ -136,6 +140,36 @@ test("phone landscape keeps waiting controls and settings footer reachable", asy
   });
   await expectNoDocumentOverflow(page);
   await expectMinimumInteractiveTargetSize(page);
+});
+
+test("gameplay controls do not reserve empty space between content and utilities", async ({
+  live,
+  page,
+  request,
+}) => {
+  const { players } = await createRoomWithStartedGame(request, ["Aster", "Birch", "Cedar"]);
+  const host = requirePlayer(players, 0);
+
+  await page.setViewportSize({ height: 900, width: 1920 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await live.open({ identityToken: host.token });
+  await expect(page.locator("[data-live-effect]")).toHaveCount(0, { timeout: 4_000 });
+
+  const controls = page.locator('[data-live-controls][data-live-controls-surface="playing"]');
+  const verticalGap = await controls.evaluate((element) => {
+    const scrollRegion = element.querySelector<HTMLElement>("[data-live-scroll-region]");
+    const utilities = element.querySelector<HTMLElement>("[data-live-controls-utilities]");
+
+    if (scrollRegion === null || utilities === null) {
+      return null;
+    }
+
+    return utilities.getBoundingClientRect().top - scrollRegion.getBoundingClientRect().bottom;
+  });
+
+  expect(verticalGap).not.toBeNull();
+  expect(verticalGap ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(11);
+  await expectNoDocumentOverflow(page);
 });
 
 async function expectMinimumInteractiveTargetSize(page: Page): Promise<void> {

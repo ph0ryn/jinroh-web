@@ -891,45 +891,48 @@ export function LivePlayingSurface({
           locale,
           summary.roleCatalog.find((role) => role.id === summary.self?.roleId),
         );
+  const hasScrollContent = selfRole !== null || privateEvents.length > 0;
 
   return (
     <>
       <LiveRoomControls
         primary={null}
         scroll={
-          <div className="liveControlScrollStack">
-            {!hasCurrentPlayer || selfRole === null ? null : (
-              <section
-                className="livePanel liveSelfRolePanel"
-                aria-label={t.live.effects.role.reveal}
-              >
-                <button
-                  aria-describedby="live-self-role-identity"
-                  className="secondaryButton liveRoleRevealButton"
-                  type="button"
-                  onClick={onRevealRole}
+          hasScrollContent ? (
+            <div className="liveControlScrollStack">
+              {!hasCurrentPlayer || selfRole === null ? null : (
+                <section
+                  className="livePanel liveSelfRolePanel"
+                  aria-label={t.live.effects.role.reveal}
                 >
-                  <span aria-hidden="true">◇</span>
-                  <strong>{t.live.effects.role.reveal}</strong>
-                </button>
-                <p className="srOnly" id="live-self-role-identity">
-                  {t.live.effects.role.identity(selfRole.name)}
-                </p>
-              </section>
-            )}
-            {privateEvents.length === 0 ? null : (
-              <section
-                className="livePanel livePrivateEventPanel"
-                aria-label={t.live.privateEventLog.title}
-              >
-                <div className="livePanelHeading">
-                  <span>{t.live.privateEventLog.title}</span>
-                  <strong>{t.live.privateEventLog.meta(privateEvents.length)}</strong>
-                </div>
-                <PrivateEventList events={privateEvents} locale={locale} t={t} />
-              </section>
-            )}
-          </div>
+                  <button
+                    aria-describedby="live-self-role-identity"
+                    className="secondaryButton liveRoleRevealButton"
+                    type="button"
+                    onClick={onRevealRole}
+                  >
+                    <span aria-hidden="true">◇</span>
+                    <strong>{t.live.effects.role.reveal}</strong>
+                  </button>
+                  <p className="srOnly" id="live-self-role-identity">
+                    {t.live.effects.role.identity(selfRole.name)}
+                  </p>
+                </section>
+              )}
+              {privateEvents.length === 0 ? null : (
+                <section
+                  className="livePanel livePrivateEventPanel"
+                  aria-label={t.live.privateEventLog.title}
+                >
+                  <div className="livePanelHeading">
+                    <span>{t.live.privateEventLog.title}</span>
+                    <strong>{t.live.privateEventLog.meta(privateEvents.length)}</strong>
+                  </div>
+                  <PrivateEventList events={privateEvents} locale={locale} t={t} />
+                </section>
+              )}
+            </div>
+          ) : null
         }
         status={
           <section className="livePanel livePlayPhasePanel" aria-label={t.live.aria.currentPhase}>
