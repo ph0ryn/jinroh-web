@@ -4,10 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 import { getServerEnv } from "./env";
 
 export function createServiceClient() {
-  const { supabaseServiceRoleKey, supabaseUrl } = getServerEnv();
+  const { supabaseSecretKey, supabaseUrl } = getServerEnv();
 
-  return createClient(supabaseUrl, supabaseServiceRoleKey, {
+  return createClient(supabaseUrl, supabaseSecretKey, {
     auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
       persistSession: false,
     },
   });

@@ -3,12 +3,14 @@ import { connect, createServer, type Socket } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
+import { createTestSupabaseJwtSigningKey } from "./testEnvironment";
+
 const VALID_ENVIRONMENT = {
   ACCOUNT_TOKEN_HASH_SECRET: Buffer.alloc(32, 7).toString("base64"),
   MAINTENANCE_SECRET: "maintenance-secret-that-is-at-least-32-bytes",
   RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER: "x-ingress-client-ip",
-  SUPABASE_JWT_SECRET: "supabase-jwt-secret",
-  SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+  SUPABASE_JWT_SIGNING_KEY: createTestSupabaseJwtSigningKey(),
+  SUPABASE_SECRET_KEY: "sb_secret_test-key",
   SUPABASE_URL: "https://example.supabase.co",
   VERCEL: "",
 } as const;
@@ -57,13 +59,13 @@ describe("server startup environment preflight", () => {
     const result = spawnSync("pnpm", ["run", "build"], {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: createEnvironment({ SUPABASE_SERVICE_ROLE_KEY: "" }),
+      env: createEnvironment({ SUPABASE_SECRET_KEY: "" }),
       timeout: 10_000,
     });
     const output = `${result.stdout}${result.stderr}`;
 
     expect(result.status).toBe(1);
-    expect(output).toContain("[startup] SUPABASE_SERVICE_ROLE_KEY is required.");
+    expect(output).toContain("[startup] SUPABASE_SECRET_KEY is required.");
     expect(output).not.toContain("Creating an optimized production build");
   });
 });

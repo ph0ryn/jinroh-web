@@ -79,7 +79,7 @@ describe("trusted rate-limit client address", () => {
 
   it("returns a no-store 503 when the trusted header is missing or invalid", async () => {
     vi.stubEnv("ACCOUNT_TOKEN_HASH_SECRET", Buffer.alloc(32, 7).toString("base64"));
-    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
+    vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_test-key");
     vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER", "x-ingress-client-ip");
 

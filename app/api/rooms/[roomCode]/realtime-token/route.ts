@@ -19,7 +19,7 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
 
     try {
       const authorization: RealtimeAuthorization = {
-        accessToken: createRealtimeAccessToken(grant),
+        accessToken: await createRealtimeAccessToken(grant),
         expiresAt: grant.expiresAt,
         subscriptions: grant.subscriptions,
       };

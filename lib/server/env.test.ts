@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { createTestSupabaseJwtSigningKey } from "./testEnvironment";
+
 const VALID_SERVER_ENV = {
   ACCOUNT_TOKEN_HASH_SECRET: Buffer.alloc(32, 7).toString("base64"),
   MAINTENANCE_SECRET: "maintenance-secret-that-is-at-least-32-bytes",
   RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER: "x-ingress-client-ip",
-  SUPABASE_JWT_SECRET: "supabase-jwt-secret",
-  SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+  SUPABASE_JWT_SIGNING_KEY: createTestSupabaseJwtSigningKey(),
+  SUPABASE_SECRET_KEY: "sb_secret_test-key",
   SUPABASE_URL: "https://example.supabase.co",
 } as const;
 
@@ -35,6 +37,28 @@ describe("server environment startup validation", () => {
     const { register } = await import("../../instrumentation");
 
     await expect(register()).rejects.toThrow("ACCOUNT_TOKEN_HASH_SECRET must be standard base64.");
+  });
+
+  it("rejects a legacy service-role API key", async () => {
+    stubValidServerEnv();
+    vi.stubEnv("SUPABASE_SECRET_KEY", "legacy-service-role-key");
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+
+    const { register } = await import("../../instrumentation");
+
+    await expect(register()).rejects.toThrow("SUPABASE_SECRET_KEY must be a Supabase secret key.");
+  });
+
+  it("rejects a malformed JWT signing key", async () => {
+    stubValidServerEnv();
+    vi.stubEnv("SUPABASE_JWT_SIGNING_KEY", JSON.stringify({ alg: "HS256", kid: "legacy" }));
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+
+    const { register } = await import("../../instrumentation");
+
+    await expect(register()).rejects.toThrow(
+      "SUPABASE_JWT_SIGNING_KEY must be a valid ES256 private JWK.",
+    );
   });
 
   it("accepts a complete server environment through instrumentation", async () => {

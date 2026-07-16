@@ -404,8 +404,11 @@ in ascending `resolved_at`, then ID, order.
 ## Realtime authorization
 
 The application server calls `app_issue_realtime_grant` for an active player and
-signs a short-lived JWT containing `realtime_grant_id`. Realtime may deliver a
-broadcast only when `can_receive_realtime_topic` confirms:
+signs a short-lived JWT containing `realtime_grant_id` with an
+application-owned ES256 key imported into Supabase JWT Signing Keys. The token's
+`kid` identifies the imported public key. The private JWK remains server-only and
+is independent from the browser publishable API key and server secret API key.
+Realtime may deliver a broadcast only when `can_receive_realtime_topic` confirms:
 
 - the grant exists, is unexpired, and is not revoked;
 - the player still has active membership;

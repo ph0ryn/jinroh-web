@@ -71,11 +71,16 @@ Install dependencies:
 pnpm install
 ```
 
-Start the local Supabase stack:
+Generate a local ES256 JWT signing key, then start the local Supabase stack:
 
 ```sh
+pnpm run db:keygen
 pnpm run db:start
 ```
+
+The generated `supabase/signing_keys.json` is local secret material and is
+ignored by Git. Generate a different key for every environment and never reuse
+the local key in a hosted Supabase project.
 
 Generate the token hash secret with:
 
@@ -89,11 +94,18 @@ Create `.env.local` with the local values printed by `pnpm run db:start`:
 ACCOUNT_TOKEN_HASH_SECRET=<generated 32-byte base64 secret>
 MAINTENANCE_SECRET=<random secret containing at least 32 bytes>
 SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY>
-SUPABASE_JWT_SECRET=<JWT_SECRET>
+SUPABASE_SECRET_KEY=<SECRET_KEY>
+SUPABASE_JWT_SIGNING_KEY='<single-line JSON from supabase/signing_keys.json>'
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<PUBLISHABLE_KEY>
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+Print the single JWK object for `SUPABASE_JWT_SIGNING_KEY` instead of copying
+the surrounding JSON array:
+
+```sh
+jq -c '.[0]' supabase/signing_keys.json
 ```
 
 To print the local Supabase values again, run:
@@ -103,16 +115,17 @@ pnpm exec supabase status -o env
 ```
 
 `NEXT_PUBLIC_SUPABASE_URL` should match `SUPABASE_URL`. Add
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` to enable Supabase Realtime invalidation in the
-browser. Without the public key, the live table still works through polling.
-`SUPABASE_JWT_SECRET` signs short-lived browser tokens for private Realtime
-channels. Use the local `JWT_SECRET` printed by `supabase status`; never expose
-it through a `NEXT_PUBLIC_` variable.
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to enable Supabase Realtime invalidation
+in the browser. Without the public key, the live table still works through
+polling. `SUPABASE_JWT_SIGNING_KEY` contains the first ES256 private JWK object
+from the generated JSON array and is used to sign short-lived browser tokens for
+private Realtime channels. Its `kid` must match the key loaded by the local
+Supabase stack; never expose the private JWK through a `NEXT_PUBLIC_` variable.
 Keep production Supabase credentials out of local `.env.local`.
 `NEXT_PUBLIC_SITE_URL` is optional locally. Set it to the deployed origin in
 production when you want Open Graph images to resolve to a canonical URL; Vercel
 deployment URL environment variables are used as a fallback. Never expose
-`SUPABASE_SERVICE_ROLE_KEY` to the browser.
+`SUPABASE_SECRET_KEY` to the browser.
 
 Stop the local Supabase stack explicitly when finished:
 
@@ -140,13 +153,13 @@ If the CLI cannot connect with the temporary login role, set
 same command.
 
 Before the first release, use a disposable development database and verify that
-the four responsibility-based baseline migrations are the only applied versions:
+the five responsibility-based baseline migrations are the only applied versions:
 
 ```sh
 pnpm exec supabase migration list
 ```
 
-Local and remote versions should list only `0001` through `0004`. Recreate any
+Local and remote versions should list only `0001` through `0005`. Recreate any
 pre-release database that contains the superseded development migration history
 instead of repairing it in place.
 
@@ -230,12 +243,37 @@ ACCOUNT_TOKEN_HASH_SECRET=
 MAINTENANCE_SECRET=
 RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER=
 SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_JWT_SECRET=
+SUPABASE_SECRET_KEY=
+SUPABASE_JWT_SIGNING_KEY=
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 NEXT_PUBLIC_SITE_URL=
 ```
+
+Use the Supabase publishable key (`sb_publishable_...`) and secret key
+(`sb_secret_...`); do not configure the legacy `anon` or `service_role` API
+keys. Generate the production ES256 private JWK with `pnpm run jwt:keygen`, store
+the printed JSON immediately in a secure secret manager, and import that same
+JWK as a standby key under Supabase Dashboard > JWT Signing Keys.
+Supabase-generated asymmetric keys cannot be exported and therefore cannot be
+used by this application server to mint custom Realtime JWTs.
+
+If the Dashboard still shows `Migrate JWT secret`, run that migration first. It
+imports the legacy secret into the Signing Keys system and creates a
+Supabase-generated asymmetric standby key. Do not rotate that generated key:
+move it to Previously used and then Revoked to free the standby position, because
+its private key cannot be exported for this application's custom JWT signer. If
+the project already uses the Signing Keys system, create the application-owned
+standby key directly.
+
+After importing the application-owned key, rotate it into use before deploying
+the application with its serialized private JWK in `SUPABASE_JWT_SIGNING_KEY`.
+The JWT `kid` must match the imported key. Keep the previous key trusted until
+the new deployment has completed a private-Realtime smoke test and every token
+from the retired deployment has expired. Realtime grants currently last 120
+seconds, so wait at least 120 seconds plus an operational margin after retiring
+the old deployment. Only then disable the legacy API keys and revoke the legacy
+JWT signing key. Never commit or log a private JWK.
 
 `RATE_LIMIT_TRUSTED_CLIENT_IP_HEADER` must name a single-value client IP header
 that a trusted ingress removes and rewrites on every request. Vercel deployments
@@ -304,24 +342,35 @@ select cron.alter_job(
 
 Deployment order:
 
-1. Create or update the two named Supabase Vault secrets.
-2. Apply Supabase migrations with `pnpm exec supabase db push`.
-3. Confirm `pnpm exec supabase migration list` shows local and remote at the
+1. Create the Supabase publishable and secret API keys.
+2. If `Migrate JWT secret` is shown, run it and move its automatically generated
+   asymmetric standby key to Previously used and then Revoked without rotating
+   it.
+3. Generate, securely store, import, and rotate the application-owned ES256 JWT
+   signing key.
+4. Create or update the two named Supabase Vault secrets.
+5. Apply Supabase migrations with `pnpm exec supabase db push`.
+6. Confirm `pnpm exec supabase migration list` shows local and remote at the
    same latest migration.
-4. Configure the production environment variables in the host.
-5. Confirm the trusted ingress overwrites the configured client IP header and
+7. Configure the production environment variables in the host.
+8. Confirm the trusted ingress overwrites the configured client IP header and
    the application origin cannot be reached around it.
-6. Build with `pnpm run build`; the release preflight must succeed before Next.js
+9. Build with `pnpm run build`; the release preflight must succeed before Next.js
    begins compiling.
-7. Deploy the app. Self-hosted deployments must launch it with `pnpm run start`
-   so the same preflight runs before the server process.
-8. Verify a deliberate quota breach returns `429` with a positive
-   `Retry-After`, and verify the upstream WAF independently blocks abusive
-   traffic.
-9. Confirm `jinroh-web-expire-rooms` is active in Supabase Cron and inspect its
-   run history. Check recent `net._http_response` rows for an HTTP `200` from the
-   maintenance route.
-10. Run focused smoke checks against the local test stack when needed. The
+10. Deploy the app. Self-hosted deployments must launch it with `pnpm run start`
+    so the same preflight runs before the server process.
+11. Verify a deliberate quota breach returns `429` with a positive
+    `Retry-After`, and verify the upstream WAF independently blocks abusive
+    traffic.
+12. Verify a private Realtime subscription with an ES256 token. After the old
+    deployment is retired, wait at least the 120-second grant lifetime plus an
+    operational margin, confirm the legacy API keys are no longer used, disable
+    them, and then revoke the legacy JWT signing key. If the grant lifetime
+    changes, wait for its maximum possible lifetime plus a margin instead.
+13. Confirm `jinroh-web-expire-rooms` is active in Supabase Cron and inspect its
+    run history. Check recent `net._http_response` rows for an HTTP `200` from the
+    maintenance route.
+14. Run focused smoke checks against the local test stack when needed. The
     repository integration and browser suites write test data, so do not run
     them against production data.
 

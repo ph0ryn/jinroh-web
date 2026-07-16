@@ -4,7 +4,7 @@ describe("account token invariants", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv("SUPABASE_URL", "http://localhost:54321");
-    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "local-service-role-key");
+    vi.stubEnv("SUPABASE_SECRET_KEY", "sb_secret_local-test-key");
     vi.stubEnv("ACCOUNT_TOKEN_HASH_SECRET", Buffer.alloc(32, 7).toString("base64"));
   });
 

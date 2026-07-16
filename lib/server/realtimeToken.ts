@@ -1,14 +1,14 @@
 import "server-only";
-import { createHmac } from "node:crypto";
+import { importJWK, SignJWT } from "jose";
 
-import { getSupabaseJwtSecret } from "./env";
+import { getSupabaseJwtSigningKey } from "./env";
 
 type RealtimeTokenInput = {
   expiresAt: string;
   grantId: string;
 };
 
-export function createRealtimeAccessToken(input: RealtimeTokenInput): string {
+export async function createRealtimeAccessToken(input: RealtimeTokenInput): Promise<string> {
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresAt = Math.floor(Date.parse(input.expiresAt) / 1000);
 
@@ -16,23 +16,17 @@ export function createRealtimeAccessToken(input: RealtimeTokenInput): string {
     throw new Error("Realtime grant expiration must be in the future.");
   }
 
-  const header = encodeJwtPart({ alg: "HS256", typ: "JWT" });
-  const payload = encodeJwtPart({
-    aud: "authenticated",
-    exp: expiresAt,
-    iat: issuedAt,
+  const signingKey = getSupabaseJwtSigningKey();
+  const privateKey = await importJWK(signingKey, signingKey.alg);
+
+  return await new SignJWT({
     realtime_grant_id: input.grantId,
     role: "authenticated",
-    sub: input.grantId,
-  });
-  const unsignedToken = `${header}.${payload}`;
-  const signature = createHmac("sha256", getSupabaseJwtSecret())
-    .update(unsignedToken)
-    .digest("base64url");
-
-  return `${unsignedToken}.${signature}`;
-}
-
-function encodeJwtPart(value: Record<string, unknown>): string {
-  return Buffer.from(JSON.stringify(value)).toString("base64url");
+  })
+    .setProtectedHeader({ alg: signingKey.alg, kid: signingKey.kid, typ: "JWT" })
+    .setAudience("authenticated")
+    .setExpirationTime(expiresAt)
+    .setIssuedAt(issuedAt)
+    .setSubject(input.grantId)
+    .sign(privateKey);
 }

@@ -2,15 +2,25 @@ import "server-only";
 import {
   readApplicationServerEnvironment,
   readMaintenanceSecret,
-  readSupabaseJwtSecret,
+  readSupabaseJwtSigningKey,
   validateServerEnvironment,
 } from "./serverEnvironment.mjs";
 
 type ServerEnv = {
   accountTokenHashSecret: Uint8Array;
   rateLimitTrustedClientIpHeader: string | null;
-  supabaseServiceRoleKey: string;
+  supabaseSecretKey: string;
   supabaseUrl: string;
+};
+
+export type SupabaseJwtSigningKey = {
+  alg: "ES256";
+  crv: "P-256";
+  d: string;
+  kid: string;
+  kty: "EC";
+  x: string;
+  y: string;
 };
 
 let cachedEnv: ServerEnv | null = null;
@@ -29,8 +39,8 @@ export function validateServerEnv(): void {
   validateServerEnvironment(process.env);
 }
 
-export function getSupabaseJwtSecret(): string {
-  return readSupabaseJwtSecret(process.env);
+export function getSupabaseJwtSigningKey(): SupabaseJwtSigningKey {
+  return readSupabaseJwtSigningKey(process.env);
 }
 
 export function getMaintenanceSecret(): string {

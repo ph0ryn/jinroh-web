@@ -39,6 +39,9 @@ catalogs:
     gsap:
       specifier: ^3.15.0
       version: 3.15.0
+    jose:
+      specifier: ^6.2.3
+      version: 6.2.3
     lint-staged:
       specifier: ^17.0.8
       version: 17.0.8
@@ -101,6 +104,9 @@ importers:
       gsap:
         specifier: 'catalog:'
         version: 3.15.0
+      jose:
+        specifier: 'catalog:'
+        version: 6.2.3
       next:
         specifier: 'catalog:'
         version: 16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

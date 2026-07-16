@@ -1,6 +1,95 @@
 import { createWaitingRoom, requirePlayer } from "../fixtures/roomScenario";
 import { expect, test } from "../fixtures/test";
 
+type PhoenixFrame = {
+  event: string;
+  payload: Record<string, unknown>;
+  ref: string;
+  topic: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function parsePhoenixFrame(payload: string): PhoenixFrame | null {
+  const parsed = parseJson(payload);
+
+  const frame = Array.isArray(parsed)
+    ? {
+        event: parsed[3],
+        payload: parsed[4],
+        ref: parsed[1],
+        topic: parsed[2],
+      }
+    : parsed;
+
+  if (
+    !isRecord(frame) ||
+    typeof frame["event"] !== "string" ||
+    !isRecord(frame["payload"]) ||
+    (typeof frame["ref"] !== "string" && typeof frame["ref"] !== "number") ||
+    typeof frame["topic"] !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    event: frame["event"],
+    payload: frame["payload"],
+    ref: String(frame["ref"]),
+    topic: frame["topic"],
+  };
+}
+
+test("private Realtime subscriptions accept the ES256 grant", async ({ live, page, request }) => {
+  const { players } = await createWaitingRoom(request, ["Iris"], 3);
+  const host = requirePlayer(players, 0);
+  let hasAuthorizedChannel = false;
+  const privateJoinReferences = new Set<string>();
+
+  page.on("websocket", (webSocket) => {
+    webSocket.on("framesent", ({ payload }) => {
+      const frame = parsePhoenixFrame(String(payload));
+      const config = frame === null ? null : frame.payload["config"];
+
+      if (
+        frame?.event === "phx_join" &&
+        frame.topic.startsWith("realtime:") &&
+        typeof frame.payload["access_token"] === "string" &&
+        isRecord(config) &&
+        config["private"] === true
+      ) {
+        privateJoinReferences.add(`${frame.topic}:${frame.ref}`);
+      }
+    });
+
+    webSocket.on("framereceived", ({ payload }) => {
+      const frame = parsePhoenixFrame(String(payload));
+
+      if (
+        frame?.event === "phx_reply" &&
+        frame.payload["status"] === "ok" &&
+        privateJoinReferences.has(`${frame.topic}:${frame.ref}`)
+      ) {
+        hasAuthorizedChannel = true;
+      }
+    });
+  });
+
+  await live.open({ identityToken: host.token });
+
+  await expect.poll(() => hasAuthorizedChannel, { timeout: 10_000 }).toBe(true);
+});
+
 test("toast announcements preserve the trigger focus contract", async ({ live, page, request }) => {
   const { players } = await createWaitingRoom(request, ["Juniper"], 3);
   const host = requirePlayer(players, 0);
