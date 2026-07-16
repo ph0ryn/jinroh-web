@@ -57,6 +57,13 @@ revoke all on function private.invoke_expire_rooms_maintenance()
 
 select cron.schedule(
   'jinroh-web-expire-rooms',
-  '*/5 * * * *',
+  '*/15 * * * *',
   'select private.invoke_expire_rooms_maintenance();'
+);
+
+select cron.schedule(
+  'jinroh-web-prune-cron-history',
+  '0 3 * * *',
+  $$delete from cron.job_run_details
+    where end_time < pg_catalog.now() - interval '7 days';$$
 );

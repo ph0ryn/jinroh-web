@@ -218,8 +218,9 @@ Basic play flow:
 - Open room pages heartbeat in the background. Players with stale heartbeats
   are shown as disconnected and become joined again when their browser resumes.
 
-Supabase Cron calls the maintenance endpoint every five minutes. It can also be
-invoked manually:
+Supabase Cron calls the maintenance endpoint every fifteen minutes. A separate
+daily job retains seven days of completed Cron run history. The maintenance
+endpoint can also be invoked manually:
 
 ```sh
 curl -X POST http://localhost:3000/api/maintenance/expire-rooms \
@@ -297,8 +298,9 @@ rate limiting, bot management, request-size limits, or network-level
 denial-of-service protection.
 
 Migration `0005_maintenance_cron.sql` enables `pg_cron`, reuses `pg_net` and
-Supabase Vault, and registers the `jinroh-web-expire-rooms` job. Create these
-named Vault secrets before applying the migration:
+Supabase Vault, and registers the `jinroh-web-expire-rooms` and
+`jinroh-web-prune-cron-history` jobs. Create these named Vault secrets before
+applying the migration:
 
 ```sql
 select vault.create_secret(
@@ -358,9 +360,9 @@ Deployment order:
     operational margin, confirm the legacy API keys are no longer used, disable
     them, and then revoke the legacy JWT signing key. If the grant lifetime
     changes, wait for its maximum possible lifetime plus a margin instead.
-12. Confirm `jinroh-web-expire-rooms` is active in Supabase Cron and inspect its
-    run history. Check recent `net._http_response` rows for an HTTP `200` from the
-    maintenance route.
+12. Confirm `jinroh-web-expire-rooms` and `jinroh-web-prune-cron-history` are
+    active in Supabase Cron and inspect their run history. Check recent
+    `net._http_response` rows for an HTTP `200` from the maintenance route.
 13. Run focused smoke checks against the local test stack when needed. The
     repository integration and browser suites write test data, so do not run
     them against production data.

@@ -64,8 +64,8 @@ select is(
     from cron.job
     where jobname = 'jinroh-web-expire-rooms'
   ),
-  '*/5 * * * *',
-  'the expire-rooms job runs every five minutes'
+  '*/15 * * * *',
+  'the expire-rooms job runs every fifteen minutes'
 );
 
 select is(
@@ -85,6 +85,46 @@ select ok(
     where jobname = 'jinroh-web-expire-rooms'
   ),
   'the expire-rooms Cron job is active'
+);
+
+select is(
+  (
+    select pg_catalog.count(*)
+    from cron.job
+    where jobname = 'jinroh-web-prune-cron-history'
+  ),
+  1::bigint,
+  'exactly one Cron history pruning job is registered'
+);
+
+select is(
+  (
+    select schedule
+    from cron.job
+    where jobname = 'jinroh-web-prune-cron-history'
+  ),
+  '0 3 * * *',
+  'the Cron history pruning job runs daily'
+);
+
+select is(
+  (
+    select command
+    from cron.job
+    where jobname = 'jinroh-web-prune-cron-history'
+  ),
+  $$delete from cron.job_run_details
+    where end_time < pg_catalog.now() - interval '7 days';$$,
+  'the Cron history pruning job retains seven days of completed runs'
+);
+
+select ok(
+  (
+    select active
+    from cron.job
+    where jobname = 'jinroh-web-prune-cron-history'
+  ),
+  'the Cron history pruning job is active'
 );
 
 select throws_ok(
