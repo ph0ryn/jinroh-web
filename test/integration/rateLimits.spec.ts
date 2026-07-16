@@ -155,7 +155,9 @@ test("a target-room bucket is shared across distinct client networks", async ({ 
   ]);
 });
 
-test("room lookup limits outsiders without throttling active members", async ({ request }) => {
+test("room lookup limits outsiders and permits the expected member polling burst", async ({
+  request,
+}) => {
   const hostIp = "192.0.2.50";
   const host = await createIdentity(request, hostIp);
   const roomResponse = await request.post("/api/rooms", {
@@ -172,6 +174,12 @@ test("room lookup limits outsiders without throttling active members", async ({ 
   );
 
   expect(memberResponses.every((response) => response.status() === 200)).toBe(true);
+  const excessiveMemberResponse = await request.get(`/api/rooms/${room.code}`, {
+    headers: authenticatedHeaders(host.token, hostIp),
+  });
+
+  expect(excessiveMemberResponse.status()).toBe(429);
+  expect(Number(excessiveMemberResponse.headers()["retry-after"])).toBeGreaterThan(0);
 
   const outsiderIp = "192.0.2.51";
   const outsider = await createIdentity(request, outsiderIp);
@@ -215,6 +223,81 @@ test("unknown room lookup and invalid trusted headers fail closed", async ({ req
 
   expect(missingHeader.status).toBe(503);
   expect(invalidHeader.status).toBe(503);
+});
+
+test("invalid member mutations consume their account operation buckets", async ({ request }) => {
+  const cases = [
+    {
+      capacity: 12,
+      clientIp: "192.0.2.80",
+      path: "/api/rooms/000000/night-conversation",
+    },
+    {
+      capacity: 8,
+      clientIp: "192.0.2.81",
+      path: "/api/rooms/000000/readiness",
+    },
+  ] as const;
+
+  for (const operation of cases) {
+    const identity = await createIdentity(request, operation.clientIp);
+    const responses = [];
+
+    for (let index = 0; index <= operation.capacity; index += 1) {
+      responses.push(
+        await request.post(operation.path, {
+          data: {},
+          headers: authenticatedHeaders(identity.token, operation.clientIp),
+        }),
+      );
+    }
+
+    expect(
+      responses.slice(0, operation.capacity).every((response) => response.status() === 400),
+    ).toBe(true);
+    expect(responses[operation.capacity]?.status()).toBe(429);
+    expect(Number(responses[operation.capacity]?.headers()["retry-after"])).toBeGreaterThan(0);
+  }
+});
+
+test("Realtime grants and heartbeats consume their account operation buckets", async ({
+  request,
+}) => {
+  const clientIp = "192.0.2.82";
+  const identity = await createIdentity(request, clientIp);
+  const roomResponse = await request.post("/api/rooms", {
+    data: { displayName: "Realtime Host", targetPlayerCount: 3 },
+    headers: authenticatedHeaders(identity.token, clientIp),
+  });
+  const room = (await roomResponse.json()) as { readonly code: string };
+  const responses = [];
+
+  for (let index = 0; index < 7; index += 1) {
+    responses.push(
+      await request.post(`/api/rooms/${room.code}/realtime-token`, {
+        headers: authenticatedHeaders(identity.token, clientIp),
+      }),
+    );
+  }
+
+  expect(responses.map((response) => response.status())).toEqual([
+    200, 200, 200, 200, 200, 200, 429,
+  ]);
+  expect(Number(responses[6]?.headers()["retry-after"])).toBeGreaterThan(0);
+
+  const heartbeatResponses = [];
+
+  for (let index = 0; index < 21; index += 1) {
+    heartbeatResponses.push(
+      await request.post(`/api/rooms/${room.code}/heartbeat`, {
+        headers: authenticatedHeaders(identity.token, clientIp),
+      }),
+    );
+  }
+
+  expect(heartbeatResponses.slice(0, 20).every((response) => response.status() === 200)).toBe(true);
+  expect(heartbeatResponses[20]?.status()).toBe(429);
+  expect(Number(heartbeatResponses[20]?.headers()["retry-after"])).toBeGreaterThan(0);
 });
 
 async function createIdentity(request: APIRequestContext, clientIp: string): Promise<Identity> {

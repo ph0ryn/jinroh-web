@@ -11,6 +11,11 @@ vi.mock("@/lib/server/gameRepository", () => ({
   submitNightConversationMessage: vi.fn(),
 }));
 
+vi.mock("@/lib/server/rateLimit", () => ({
+  enforceRoomOperationAccountRateLimit: vi.fn(async () => null),
+  enforceRoomOperationClientRateLimit: vi.fn(async () => null),
+}));
+
 import {
   setRoomReadiness,
   startGame,

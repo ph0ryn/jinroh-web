@@ -1,23 +1,21 @@
-import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { issueRealtimeGrant } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk } from "@/lib/server/http";
 import { createRealtimeAccessToken } from "@/lib/server/realtimeToken";
 import { roomApiErrorResponse } from "@/lib/server/roomApiError";
+import { requireRoomAccount } from "@/lib/server/roomRoute";
 
 import type { RoomRouteContext } from "@/lib/server/roomRoute";
 import type { RealtimeAuthorization } from "@/lib/shared/game";
 
 export async function POST(request: Request, context: RoomRouteContext): Promise<Response> {
-  const auth = await requireAccount(request);
+  const roomAuth = await requireRoomAccount(request, context, "realtime-token");
 
-  if ("response" in auth) {
-    return auth.response;
+  if ("response" in roomAuth) {
+    return roomAuth.response;
   }
 
-  const { roomCode } = await context.params;
-
   try {
-    const grant = await issueRealtimeGrant(auth.account, roomCode);
+    const grant = await issueRealtimeGrant(roomAuth.account, roomAuth.roomCode);
 
     try {
       const authorization: RealtimeAuthorization = {

@@ -1,7 +1,7 @@
-import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { submitNightConversationMessage } from "@/lib/server/gameRepository";
 import { jsonError, jsonOk, readJson } from "@/lib/server/http";
 import { roomApiErrorResponse } from "@/lib/server/roomApiError";
+import { requireRoomAccount } from "@/lib/server/roomRoute";
 import { isGameId } from "@/lib/shared/game";
 
 import type { RoomRouteContext } from "@/lib/server/roomRoute";
@@ -15,10 +15,10 @@ type SendNightConversationBody = {
 };
 
 export async function POST(request: Request, context: RoomRouteContext): Promise<Response> {
-  const auth = await requireAccount(request);
+  const roomAuth = await requireRoomAccount(request, context, "night-conversation");
 
-  if ("response" in auth) {
-    return auth.response;
+  if ("response" in roomAuth) {
+    return roomAuth.response;
   }
 
   const body = await readJson<SendNightConversationBody>(request);
@@ -49,11 +49,9 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
     return jsonError("bad_request", "nightNumber is invalid.", 400);
   }
 
-  const { roomCode } = await context.params;
-
   try {
     return jsonOk(
-      await submitNightConversationMessage(auth.account, roomCode, {
+      await submitNightConversationMessage(roomAuth.account, roomAuth.roomCode, {
         body: body.body,
         conversationGroupId: body.conversationGroupId,
         gameId: body.gameId,

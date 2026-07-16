@@ -8,6 +8,13 @@ import { consumeRateLimits, type RateLimitRule } from "./rateLimitRepository";
 
 type RoomMutationKind = "create" | "join";
 
+export type RoomOperationKind =
+  | "heartbeat"
+  | "night-conversation"
+  | "readiness"
+  | "realtime-token"
+  | "snapshot";
+
 type RuleDefinition = {
   readonly capacity: number;
   readonly name: string;
@@ -71,6 +78,52 @@ const ROOM_LOOKUP_IP_RULES = [
   { capacity: 30, name: "room-lookup-ip-burst", refillSeconds: 10 * 60 },
   { capacity: 100, name: "room-lookup-ip-sustained", refillSeconds: 24 * 60 * 60 },
 ] as const;
+
+const ROOM_OPERATION_ACCOUNT_RULES = {
+  heartbeat: [
+    { capacity: 20, name: "heartbeat-account-burst", refillSeconds: 60 },
+    { capacity: 360, name: "heartbeat-account-sustained", refillSeconds: 60 * 60 },
+  ],
+  "night-conversation": [
+    { capacity: 12, name: "night-conversation-account-burst", refillSeconds: 60 },
+    { capacity: 120, name: "night-conversation-account-sustained", refillSeconds: 60 * 60 },
+  ],
+  readiness: [
+    { capacity: 8, name: "readiness-account-burst", refillSeconds: 60 },
+    { capacity: 30, name: "readiness-account-sustained", refillSeconds: 60 * 60 },
+  ],
+  "realtime-token": [
+    { capacity: 6, name: "realtime-token-account-burst", refillSeconds: 60 },
+    { capacity: 60, name: "realtime-token-account-sustained", refillSeconds: 60 * 60 },
+  ],
+  snapshot: [
+    { capacity: 30, name: "room-snapshot-account-burst", refillSeconds: 30 },
+    { capacity: 240, name: "room-snapshot-account-sustained", refillSeconds: 10 * 60 },
+  ],
+} as const satisfies Record<RoomOperationKind, readonly Omit<RuleDefinition, "subject">[]>;
+
+const ROOM_OPERATION_CLIENT_RULES = {
+  heartbeat: [
+    { capacity: 150, name: "heartbeat-client-burst", refillSeconds: 60 },
+    { capacity: 3_600, name: "heartbeat-client-sustained", refillSeconds: 60 * 60 },
+  ],
+  "night-conversation": [
+    { capacity: 60, name: "night-conversation-client-burst", refillSeconds: 60 },
+    { capacity: 1_200, name: "night-conversation-client-sustained", refillSeconds: 60 * 60 },
+  ],
+  readiness: [
+    { capacity: 40, name: "readiness-client-burst", refillSeconds: 60 },
+    { capacity: 300, name: "readiness-client-sustained", refillSeconds: 60 * 60 },
+  ],
+  "realtime-token": [
+    { capacity: 30, name: "realtime-token-client-burst", refillSeconds: 60 },
+    { capacity: 600, name: "realtime-token-client-sustained", refillSeconds: 60 * 60 },
+  ],
+  snapshot: [
+    { capacity: 200, name: "room-snapshot-client-burst", refillSeconds: 30 },
+    { capacity: 1_800, name: "room-snapshot-client-sustained", refillSeconds: 10 * 60 },
+  ],
+} as const satisfies Record<RoomOperationKind, readonly Omit<RuleDefinition, "subject">[]>;
 
 export async function enforceIdentityRateLimit(request: Request): Promise<Response | null> {
   return enforceRateLimit(() =>
@@ -181,6 +234,33 @@ export async function enforceRoomLookupAccountRateLimit(
       })),
     ),
   );
+}
+
+export async function enforceRoomOperationClientRateLimit(
+  request: Request,
+  kind: RoomOperationKind,
+  roomCode: string,
+): Promise<Response | null> {
+  return enforceRateLimit(() => {
+    const subject = `${getClientSubject(request)}:room:${normalizeRoomCodeSubject(roomCode)}`;
+
+    return toRules(
+      ROOM_OPERATION_CLIENT_RULES[kind].map((definition) => ({ ...definition, subject })),
+    );
+  });
+}
+
+export async function enforceRoomOperationAccountRateLimit(
+  accountId: number,
+  kind: RoomOperationKind,
+): Promise<Response | null> {
+  return enforceRateLimit(() => {
+    const subject = `account:${accountId}`;
+
+    return toRules(
+      ROOM_OPERATION_ACCOUNT_RULES[kind].map((definition) => ({ ...definition, subject })),
+    );
+  });
 }
 
 export function getTrustedClientAddress(

@@ -1,7 +1,7 @@
-import { requireAccount } from "@/lib/server/authenticatedRoute";
 import { setRoomReadiness } from "@/lib/server/gameRepository";
 import { isNonNegativeSafeInteger, jsonError, jsonOk, readJson } from "@/lib/server/http";
 import { roomApiErrorResponse } from "@/lib/server/roomApiError";
+import { requireRoomAccount } from "@/lib/server/roomRoute";
 
 import type { RoomRouteContext } from "@/lib/server/roomRoute";
 
@@ -11,10 +11,10 @@ type SetRoomReadinessBody = {
 };
 
 export async function POST(request: Request, context: RoomRouteContext): Promise<Response> {
-  const auth = await requireAccount(request);
+  const roomAuth = await requireRoomAccount(request, context, "readiness");
 
-  if ("response" in auth) {
-    return auth.response;
+  if ("response" in roomAuth) {
+    return roomAuth.response;
   }
 
   const body = await readJson<SetRoomReadinessBody>(request);
@@ -27,11 +27,14 @@ export async function POST(request: Request, context: RoomRouteContext): Promise
     return jsonError("bad_request", "expectedRosterRevision is required.", 400);
   }
 
-  const { roomCode } = await context.params;
-
   try {
     return jsonOk(
-      await setRoomReadiness(auth.account, roomCode, body.isReady, body.expectedRosterRevision),
+      await setRoomReadiness(
+        roomAuth.account,
+        roomAuth.roomCode,
+        body.isReady,
+        body.expectedRosterRevision,
+      ),
     );
   } catch (error) {
     return roomApiErrorResponse(error) ?? jsonError("conflict", "Readiness update failed.", 409);

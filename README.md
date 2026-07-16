@@ -253,12 +253,15 @@ deployments must use `pnpm run start` rather than invoke `next start` directly.
 `pnpm run dev` keeps development semantics and may omit the trusted client IP
 header.
 
-Identity creation, room creation, joining, switching, and outsider room lookup
-use atomic database-backed token buckets. A rejected request returns `429` with
-`Retry-After`; unavailable rate-limit storage returns `503` and does not perform
-the protected operation. These application limits protect domain writes and
-room-code lookup, but they do not replace CDN/WAF rate limiting, bot management,
-request-size limits, or network-level denial-of-service protection.
+Identity creation, room creation, joining, switching, room snapshots, heartbeats,
+readiness updates, night-conversation messages, Realtime grant issuance, and
+outsider room lookup use atomic database-backed token buckets. In-room operations
+combine an Account bucket with a trusted-client bucket scoped to the target Room.
+A rejected request returns `429` with `Retry-After`; unavailable rate-limit storage
+returns `503` and does not perform the protected operation. These application
+limits protect domain writes and room-code lookup, but they do not replace CDN/WAF
+rate limiting, bot management, request-size limits, or network-level
+denial-of-service protection.
 
 Deployment order:
 
