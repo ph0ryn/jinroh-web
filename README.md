@@ -205,7 +205,8 @@ Basic play flow:
 - Open room pages heartbeat in the background. Players with stale heartbeats
   are shown as disconnected and become joined again when their browser resumes.
 
-Optional maintenance endpoint for cron or manual cleanup:
+Supabase Cron calls the maintenance endpoint every five minutes. It can also be
+invoked manually:
 
 ```sh
 curl -X POST http://localhost:3000/api/maintenance/expire-rooms \
@@ -263,29 +264,71 @@ limits protect domain writes and room-code lookup, but they do not replace CDN/W
 rate limiting, bot management, request-size limits, or network-level
 denial-of-service protection.
 
+Migration `0005_maintenance_cron.sql` enables `pg_cron`, reuses `pg_net` and
+Supabase Vault, and registers the `jinroh-web-expire-rooms` job. Create these
+named Vault secrets before applying the migration:
+
+```sql
+select vault.create_secret(
+  'https://jinroh.example',
+  'jinroh_web_maintenance_base_url',
+  'Jinroh Web maintenance endpoint base URL'
+);
+
+select vault.create_secret(
+  '<same value as MAINTENANCE_SECRET>',
+  'jinroh_web_maintenance_secret',
+  'Jinroh Web maintenance endpoint bearer secret'
+);
+```
+
+The base URL must be an HTTPS origin without a path. The maintenance secret must
+contain at least 32 bytes and must exactly match the Next.js
+`MAINTENANCE_SECRET`. Create or update the values through the Supabase Vault UI
+when the named secrets already exist; never commit either value to the
+repository.
+
+If the job was disabled while configuring Vault, enable it after both values are
+present:
+
+```sql
+select cron.alter_job(
+  job_id := (
+    select jobid
+    from cron.job
+    where jobname = 'jinroh-web-expire-rooms'
+  ),
+  active := true
+);
+```
+
 Deployment order:
 
-1. Apply Supabase migrations with `pnpm exec supabase db push`.
-2. Confirm `pnpm exec supabase migration list` shows local and remote at the
+1. Create or update the two named Supabase Vault secrets.
+2. Apply Supabase migrations with `pnpm exec supabase db push`.
+3. Confirm `pnpm exec supabase migration list` shows local and remote at the
    same latest migration.
-3. Configure the production environment variables in the host.
-4. Confirm the trusted ingress overwrites the configured client IP header and
+4. Configure the production environment variables in the host.
+5. Confirm the trusted ingress overwrites the configured client IP header and
    the application origin cannot be reached around it.
-5. Build with `pnpm run build`; the release preflight must succeed before Next.js
+6. Build with `pnpm run build`; the release preflight must succeed before Next.js
    begins compiling.
-6. Deploy the app. Self-hosted deployments must launch it with `pnpm run start`
+7. Deploy the app. Self-hosted deployments must launch it with `pnpm run start`
    so the same preflight runs before the server process.
-7. Verify a deliberate quota breach returns `429` with a positive
+8. Verify a deliberate quota breach returns `429` with a positive
    `Retry-After`, and verify the upstream WAF independently blocks abusive
    traffic.
-8. Run focused smoke checks against the local test stack when needed. The
-   repository integration and browser suites write test data, so do not run
-   them against production data.
+9. Confirm `jinroh-web-expire-rooms` is active in Supabase Cron and inspect its
+   run history. Check recent `net._http_response` rows for an HTTP `200` from the
+   maintenance route.
+10. Run focused smoke checks against the local test stack when needed. The
+    repository integration and browser suites write test data, so do not run
+    them against production data.
 
-If using scheduled cleanup, call `/api/maintenance/expire-rooms` from a
-trusted cron job with `Authorization: Bearer <MAINTENANCE_SECRET>`. The secret
-must contain at least 32 bytes. The endpoint is idempotent for already-expired
-Room lobbies.
+The Cron function fails explicitly when either Vault secret is missing or
+invalid. The endpoint is idempotent for already-expired Room lobbies. `pg_net`
+stores responses temporarily, so external alerting should not depend on that
+table as long-term history.
 
 ## Validation
 
