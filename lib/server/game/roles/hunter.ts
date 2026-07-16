@@ -73,6 +73,8 @@ export class HunterRole extends Role {
       (playerId) => playerId !== context.targetId,
     );
 
+    // The public follow-up wait intentionally identifies the executed player as the Hunter;
+    // revealing the role at this point is part of retaliation, not hidden-state leakage.
     return [
       ...super.onExecuted(context),
       ...(eligibleTargetPlayerIds.length === 0
