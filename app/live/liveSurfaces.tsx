@@ -46,6 +46,7 @@ type LiveWaitingSurfaceProps = {
   readonly copiedRoomCode: string | null;
   readonly isBusy: boolean;
   readonly isSettingsOpen: boolean;
+  readonly locale: Locale;
   readonly roomStatusLabel: string;
   readonly roomUrl: string | null;
   readonly summary: RoomSummary;
@@ -746,10 +747,30 @@ function CompactRoomInviteSummary({
   );
 }
 
+function LobbyExpiration({
+  locale,
+  summary,
+  t,
+}: {
+  readonly locale: Locale;
+  readonly summary: RoomSummary;
+  readonly t: Localization;
+}) {
+  return (
+    <p className="liveLobbyExpiration" data-live-lobby-expiration>
+      <span>{t.live.waiting.lobbyExpiresAt}</span>
+      <time dateTime={summary.lobbyExpiresAt}>
+        {formatDateTime(summary.lobbyExpiresAt, locale, t)}
+      </time>
+    </p>
+  );
+}
+
 export function LiveWaitingSurface({
   copiedRoomCode,
   isBusy,
   isSettingsOpen,
+  locale,
   roomStatusLabel,
   roomUrl,
   summary,
@@ -801,6 +822,7 @@ export function LiveWaitingSurface({
               <span>{t.live.aria.invite}</span>
               <strong>{roomStatusLabel}</strong>
             </div>
+            <LobbyExpiration locale={locale} summary={summary} t={t} />
             <LiveLobbyProgress summary={summary} t={t} />
           </section>
         }
@@ -1049,6 +1071,7 @@ export function LiveEndedSurface({
               <span>{t.live.page.result}</span>
               <strong>{t.live.effects.victory.title(winner)}</strong>
             </div>
+            <LobbyExpiration locale={locale} summary={summary} t={t} />
             {selfResult === null ? null : (
               <div
                 className="livePlayPhaseCard"

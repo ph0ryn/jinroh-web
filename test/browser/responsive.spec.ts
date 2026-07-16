@@ -60,6 +60,7 @@ test("the 320px entry surface remains operable without document overflow", async
   await page.keyboard.press("Escape");
 
   await expectNoDocumentOverflow(page);
+  await expectMinimumInteractiveTargetSize(page);
 });
 
 test("599px and 600px select their documented portrait layout modes", async ({
@@ -77,12 +78,14 @@ test("599px and 600px select their documented portrait layout modes", async ({
   await expect(page.locator("[data-live-table-surface]")).toBeVisible();
   await expect(page.locator("[data-live-controls]")).toBeVisible();
   await expectNoDocumentOverflow(page);
+  await expectMinimumInteractiveTargetSize(page);
 
   await page.setViewportSize({ height: 800, width: 600 });
   await expect.poll(() => readLayoutMode(page)).toBe("tablet-portrait");
   await expect(page.locator("[data-live-table-surface]")).toBeVisible();
   await expect(page.locator("[data-live-controls]")).toBeVisible();
   await expectNoDocumentOverflow(page);
+  await expectMinimumInteractiveTargetSize(page);
 });
 
 test("phone landscape keeps waiting controls and settings footer reachable", async ({
@@ -132,7 +135,40 @@ test("phone landscape keeps waiting controls and settings footer reachable", asy
     footerInsideViewport: true,
   });
   await expectNoDocumentOverflow(page);
+  await expectMinimumInteractiveTargetSize(page);
 });
+
+async function expectMinimumInteractiveTargetSize(page: Page): Promise<void> {
+  const minimumTargetSize = 44 - 0.01;
+  const undersizedTargets = await page
+    .locator(
+      ".liveShell button:visible, .liveShell input:not([type=radio]):not([type=checkbox]):visible, .liveShell select:visible, .liveShell textarea:visible",
+    )
+    .evaluateAll(
+      (elements, minimumSize) =>
+        elements.flatMap((element) => {
+          const bounds = element.getBoundingClientRect();
+
+          if (bounds.width >= minimumSize && bounds.height >= minimumSize) {
+            return [];
+          }
+
+          return [
+            {
+              height: bounds.height,
+              label:
+                element.getAttribute("aria-label") ??
+                element.getAttribute("name") ??
+                (element.textContent.trim() || element.tagName),
+              width: bounds.width,
+            },
+          ];
+        }),
+      minimumTargetSize,
+    );
+
+  expect(undersizedTargets).toEqual([]);
+}
 
 async function expectNoDocumentOverflow(page: Page): Promise<void> {
   const overflow = await readDocumentOverflow(page);

@@ -62,6 +62,24 @@ test("leaving transfers host authority and restores focus after cancellation", a
   }
 });
 
+test("the waiting lobby shows its authoritative expiration time", async ({
+  live,
+  page,
+  request,
+}) => {
+  const { players, roomCode } = await createWaitingRoom(request, ["Expiry host"], 3);
+  const host = requirePlayer(players, 0);
+  const summary = await readRoomSummary(request, roomCode, host);
+
+  await live.open({ identityToken: host.token });
+
+  const expiration = page.locator("[data-live-lobby-expiration]");
+
+  await expect(expiration).toBeVisible();
+  await expect(expiration).toContainText(live.t.live.waiting.lobbyExpiresAt);
+  await expect(expiration.locator("time")).toHaveAttribute("datetime", summary.lobbyExpiresAt);
+});
+
 test("settings keyboard navigation keeps drafts local until apply", async ({
   live,
   page,

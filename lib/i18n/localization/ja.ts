@@ -318,6 +318,7 @@ export const jaLocalization = {
     waiting: {
       host: "ホスト",
       hostControls: "ホスト操作",
+      lobbyExpiresAt: "ロビー有効期限",
       open: "空き",
       openSeat: "空き席",
       player: "プレイヤー",

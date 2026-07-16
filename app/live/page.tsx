@@ -1676,6 +1676,7 @@ export default function LivePage() {
         copiedRoomCode={copiedInviteRoomCode}
         isBusy={isBusy}
         isSettingsOpen={isStartSettingsOpen}
+        locale={locale}
         roomStatusLabel={formatRoomStatus(presentationSummary, t)}
         roomUrl={roomInviteUrl}
         summary={presentationSummary}

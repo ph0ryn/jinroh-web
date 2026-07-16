@@ -25,11 +25,16 @@ test("the result surface readies the same roster and starts a fresh Game", async
   expect(firstGameId).toBeTruthy();
 
   await finishThreePlayerGame(request, room.roomCode, room.players);
+  const resultSummary = await readRoomSummary(request, room.roomCode, host);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await live.open({ identityToken: host.token });
 
   await expect(page.locator('[data-live-mood="result"]')).toBeVisible({ timeout: 20_000 });
   await live.waitForCinematicEffects();
+  await expect(page.locator("[data-live-lobby-expiration] time")).toHaveAttribute(
+    "datetime",
+    resultSummary.lobbyExpiresAt,
+  );
 
   const readinessToggle = page.locator("[data-live-readiness-toggle]");
   const startButton = page.locator("[data-live-start-game]");

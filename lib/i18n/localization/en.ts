@@ -329,6 +329,7 @@ export const enLocalization = {
     waiting: {
       host: "Host",
       hostControls: "Host controls",
+      lobbyExpiresAt: "Lobby open until",
       open: "Open",
       openSeat: "Open seat",
       player: "Player",
