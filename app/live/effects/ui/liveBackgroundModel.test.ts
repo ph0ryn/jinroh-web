@@ -129,6 +129,7 @@ describe("live background model", () => {
 
     for (const source of Object.values(LIVE_BACKGROUND_SOURCE_BY_MOOD)) {
       expect(uniqueSources).toContain(source);
+      expect(source).toMatch(/\.webp$/u);
     }
   });
 });

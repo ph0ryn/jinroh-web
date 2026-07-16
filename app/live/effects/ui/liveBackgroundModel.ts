@@ -17,13 +17,13 @@ export type LiveBackgroundState = {
 };
 
 export const LIVE_BACKGROUND_SOURCE_BY_MOOD: Readonly<Record<LiveMood, string>> = {
-  day: "/images/jinroh-day.jpg",
-  execution: "/images/jinroh-voting.jpg",
-  night: "/images/jinroh-night.jpg",
-  result: "/images/jinroh-result.jpg",
-  setup: "/images/jinroh-waiting.jpg",
-  voting: "/images/jinroh-voting.jpg",
-  waiting: "/images/jinroh-waiting.jpg",
+  day: "/images/jinroh-day.webp",
+  execution: "/images/jinroh-voting.webp",
+  night: "/images/jinroh-night.webp",
+  result: "/images/jinroh-result.webp",
+  setup: "/images/jinroh-waiting.webp",
+  voting: "/images/jinroh-voting.webp",
+  waiting: "/images/jinroh-waiting.webp",
 };
 
 const MAX_TRANSIENT_SCENES = 8;
