@@ -1,3 +1,5 @@
+import { DISPLAY_NAME_MAX_LENGTH } from "@/lib/shared/game";
+
 import {
   apiFetch,
   createApiPlayer,
@@ -53,6 +55,71 @@ test("the result surface readies the same roster and starts a fresh Game", async
   await expect
     .poll(async () => (await readRoomSummary(request, room.roomCode, host)).game?.gameId)
     .not.toBe(firstGameId);
+});
+
+test("result seats show complete player, role, and state labels", async ({
+  live,
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+
+  const room = await createRoomWithStartedGame(request, [
+    "A".repeat(DISPLAY_NAME_MAX_LENGTH),
+    "B".repeat(DISPLAY_NAME_MAX_LENGTH),
+    "C".repeat(DISPLAY_NAME_MAX_LENGTH),
+  ]);
+  const host = requirePlayer(room.players, 0);
+
+  const result = await finishThreePlayerGame(request, room.roomCode, room.players);
+  const leavingPlayerView = result.players.find((player) => !player.isCurrent && player.alive);
+  const leavingPlayer = room.players.find(
+    (player) => player.displayName === leavingPlayerView?.displayName,
+  );
+
+  if (leavingPlayer === undefined) {
+    throw new Error("Expected a surviving guest to exercise the complete Left seat label.");
+  }
+
+  await apiFetch(request, `/api/rooms/${room.roomCode}/leave`, {
+    method: "POST",
+    token: leavingPlayer.token,
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await live.open({ identityToken: host.token });
+  await expect(page.locator('[data-live-mood="result"]')).toBeVisible({ timeout: 20_000 });
+  await live.waitForCinematicEffects();
+
+  const visibleSeatLabels = page.locator(
+    "[data-live-seat-player-name], [data-live-seat-detail], [data-live-seat-state-label]",
+  );
+  const clippedLabels = await visibleSeatLabels.evaluateAll((elements) =>
+    elements.flatMap((element) => {
+      const bounds = element.getBoundingClientRect();
+      const styles = getComputedStyle(element);
+      const isClipped =
+        element.scrollWidth > element.clientWidth + 1 ||
+        element.scrollHeight > element.clientHeight + 1 ||
+        styles.overflow === "hidden" ||
+        styles.textOverflow === "ellipsis";
+
+      return isClipped
+        ? [
+            {
+              height: bounds.height,
+              text: element.textContent,
+              width: bounds.width,
+            },
+          ]
+        : [];
+    }),
+  );
+
+  await expect(page.locator("[data-live-seat-player-name]")).toHaveCount(3);
+  await expect(page.locator("[data-live-seat-detail]")).toHaveCount(3);
+  await expect(page.getByText(live.t.game.seatStatus.left, { exact: true })).toBeVisible();
+  await expect(page.getByText(live.t.game.seatStatus.out, { exact: true })).toBeVisible();
+  expect(clippedLabels).toEqual([]);
 });
 
 test("a new post-game member clears the visible Game session", async ({ live, page, request }) => {

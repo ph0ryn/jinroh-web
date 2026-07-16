@@ -72,7 +72,7 @@ test("599px and 600px select their documented portrait layout modes", async ({
   page,
   request,
 }) => {
-  const { players } = await createWaitingRoom(request, ["Portrait host"], 6);
+  const { players } = await createWaitingRoom(request, ["PortHost"], 6);
   const host = requirePlayer(players, 0);
 
   await page.setViewportSize({ height: 800, width: 599 });
@@ -97,7 +97,7 @@ test("phone landscape keeps waiting controls and settings footer reachable", asy
   page,
   request,
 }) => {
-  const { players } = await createWaitingRoom(request, ["Landscape host"], 6);
+  const { players } = await createWaitingRoom(request, ["LandHost"], 6);
   const host = requirePlayer(players, 0);
 
   await page.setViewportSize({ height: 375, width: 667 });

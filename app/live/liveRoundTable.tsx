@@ -320,13 +320,17 @@ export function LiveRoundTable({
                 {getPlayerInitial(player.displayName)}
               </span>
               <span className={styles["seatLabel"]}>
-                <strong>{player.displayName}</strong>
+                <strong data-live-seat-player-name>{player.displayName}</strong>
                 {seatDetailLabel === null ? null : (
-                  <small className={seatDetailClassName}>{seatDetailLabel}</small>
+                  <small className={seatDetailClassName} data-live-seat-detail>
+                    {seatDetailLabel}
+                  </small>
                 )}
               </span>
               {revealedRole !== null && seatPresentation.visibleLabel !== null ? (
-                <span className={styles["seatState"]}>{seatPresentation.visibleLabel}</span>
+                <span className={styles["seatState"]} data-live-seat-state-label>
+                  {seatPresentation.visibleLabel}
+                </span>
               ) : null}
             </>
           );

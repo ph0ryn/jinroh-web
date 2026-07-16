@@ -866,7 +866,7 @@ select is(
     from public.app_join_room(
       (select account_id from test_game_accounts where label = 'newcomer'),
       (select room_code from test_game_room),
-      'Changed Newcomer'
+      'NewName'
     ) as joined
     where joined.result_kind = 'target'
   ),
@@ -901,7 +901,7 @@ select is(
     from public.app_join_room(
       (select account_id from test_game_accounts where label = 'third'),
       (select room_code from test_game_room),
-      'Changed Third'
+      'ThirdNew'
     ) as joined
     where joined.result_kind = 'target'
   ),

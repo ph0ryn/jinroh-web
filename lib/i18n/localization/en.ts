@@ -416,6 +416,13 @@ export const enLocalization = {
       createPanelTitle: "Prepare the game",
       createTitle: "Create a room",
       displayName: "Display name",
+      displayNameValidation: {
+        empty: "Enter a display name.",
+        invalidCharacters: "Use English letters, numbers, and spaces only.",
+        invalidSpacing: "Put single spaces only between words.",
+        tooLong: "Use no more than 8 characters.",
+        valid: "Valid.",
+      },
       guest: "Guest",
       host: "Host",
       joinHint:

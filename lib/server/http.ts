@@ -8,6 +8,7 @@ export type ApiErrorCode =
   | "current_room_exists"
   | "forbidden"
   | "game_changed"
+  | "invalid_display_name"
   | "not_found"
   | "players_not_ready"
   | "rate_limited"

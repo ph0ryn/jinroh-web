@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import {
+  isValidDisplayName,
   isActionKey,
   isActionKind,
   isRoleId,
@@ -17,7 +18,7 @@ import {
   type RuleSetInput,
   type SwitchRoomRequest,
 } from "@/lib/shared/game";
-import { getCodePointLength, truncateCodePoints } from "@/lib/shared/text";
+import { getCodePointLength } from "@/lib/shared/text";
 
 import {
   createAccountToken,
@@ -43,6 +44,7 @@ import {
   type SubmittedAction,
 } from "./gameEngine";
 import {
+  InvalidDisplayNameError,
   RoomClosedError,
   RoomNotFoundError,
   RoomRosterNotReadyError,
@@ -885,9 +887,11 @@ function isGamePhase(value: unknown): value is GamePhase {
 }
 
 function normalizeDisplayName(displayName: string): string {
-  const normalized = truncateCodePoints(displayName.trim().replace(/\s+/g, " "), 32);
+  if (!isValidDisplayName(displayName)) {
+    throw new InvalidDisplayNameError();
+  }
 
-  return normalized === "" ? "Player" : normalized;
+  return displayName;
 }
 
 async function readRoomSnapshot(

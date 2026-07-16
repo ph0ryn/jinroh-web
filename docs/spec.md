@@ -237,6 +237,7 @@ Room 内 Player の snapshot に分ける。
 - Account が消えて新しい匿名 Account になっても、local storage の表示名
   preference は残ってよい。
 - Room 作成または参加時、ブラウザは現在の表示名 preference を server に送る。
+- 表示名は1〜8文字のASCII英数字とし、半角スペースは単語の間に1個だけ許可する。
 - Server は表示名を検証し、新しい Player を作成するときだけ Player の表示名として
   snapshot する。
 - 同じ Account が同じ Room に再参加する場合、既存 Player の表示名を再利用する。

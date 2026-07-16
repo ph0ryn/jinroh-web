@@ -1,5 +1,7 @@
 import { expect, test } from "playwright/test";
 
+import { DISPLAY_NAME_MAX_LENGTH } from "@/lib/shared/game";
+
 import { apiFetch, createApiPlayer, readJsonResponse, type ApiPlayer } from "../fixtures/apiClient";
 import { requirePlayer } from "../fixtures/roomScenario";
 import {
@@ -13,6 +15,39 @@ import {
 
 import type { RoomSummary } from "@/lib/shared/game";
 import type { APIRequestContext } from "playwright/test";
+
+test("new room display names follow the shared validation rules", async ({ request }) => {
+  const account = await createApiPlayer(request, "longName", "fixture-only");
+  const invalidSpacing = await readJsonResponse<ApiErrorResponse>(request, "/api/rooms", {
+    body: { displayName: "A  B", targetPlayerCount: 3 },
+    method: "POST",
+    token: account.token,
+  });
+  const tooLong = await readJsonResponse<ApiErrorResponse>(request, "/api/rooms", {
+    body: {
+      displayName: "A".repeat(DISPLAY_NAME_MAX_LENGTH + 1),
+      targetPlayerCount: 3,
+    },
+    method: "POST",
+    token: account.token,
+  });
+  const room = await apiFetch<RoomSummary>(request, "/api/rooms", {
+    body: { displayName: "Wolf123", targetPlayerCount: 3 },
+    method: "POST",
+    token: account.token,
+  });
+  const currentPlayer = room.players.find(({ isCurrent }) => isCurrent);
+
+  expect(invalidSpacing).toMatchObject({
+    body: { error: { code: "invalid_display_name" } },
+    status: 400,
+  });
+  expect(tooLong).toMatchObject({
+    body: { error: { code: "invalid_display_name" } },
+    status: 400,
+  });
+  expect(currentPlayer?.displayName).toBe("Wolf123");
+});
 
 test("an account has one current room and can rejoin or leave it explicitly", async ({
   request,
@@ -51,7 +86,7 @@ test("an account has one current room and can rejoin or leave it explicitly", as
   await expectCurrentRoom(request, account, source.code);
 
   const resumed = await apiFetch<RoomSummary>(request, `/api/rooms/${source.code}/join`, {
-    body: { displayName: "Changed name" },
+    body: { displayName: "Changed" },
     method: "POST",
     token: account.token,
   });
@@ -82,8 +117,10 @@ test("concurrent membership requests produce exactly one current room", async ({
   const targetA = await createRoom(request, hostA);
   const targetB = await createRoom(request, hostB);
 
-  for (const scenario of ["create-create", "create-join", "join-join"] as const) {
-    const account = await createApiPlayer(request, scenario, `Player ${scenario}`);
+  for (const [scenarioIndex, scenario] of (
+    ["create-create", "create-join", "join-join"] as const
+  ).entries()) {
+    const account = await createApiPlayer(request, scenario, `Player${scenarioIndex + 1}`);
     const responses = await withTimeout(
       Promise.all(
         makeConcurrentMembershipRequests(request, scenario, account, targetA.code, targetB.code),
@@ -179,7 +216,7 @@ test("a playing member can rejoin the same room but cannot leave, switch, or adm
   const before = await readCurrentRoom(request, host);
   const originalPlayerId = requireCurrentPlayerId(before.room ?? undefined);
   const resumed = await apiFetch<RoomSummary>(request, `/api/rooms/${roomCode}/join`, {
-    body: { displayName: "Changed name" },
+    body: { displayName: "Changed" },
     method: "POST",
     token: host.token,
   });

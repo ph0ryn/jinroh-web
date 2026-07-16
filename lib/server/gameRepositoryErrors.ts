@@ -1,5 +1,12 @@
 import "server-only";
 
+export class InvalidDisplayNameError extends Error {
+  constructor() {
+    super("Display name is invalid.");
+    this.name = "InvalidDisplayNameError";
+  }
+}
+
 export class RoomNotFoundError extends Error {
   constructor() {
     super("Room not found.");

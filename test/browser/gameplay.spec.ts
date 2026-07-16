@@ -263,7 +263,7 @@ test("a normal-night role action exposes only eligible cards with role-owned cop
   request,
 }) => {
   const { players, roomCode } = await createRoomWithStartedGame(request, [
-    "Narcissus",
+    "Narcis",
     "Oak",
     "Poppy",
     "Quill",

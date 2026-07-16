@@ -67,7 +67,7 @@ test("the waiting lobby shows its authoritative expiration time", async ({
   page,
   request,
 }) => {
-  const { players, roomCode } = await createWaitingRoom(request, ["Expiry host"], 3);
+  const { players, roomCode } = await createWaitingRoom(request, ["ExpHost"], 3);
   const host = requirePlayer(players, 0);
   const summary = await readRoomSummary(request, roomCode, host);
 
@@ -137,7 +137,7 @@ test("applied settings survive a reload only for the same waiting room session",
   page,
   request,
 }) => {
-  const { players } = await createWaitingRoom(request, ["Scoped settings host"], 3);
+  const { players } = await createWaitingRoom(request, ["SetHost"], 3);
   const host = requirePlayer(players, 0);
 
   await live.open({ identityToken: host.token });

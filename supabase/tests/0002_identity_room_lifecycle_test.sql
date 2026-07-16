@@ -387,7 +387,7 @@ select is(
     from public.app_join_room(
       (select account_id from test_accounts where label = 'guest'),
       (select room_code from primary_room),
-      'Renamed Guest'
+      'Renamed'
     ) as joined
   ),
   'player_reconnected',
@@ -429,7 +429,7 @@ select is(
     from public.app_join_room(
       (select account_id from test_accounts where label = 'guest'),
       (select room_code from primary_room),
-      'Changed Name'
+      'Changed'
     ) as joined
   ),
   'player_rejoined',
@@ -592,7 +592,7 @@ create temporary table readiness_expiring_room as
 select created.room_id, null::text as room_code
 from public.app_create_room(
   (select account_id from test_accounts where label = 'readiness-expiring'),
-  'Readiness Expiring',
+  'ReadyExp',
   3,
   pg_catalog.statement_timestamp() + interval '30 minutes'
 ) as created
@@ -648,7 +648,7 @@ create temporary table leave_expiring_room as
 select created.room_id, null::text as room_code
 from public.app_create_room(
   (select account_id from test_accounts where label = 'leave-expiring'),
-  'Leave Expiring',
+  'LeaveExp',
   3,
   pg_catalog.statement_timestamp() + interval '30 minutes'
 ) as created
@@ -701,7 +701,7 @@ create temporary table expired_create_source as
 select created.room_id, null::text as room_code
 from public.app_create_room(
   (select account_id from test_accounts where label = 'expired-create'),
-  'Expired Create Source',
+  'ExpSrc',
   3,
   pg_catalog.statement_timestamp() + interval '30 minutes'
 ) as created
@@ -721,7 +721,7 @@ create temporary table expired_create_transition as
 select created.*
 from public.app_create_room(
   (select account_id from test_accounts where label = 'expired-create'),
-  'Expired Create Target',
+  'ExpTgt',
   3,
   pg_catalog.statement_timestamp() + interval '30 minutes'
 ) as created;
@@ -770,7 +770,7 @@ create temporary table expired_join_source as
 select created.room_id, null::text as room_code
 from public.app_create_room(
   (select account_id from test_accounts where label = 'expired-join'),
-  'Expired Join Source',
+  'JoinSrc',
   3,
   pg_catalog.statement_timestamp() + interval '30 minutes'
 ) as created
@@ -791,7 +791,7 @@ select joined.*
 from public.app_join_room(
   (select account_id from test_accounts where label = 'expired-join'),
   (select room_code from membership_target_room),
-  'Expired Join Target'
+  'JoinTgt'
 ) as joined;
 
 select results_eq(

@@ -268,7 +268,7 @@ test("Realtime grants and heartbeats consume their account operation buckets", a
   const clientIp = "192.0.2.82";
   const identity = await createIdentity(request, clientIp);
   const roomResponse = await request.post("/api/rooms", {
-    data: { displayName: "Realtime Host", targetPlayerCount: 3 },
+    data: { displayName: "RtHost", targetPlayerCount: 3 },
     headers: authenticatedHeaders(identity.token, clientIp),
   });
   const room = (await roomResponse.json()) as { readonly code: string };

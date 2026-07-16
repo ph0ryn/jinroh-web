@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  DISPLAY_NAME_MAX_LENGTH,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   isActionKind,
@@ -1908,7 +1909,7 @@ function isPlayerRecord(value: unknown): value is PlayerRecord {
     !isPositiveSafeInteger(value["account_id"]) ||
     typeof value["public_player_id"] !== "string" ||
     !PUBLIC_PLAYER_ID_PATTERN.test(value["public_player_id"]) ||
-    !isTrimmedString(value["display_name"], 1, 32) ||
+    !isTrimmedString(value["display_name"], 1, DISPLAY_NAME_MAX_LENGTH) ||
     !isTimestamp(value["joined_at"]) ||
     !isTimestamp(value["last_seen_at"]) ||
     !isNonNegativeSafeInteger(value["private_snapshot_revision"]) ||

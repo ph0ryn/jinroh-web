@@ -409,6 +409,13 @@ export const jaLocalization = {
       createPanelTitle: "ゲームを準備",
       createTitle: "部屋を作る",
       displayName: "表示名",
+      displayNameValidation: {
+        empty: "表示名を入力してください。",
+        invalidCharacters: "半角英数字とスペースだけを使用できます。",
+        invalidSpacing: "スペースは単語の間に1個だけ入れられます。",
+        tooLong: "8文字以内で入力してください。",
+        valid: "使用できます。",
+      },
       guest: "ゲスト",
       host: "ホスト",
       joinHint:

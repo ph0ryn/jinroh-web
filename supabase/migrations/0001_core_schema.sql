@@ -127,7 +127,8 @@ create table public.players (
   constraint players_display_name_check
     check (
       display_name = btrim(display_name)
-      and char_length(display_name) between 1 and 32
+      and char_length(display_name) between 1 and 8
+      and display_name ~ '^[A-Za-z0-9]+( [A-Za-z0-9]+)*$'
     ),
   constraint players_revision_check
     check (

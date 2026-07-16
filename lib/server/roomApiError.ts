@@ -2,6 +2,7 @@ import "server-only";
 import {
   CurrentRoomChangedError,
   CurrentRoomExistsError,
+  InvalidDisplayNameError,
   RoomClosedError,
   RoomFullError,
   RoomNotFoundError,
@@ -14,6 +15,14 @@ import {
 import { jsonError } from "./http";
 
 export function roomApiErrorResponse(error: unknown): Response | null {
+  if (error instanceof InvalidDisplayNameError) {
+    return jsonError(
+      "invalid_display_name",
+      "Display names must use 1 to 8 letters or numbers with spaces only between words.",
+      400,
+    );
+  }
+
   if (error instanceof StaleRosterRevisionError) {
     return jsonError("roster_changed", "The room roster changed. Reload and try again.", 409);
   }

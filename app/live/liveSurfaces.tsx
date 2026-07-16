@@ -10,6 +10,9 @@ import {
   type Localization,
 } from "@/lib/i18n/localization";
 import {
+  DISPLAY_NAME_MAX_LENGTH,
+  DISPLAY_NAME_PATTERN_SOURCE,
+  getDisplayNameValidationError,
   MAX_ROOM_PLAYERS,
   MIN_ROOM_PLAYERS,
   type NightConversationView,
@@ -202,18 +205,24 @@ export function LiveEntrySurface({
     return roomCodeInput[index] ?? "";
   });
   const normalizedDisplayName = displayName.trim() || t.live.setup.player;
-  const isJoinDisabled = isBusy || roomCodeInput.length !== 6;
+  const displayNameValidationError = getDisplayNameValidationError(displayName);
+  const hasValidDisplayName = displayNameValidationError === null;
+  const displayNameValidationMessage =
+    displayNameValidationError === null
+      ? t.live.setup.displayNameValidation.valid
+      : t.live.setup.displayNameValidation[displayNameValidationError];
+  const isJoinDisabled = isBusy || !hasValidDisplayName || roomCodeInput.length !== 6;
 
   function handleCreateSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
 
-    if (!isBusy) {
+    if (!isBusy && hasValidDisplayName) {
       onCreateRoom();
     }
   }
 
   function handleCreateFieldKeyDown(event: KeyboardEvent<HTMLSelectElement>): void {
-    if (event.key === "Enter" && !isBusy) {
+    if (event.key === "Enter" && !isBusy && hasValidDisplayName) {
       event.preventDefault();
       onCreateRoom();
     }
@@ -307,16 +316,31 @@ export function LiveEntrySurface({
             </div>
           </div>
           <div className="liveSetupPanelBody">
-            <label className="liveSetupField">
-              {t.live.setup.displayName}
+            <div className="liveSetupField">
+              <label htmlFor="live-display-name">{t.live.setup.displayName}</label>
               <input
+                aria-describedby="live-display-name-validation"
+                aria-invalid={!hasValidDisplayName}
                 autoComplete="nickname"
+                data-live-display-name-valid={String(hasValidDisplayName)}
                 disabled={isBusy}
-                maxLength={32}
+                id="live-display-name"
+                maxLength={DISPLAY_NAME_MAX_LENGTH}
+                pattern={DISPLAY_NAME_PATTERN_SOURCE}
                 value={displayName}
                 onChange={(event) => onDisplayNameChange(event.target.value)}
               />
-            </label>
+              <p
+                aria-live="polite"
+                className={`liveSetupValidation ${hasValidDisplayName ? "is-valid" : "is-invalid"}`}
+                data-live-display-name-validation
+                id="live-display-name-validation"
+                role="status"
+              >
+                <span aria-hidden="true">{hasValidDisplayName ? "✓" : "!"}</span>
+                {displayNameValidationMessage}
+              </p>
+            </div>
             <div className="liveSetupProfileCard">
               <div className="liveSetupAvatar" aria-hidden="true">
                 {getPlayerInitial(displayName)}
@@ -456,7 +480,7 @@ export function LiveEntrySurface({
                 <button
                   className="liveSetupButton liveSetupButtonPrimary"
                   type="submit"
-                  disabled={isBusy}
+                  disabled={isBusy || !hasValidDisplayName}
                 >
                   {pendingAction === "create"
                     ? t.live.buttons.creatingRoom

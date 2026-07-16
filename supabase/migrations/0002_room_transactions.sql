@@ -191,7 +191,8 @@ declare
 begin
   if p_display_name is null
     or p_display_name <> pg_catalog.btrim(p_display_name)
-    or pg_catalog.char_length(p_display_name) not between 1 and 32
+    or pg_catalog.char_length(p_display_name) not between 1 and 8
+    or p_display_name !~ '^[A-Za-z0-9]+( [A-Za-z0-9]+)*$'
     or p_target_player_count not between 3 and 10
     or p_lobby_expires_at is null
     or p_lobby_expires_at <= v_now
@@ -325,7 +326,8 @@ begin
   if p_room_code is null
     or p_display_name is null
     or p_display_name <> pg_catalog.btrim(p_display_name)
-    or pg_catalog.char_length(p_display_name) not between 1 and 32
+    or pg_catalog.char_length(p_display_name) not between 1 and 8
+    or p_display_name !~ '^[A-Za-z0-9]+( [A-Za-z0-9]+)*$'
   then
     raise exception using errcode = 'P0001', message = 'invalid_room_request';
   end if;

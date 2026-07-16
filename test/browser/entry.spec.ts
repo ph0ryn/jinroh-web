@@ -1,5 +1,6 @@
 import { DEFAULT_DISPLAY_NAMES } from "@/app/live/liveDefaultDisplayName";
 import { LOCALE_STORAGE_KEY, localizations } from "@/lib/i18n/localization";
+import { DISPLAY_NAME_MAX_LENGTH } from "@/lib/shared/game";
 
 import { LivePage } from "../fixtures/livePage";
 import { expect, test } from "../fixtures/test";
@@ -127,18 +128,33 @@ test("players complete the primary create-to-first-day journey", async ({ browse
   }
 });
 
-test("display names render as text instead of markup", async ({ live, page }) => {
-  const displayName = "<img src=x onerror=1>";
+test("entry validates the allowed display name characters", async ({ live, page }) => {
+  const displayName = "<b>x</b>";
 
   await live.open();
   await live.setDisplayName(displayName);
-  await live.createRoom(3);
+  const displayNameInput = page.getByLabel(live.t.live.setup.displayName, { exact: true });
+  const createButton = page.getByRole("button", {
+    name: live.t.live.buttons.createRoom,
+    exact: true,
+  });
 
-  const currentSeat = page.locator("[data-live-current-seat]");
+  await expect(displayNameInput).toHaveAttribute("pattern", "[A-Za-z0-9]+(?: [A-Za-z0-9]+)*");
+  expect(
+    await displayNameInput.evaluate(
+      (input) => input instanceof HTMLInputElement && input.validity.patternMismatch,
+    ),
+  ).toBe(true);
+  await expect(page.locator("[data-live-display-name-validation]")).toHaveClass(/is-invalid/u);
+  await expect(page.locator("[data-live-display-name-validation]")).toHaveText(
+    `!${live.t.live.setup.displayNameValidation.invalidCharacters}`,
+  );
+  await expect(createButton).toBeDisabled();
 
-  await expect(currentSeat).toContainText(displayName);
-  await expect(currentSeat.locator("img, script")).toHaveCount(0);
-  expect(await currentSeat.textContent()).toContain(displayName);
+  await displayNameInput.fill("Wolf123");
+  await expect(page.locator("[data-live-display-name-validation]")).toHaveClass(/is-valid/u);
+  await expect(page.locator("[data-live-display-name-validation]")).toHaveText("✓Valid.");
+  await expect(createButton).toBeEnabled();
 });
 
 test("entry creates a neutral random display name and keeps a saved name", async ({
@@ -150,11 +166,16 @@ test("entry creates a neutral random display name and keeps a saved name", async
   const displayNameInput = page.getByLabel(live.t.live.setup.displayName, { exact: true });
   const generatedDisplayName = await displayNameInput.inputValue();
 
+  await expect(displayNameInput).toHaveAttribute("maxlength", String(DISPLAY_NAME_MAX_LENGTH));
+  await expect(page.locator("[data-live-display-name-validation]")).toHaveClass(/is-valid/u);
+  await expect(page.locator("[data-live-display-name-validation]")).toHaveText(
+    `✓${live.t.live.setup.displayNameValidation.valid}`,
+  );
   expect(DEFAULT_DISPLAY_NAMES).toContain(generatedDisplayName);
 
-  await displayNameInput.fill("Saved Player");
+  await displayNameInput.fill("SavedOne");
   await page.reload();
-  await expect(displayNameInput).toHaveValue("Saved Player");
+  await expect(displayNameInput).toHaveValue("SavedOne");
 });
 
 for (const blockedMethod of ["getItem", "setItem", "removeItem"] as const) {

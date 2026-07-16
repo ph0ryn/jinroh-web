@@ -1,6 +1,40 @@
 export const MIN_ROOM_PLAYERS = 3;
 export const MAX_ROOM_PLAYERS = 10;
 export const DEFAULT_TARGET_PLAYER_COUNT = 6;
+export const DISPLAY_NAME_MAX_LENGTH = 8;
+export const DISPLAY_NAME_PATTERN_SOURCE = "[A-Za-z0-9]+(?: [A-Za-z0-9]+)*";
+
+const DISPLAY_NAME_PATTERN = new RegExp(`^(?:${DISPLAY_NAME_PATTERN_SOURCE})$`, "u");
+
+export type DisplayNameValidationError =
+  | "empty"
+  | "invalidCharacters"
+  | "invalidSpacing"
+  | "tooLong";
+
+export function getDisplayNameValidationError(value: string): DisplayNameValidationError | null {
+  if (value.length === 0) {
+    return "empty";
+  }
+
+  if (value.length > DISPLAY_NAME_MAX_LENGTH) {
+    return "tooLong";
+  }
+
+  if (/[^A-Za-z0-9 ]/u.test(value)) {
+    return "invalidCharacters";
+  }
+
+  if (!DISPLAY_NAME_PATTERN.test(value)) {
+    return "invalidSpacing";
+  }
+
+  return null;
+}
+
+export function isValidDisplayName(value: unknown): value is string {
+  return typeof value === "string" && getDisplayNameValidationError(value) === null;
+}
 
 export type RoleId = string;
 
